@@ -462,10 +462,11 @@ async function subtitlesDialog(id) {
     out.innerHTML = '<div class="dlg-loading"><div class="spinner"></div>Searching…</div>';
     try {
       const res = await api.get(`/Items/${id}/RemoteSearch/Subtitles/${code}?IsPerfectMatch=false`);
-      const list = Array.isArray(res) ? res : [];
+      // Hash matches (made for this exact file) go first.
+      const list = (Array.isArray(res) ? res : []).map((r, n) => ({ r, n })).sort((a, b) => (b.r.IsHashMatch ? 1 : 0) - (a.r.IsHashMatch ? 1 : 0) || a.n - b.n).map((x) => x.r);
       out.innerHTML = list.length ? list.slice(0, 40).map((r, i) => `
         <div class="sub-row">
-          <div class="sub-text"><b>${esc(r.Name || r.Id)}</b><span>${[r.ProviderName, r.Format, r.CommunityRating ? `${r.CommunityRating}★` : '', r.DownloadCount ? `${r.DownloadCount.toLocaleString()} downloads` : '', r.IsHashMatch ? 'matches your file' : ''].filter(Boolean).map(esc).join(' · ')}</span></div>
+          <div class="sub-text"><b>${r.IsHashMatch ? '<span class="hash-tag" title="Made for this exact file, so the timing should line up">HASH MATCH</span>' : ''}${esc(r.Name || r.Id)}</b><span>${[r.ProviderName, r.Format, r.CommunityRating ? `${r.CommunityRating}★` : '', r.DownloadCount ? `${r.DownloadCount.toLocaleString()} downloads` : ''].filter(Boolean).map(esc).join(' · ')}</span></div>
           <button class="btn secondary" data-get="${i}">Download</button>
         </div>`).join('') : '<div class="dlg-empty">Nothing found in that language.</div>';
       out.querySelectorAll('[data-get]').forEach((b) => b.addEventListener('click', async () => {

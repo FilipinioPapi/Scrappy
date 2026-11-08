@@ -331,8 +331,8 @@ async function heroPools() {
   const newEps = nextUp.filter((e) => e.DateCreated && now - new Date(e.DateCreated).getTime() < 14 * DAY)
     .map((it) => ({ it, reason: 'new', kicker: 'NEW EPISODE', why: `A show you watch · added ${ago(it.DateCreated)}` }));
   const added = latest.map((it) => ({ it, reason: 'added', kicker: 'JUST ADDED', why: `Added ${ago(it.DateCreated)}` }));
-  const never = gems.filter((it) => it.DateCreated && now - new Date(it.DateCreated).getTime() > 180 * DAY)
-    .map((it) => ({ it, reason: 'never', kicker: 'IN YOUR LIBRARY, NEVER WATCHED', why: `Added in ${new Date(it.DateCreated).getFullYear()} · rated ${it.CommunityRating.toFixed(1)}` }));
+  const never = gems.filter((it) => it.DateCreated && now - new Date(it.DateCreated).getTime() > 180 * DAY && Number(it.CommunityRating) >= 7.2)
+    .map((it) => ({ it, reason: 'never', kicker: 'IN YOUR LIBRARY, NEVER WATCHED', why: `Added in ${new Date(it.DateCreated).getFullYear()} · rated ${Number(it.CommunityRating).toFixed(1)}` }));
   const oldFavs = favs.filter((it) => !it.UserData?.LastPlayedDate || now - lastPlayed(it) > 365 * DAY)
     .map((it) => ({ it, reason: 'fav', kicker: 'FROM YOUR FAVORITES', why: it.UserData?.LastPlayedDate ? `Last watched ${ago(it.UserData.LastPlayedDate)}` : 'One of your favorites' }));
   // "Because you watched": something similar to the last thing you finished.
@@ -354,7 +354,18 @@ async function buildHero(root, ctx) {
   const slot = root.querySelector('[data-row=hero]');
   if (!slot) return;
   const my = ++heroGen;
-  const P = await heroPools();
+  try {
+    await fillHero(slot, ctx, my);
+  } catch (e) {
+    // Never let one odd item take the whole banner down.
+    console.error('banner', e);
+  }
+}
+
+async function fillHero(slot, ctx, my) {
+  let P;
+  try { P = await heroPools(); } catch { P = {}; }
+  for (const k of ['pickBack', 'newEps', 'because', 'added', 'never', 'oldFavs']) P[k] = P[k] || [];
   if (my !== heroGen || !ctx.alive()) return;
   // Take turns from each reason so the banner is a mix; at most 2 "pick back up".
   const order = [P.pickBack, P.newEps, P.because, P.added, P.never, P.oldFavs];
@@ -1022,10 +1033,12 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
             const ud = e.UserData || {};
             const pct = ud.PlaybackPositionTicks && e.RunTimeTicks && !ud.Played ? (100 * ud.PlaybackPositionTicks / e.RunTimeTicks).toFixed(1) : 0;
             const cls = e === upNext ? 'next' : ud.Played ? 'watched' : '';
-            return `<button class="ep-tile ${cls} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" data-id="${esc(e.Id)}" title="${esc(num(e) + e.Name)}">${e.IndexNumber ?? '•'}${pct ? `<i style="width:${pct}%"></i>` : ''}</button>`;
+            return `<button class="ep-tile ${cls} ${e.Id === currentId ? 'current' : ''}" data-goto="${esc(e.Id)}" title="${esc(num(e) + e.Name)}">${e.IndexNumber ?? '•'}${pct ? `<i style="width:${pct}%"></i>` : ''}</button>`;
           }).join('')}</div>
-          <div class="ep-grid-note">Hover a number to see its name. Dim = watched, red = up next.</div>`;
+          <div class="ep-grid-note">Hover a number to see its name, click it to open the episode. Dim = watched, red = up next.</div>`;
         list.querySelectorAll('[data-block]').forEach((b) => b.addEventListener('click', () => { block = Number(b.dataset.block); draw(); }));
+        // Tiles only show a number, so they open the episode's page instead of playing.
+        list.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/item/${encodeURIComponent(b.dataset.goto)}`; }));
       };
       draw();
     } else if (view === 'row') {

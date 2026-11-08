@@ -843,3 +843,4 @@ select.pick:hover { border-color: var(--red-border); }
 .ep-tile i { position: absolute; left: 0; bottom: 0; height: 3px; background: #fff; }
 .ep-grid-note { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
 .btn[hidden] { display: none !important; }
+.hash-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; margin-right: 8px; border-radius: 5px; background: var(--red); color: #fff; font-size: 10.5px; font-weight: 800; letter-spacing: 1px; vertical-align: 2px; }
