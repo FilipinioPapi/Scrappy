@@ -73,7 +73,7 @@ export async function homeView(root, ctx) {
       <div data-row="hero"></div>
       <div data-row="resume"></div>
       <section class="section">
-        <div class="section-head"><h2>My Media</h2></div>
+        <div class="section-head"><h2>Library</h2></div>
         <div class="row">${views.map(libTile).join('')}</div>
       </section>
       ${views.filter((v) => !NO_LATEST.has(v.CollectionType)).map((v) => `<div data-row="latest-${esc(v.Id)}"></div>`).join('')}
