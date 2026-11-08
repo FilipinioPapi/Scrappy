@@ -95,7 +95,7 @@ function loadRows(root, ctx, views) {
     const slot = root.querySelector('[data-row=resume]');
     if (!slot) return;
     slot.innerHTML = items.length
-      ? `<section class="section"><div class="section-head"><h2>Continue Watching</h2></div>
+      ? `<section class="section" data-cw><div class="section-head"><h2>Continue Watching</h2></div>
           <div class="row">${items.map((i) => card(i, { shape: 'wide' })).join('')}</div></section>`
       : '';
   }, ctx.alive).catch(() => {});

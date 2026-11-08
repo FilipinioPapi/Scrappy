@@ -191,10 +191,39 @@ pub async fn send(
     if let Some(b) = body {
         req = req.json(&b);
     }
+    finish(req).await
+}
+
+/// Send a raw text body (used for image uploads, which Emby takes as base64).
+pub async fn send_raw(
+    http: &reqwest::Client,
+    cfg: &Config,
+    method: reqwest::Method,
+    path: &str,
+    body: String,
+    content_type: &str,
+) -> Result<Value, String> {
+    if !cfg.logged_in() {
+        return Err("Not logged in.".into());
+    }
+    let url = format!("{}{}", cfg.server, expand_path(cfg, path));
+    let req = http
+        .request(method, url)
+        .header("X-Emby-Authorization", cfg.auth_header())
+        .header("X-Emby-Token", &cfg.token)
+        .header("Content-Type", content_type)
+        .body(body);
+    finish(req).await
+}
+
+async fn finish(req: reqwest::RequestBuilder) -> Result<Value, String> {
     let r = req.send().await.map_err(friendly_error)?;
     let status = r.status();
     if status.as_u16() == 401 {
         return Err("SESSION_EXPIRED".into());
+    }
+    if status.as_u16() == 403 {
+        return Err("Your Emby account isn't allowed to do that.".into());
     }
     if !status.is_success() {
         return Err(format!("Server error ({status})."));

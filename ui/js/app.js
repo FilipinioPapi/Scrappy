@@ -1,5 +1,6 @@
 import { api, quiet } from './api.js';
 import './player.js';
+import './menu.js';
 import { toast } from './components.js';
 import { loginView, homeView, libraryView, itemView, searchView, comingSoonView } from './views.js';
 

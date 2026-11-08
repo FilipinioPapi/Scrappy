@@ -104,6 +104,26 @@ async fn api_get(state: State<'_, AppState>, path: String) -> Result<Value, Stri
     Ok(v)
 }
 
+/// Change something on the server: POST / DELETE with an optional JSON body.
+#[tauri::command]
+async fn api_send(state: State<'_, AppState>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+    let cfg = state.cfg();
+    let m = match method.to_uppercase().as_str() {
+        "POST" => reqwest::Method::POST,
+        "DELETE" => reqwest::Method::DELETE,
+        "PUT" => reqwest::Method::PUT,
+        _ => return Err("Unsupported request.".into()),
+    };
+    emby::send(&state.http, &cfg, m, &path, body).await
+}
+
+/// Upload a picture (base64) for an item, e.g. a new poster.
+#[tauri::command]
+async fn api_upload_image(state: State<'_, AppState>, path: String, base64: String, content_type: String) -> Result<Value, String> {
+    let cfg = state.cfg();
+    emby::send_raw(&state.http, &cfg, reqwest::Method::POST, &path, base64, &content_type).await
+}
+
 /// Return the last saved copy of a request, or null.
 #[tauri::command]
 fn api_cached(state: State<'_, AppState>, path: String) -> Value {
@@ -628,6 +648,8 @@ pub fn run() {
             logout,
             api_get,
             api_cached,
+            api_send,
+            api_upload_image,
             play,
             player_command,
             player_set,

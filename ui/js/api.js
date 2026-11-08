@@ -8,6 +8,9 @@ export const api = {
   logout: () => invoke('logout'),
   get: (path) => invoke('api_get', { path }),
   cached: (path) => invoke('api_cached', { path }),
+  post: (path, body = null) => invoke('api_send', { method: 'POST', path, body }),
+  del: (path) => invoke('api_send', { method: 'DELETE', path, body: null }),
+  uploadImage: (path, base64, contentType) => invoke('api_upload_image', { path, base64, contentType }),
   play: (itemId, o = {}) => invoke('play', { itemId, fromStart: !!o.fromStart, embedded: o.embedded ?? true, startSecs: o.startSecs ?? null, maxBitrate: o.maxBitrate ?? null }),
   clearCache: () => invoke('clear_cache'),
 };

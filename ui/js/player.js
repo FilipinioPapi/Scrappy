@@ -704,6 +704,14 @@ seek.addEventListener('mousedown', (e) => {
 });
 
 // Keyboard (only while the player is open).
+// Mouse wheel over the video changes the volume (not over the settings panel, which scrolls).
+el.addEventListener('wheel', (e) => {
+  if (!S.open || e.target.closest('.p-settings, select')) return;
+  e.preventDefault();
+  changeVolume(e.deltaY < 0 ? 5 : -5);
+  wake();
+}, { passive: false });
+
 window.addEventListener('keydown', (e) => {
   if (!S.open) return;
   if (e.target.closest?.('select')) return; // let dropdowns use the arrow keys
