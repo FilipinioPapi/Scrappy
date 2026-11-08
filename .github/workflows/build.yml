@@ -1,0 +1,73 @@
+name: Build Windows app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # mpv's player library (libmpv), from the widely used shinchiro Windows builds.
+      - name: Download libmpv
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path mpvdl, src-tauri/libmpv | Out-Null
+          gh release download -R shinchiro/mpv-winbuild-cmake --pattern "mpv-dev-x86_64-2*.7z" --dir mpvdl
+          $archive = Get-ChildItem mpvdl -Filter *.7z | Select-Object -First 1
+          Write-Host "Using $($archive.Name)"
+          7z x $archive.FullName -ompvdl/x -y | Out-Null
+          $dll = Get-ChildItem mpvdl/x -Recurse -Filter "libmpv*.dll" | Select-Object -First 1
+          if (-not $dll) { throw "libmpv dll not found in archive" }
+          Copy-Item $dll.FullName src-tauri/libmpv/libmpv-2.dll
+
+      - name: Build
+        run: |
+          npm ci
+          npx tauri build
+
+      - name: Make portable zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item src-tauri/target/release/scrappy.exe portable/Scrappy.exe
+          Copy-Item src-tauri/libmpv/libmpv-2.dll portable/
+          Compress-Archive -Path portable/* -DestinationPath Scrappy-portable.zip -Force
+          Copy-Item (Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1).FullName Scrappy-setup.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scrappy-windows
+          path: |
+            Scrappy-setup.exe
+            Scrappy-portable.zip
+
+      # Every push to main refreshes the "Latest build" download page.
+      - name: Publish latest build
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null
+          $notes = "Built from commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
+          gh release create latest Scrappy-setup.exe Scrappy-portable.zip --title "Latest build" --notes $notes --prerelease --target ${{ github.sha }}

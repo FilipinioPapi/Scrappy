@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scrappy</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header id="topbar" hidden>
+    <div class="brand">Scrappy</div>
+    <nav class="tabs">
+      <a href="#/home" data-tab="watch">Watch</a>
+      <a href="#/listen" data-tab="listen">Listen</a>
+    </nav>
+    <div class="actions">
+      <a href="#/search" class="icon-btn" title="Search" aria-label="Search">
+        <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </a>
+      <div class="user-menu">
+        <button class="icon-btn" id="userBtn" title="Account" aria-label="Account">
+          <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div class="menu" id="userMenu" hidden>
+          <div class="menu-info" id="userInfo"></div>
+          <button id="clearCacheBtn">Clear image cache</button>
+          <button id="logoutBtn">Sign out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main id="view"></main>
+  <div id="toasts"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
