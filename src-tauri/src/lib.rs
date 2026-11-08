@@ -269,7 +269,7 @@ fn main_hwnd(app: &AppHandle) -> Option<i64> {
 
 const OBSERVED: &[&str] = &[
     "time-pos", "duration", "pause", "paused-for-cache", "seeking", "volume", "mute",
-    "eof-reached", "demuxer-cache-time", "track-list", "speed",
+    "eof-reached", "demuxer-cache-time", "track-list", "speed", "vo-configured",
 ];
 
 fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String> {

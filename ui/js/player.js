@@ -354,8 +354,10 @@ function showOverlay() {
 async function hideOverlay() {
   const wasOpen = S.open;
   S.open = false;
+  S.frameSeen = false;
   el.hidden = true;
   document.documentElement.classList.remove('playing');
+  setVideoOn(false);
   hideUpNext();
   showSkip(null);
   toggleSettings(false);
@@ -464,11 +466,29 @@ function playNext() {
   if (n) startPlayback(n.Id, { fromStart: true });
 }
 
+// The page is only see-through while mpv is drawing video, otherwise the
+// desktop would show through the window while a video is loading.
+let videoOnTimer;
+// See-through only once mpv has a video window and playback has really started.
+function updateVideoOn() { setVideoOn(S.vo && S.frameSeen); }
+function setVideoOn(on) {
+  clearTimeout(videoOnTimer);
+  if (!on) { document.documentElement.classList.remove('video-on'); return; }
+  // Give mpv a moment to paint its first frame.
+  videoOnTimer = setTimeout(() => {
+    if (S.open) document.documentElement.classList.add('video-on');
+  }, 150);
+}
+
 // ---------- Events from mpv ----------
 
 listen('mpv-prop', ({ payload: { name, value } }) => {
   switch (name) {
-    case 'time-pos': S.pos = value ?? 0; drawTime(); checkMarkers(); break;
+    case 'time-pos':
+      S.pos = value ?? 0; drawTime(); checkMarkers();
+      if (value != null && !S.frameSeen) { S.frameSeen = true; updateVideoOn(); }
+      break;
+    case 'vo-configured': S.vo = !!value; updateVideoOn(); break;
     case 'duration': S.duration = value ?? 0; drawTime(); break;
     case 'demuxer-cache-time': S.cache = value ?? 0; drawTime(); break;
     case 'pause': S.paused = !!value; drawButtons(); wake(); break;
@@ -491,6 +511,8 @@ listen('mpv-prop', ({ payload: { name, value } }) => {
 });
 
 listen('player-loaded', () => {
+  S.frameSeen = false;
+  updateVideoOn();
   S.buffering = false;
   drawButtons();
   setProp('volume', S.volume);

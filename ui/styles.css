@@ -326,7 +326,11 @@ select { width: auto; padding: 7px 10px; background: var(--bg-2); cursor: pointe
 .section-head h2 a:hover { color: var(--blush); }
 
 /* ---------- Player ---------- */
-html.playing, html.playing body { background: transparent !important; }
+/* While playing, the page stays solid black until mpv is actually drawing video,
+   then turns see-through so the video shows behind the controls. */
+html.playing, html.playing body { background: #000 !important; }
+html.playing.video-on, html.playing.video-on body { background: transparent !important; }
+html.playing:not(.video-on) .p-spinner { display: grid; }
 html.playing #topbar, html.playing #view { visibility: hidden; }
 html.playing body { overflow: hidden; }
 #player { position: fixed; inset: 0; z-index: 100; color: #fff; }
