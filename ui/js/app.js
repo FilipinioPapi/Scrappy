@@ -1,7 +1,7 @@
 import { api } from './api.js';
 import './player.js';
 import { toast } from './components.js';
-import { loginView, homeView, libraryView, itemView, searchView, listenView } from './views.js';
+import { loginView, homeView, libraryView, itemView, searchView, comingSoonView } from './views.js';
 
 const viewEl = document.getElementById('view');
 const topbar = document.getElementById('topbar');
@@ -48,7 +48,7 @@ async function route(opts = {}) {
 
   topbar.hidden = name === 'login';
   document.querySelectorAll('.tabs a').forEach((a) =>
-    a.classList.toggle('active', a.dataset.tab === (name === 'listen' ? 'listen' : 'watch')));
+    a.classList.toggle('active', a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   document.getElementById('userMenu').hidden = true;
 
   const ctx = makeCtx();
@@ -59,7 +59,8 @@ async function route(opts = {}) {
     case 'library': return libraryView(viewEl, ctx, id);
     case 'item': return itemView(viewEl, ctx, id);
     case 'search': return searchView(viewEl, ctx);
-    case 'listen': return listenView(viewEl, ctx);
+    case 'music': return comingSoonView(viewEl, 'Music from Navidrome will live here.');
+    case 'audiobooks': return comingSoonView(viewEl, 'Audiobooks from Audiobookshelf will live here.');
     default: return homeView(viewEl, ctx);
   }
 }

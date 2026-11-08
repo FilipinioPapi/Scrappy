@@ -437,13 +437,13 @@ export function searchView(root, ctx) {
   if (q.value) run();
 }
 
-// ---------------- Listen ----------------
+// ---------------- Music / Audiobooks (later) ----------------
 
-export function listenView(root) {
+export function comingSoonView(root, text) {
   root.innerHTML = `
     <div class="coming-soon"><div>
       <h1>Coming soon</h1>
-      <p>Music from Navidrome will live here.</p>
+      <p>${esc(text)}</p>
     </div></div>`;
 }
 
