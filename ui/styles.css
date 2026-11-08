@@ -856,3 +856,15 @@ select.pick:hover { border-color: var(--red-border); }
 .row-arrow.l:hover svg { transform: translateX(-4px) scale(1.15); }
 .row-arrow.r:hover svg { transform: translateX(4px) scale(1.15); }
 .row-arrow:active svg { transform: scale(.9); transition-duration: .08s; }
+
+/* Grid layout (option A): small pictures with number and name */
+.ep-grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 16px 12px; }
+.ep-thumb { position: relative; min-width: 0; cursor: pointer; animation: rowIn .35s var(--spring) both; }
+.ep-thumb .card { width: 100%; }
+.ep-thumb .ep-num { position: absolute; left: 7px; top: 7px; z-index: 2; min-width: 24px; height: 21px; padding: 0 6px; border-radius: 6px; display: grid; place-items: center; background: rgba(12,8,8,.86); font-size: 12px; font-weight: 800; pointer-events: none; }
+.ep-thumb.next .ep-num { background: var(--red); color: #fff; }
+.ep-thumb.watched .card .art img { opacity: .55; }
+.ep-thumb.current .card .art { box-shadow: 0 0 0 2px var(--text); }
+.ep-thumb .ep-name { margin-top: 7px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .15s; }
+.ep-thumb:hover .ep-name { color: #fff; }
+#view.quiet .live .ep-thumb { animation: rowIn .35s var(--spring) both !important; }

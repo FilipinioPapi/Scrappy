@@ -1018,7 +1018,8 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
     };
     const num = (e) => (e.IndexNumber != null ? `${e.IndexNumber}. ` : '');
     if (view === 'grid') {
-      // Every episode as a numbered tile; long seasons split into blocks of 100.
+      // Every episode as a small picture with its number and name; long seasons
+      // split into blocks of 100, opening on the block with your next episode.
       const upNext = eps.find((e) => e.UserData?.PlaybackPositionTicks > 0 && !e.UserData?.Played) || eps.find((e) => !e.UserData?.Played);
       const blocks = Math.ceil(eps.length / GRID_BLOCK);
       let block = Math.max(0, Math.floor(Math.max(0, eps.indexOf(upNext)) / GRID_BLOCK));
@@ -1029,16 +1030,13 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
             const a = eps[b * GRID_BLOCK], z = eps[Math.min(eps.length, (b + 1) * GRID_BLOCK) - 1];
             return `<button class="ep-block ${b === block ? 'on' : ''}" data-block="${b}">${a?.IndexNumber ?? b * GRID_BLOCK + 1}–${z?.IndexNumber ?? (b + 1) * GRID_BLOCK}</button>`;
           }).join('')}</div>` : ''}
-          <div class="ep-grid">${part.map((e) => {
-            const ud = e.UserData || {};
-            const pct = ud.PlaybackPositionTicks && e.RunTimeTicks && !ud.Played ? (100 * ud.PlaybackPositionTicks / e.RunTimeTicks).toFixed(1) : 0;
-            const cls = e === upNext ? 'next' : ud.Played ? 'watched' : '';
-            return `<button class="ep-tile ${cls} ${e.Id === currentId ? 'current' : ''}" data-goto="${esc(e.Id)}" title="${esc(num(e) + e.Name)}">${e.IndexNumber ?? '•'}${pct ? `<i style="width:${pct}%"></i>` : ''}</button>`;
-          }).join('')}</div>
-          <div class="ep-grid-note">Hover a number to see its name, click it to open the episode. Dim = watched, red = up next.</div>`;
+          <div class="ep-grid">${part.map((e, i) => `
+            <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
+              ${card(e, { shape: 'wide', noTitle: true })}
+              <span class="ep-num">${e.IndexNumber ?? '•'}</span>
+              <div class="ep-name">${esc(e.Name)}</div>
+            </div>`).join('')}</div>`;
         list.querySelectorAll('[data-block]').forEach((b) => b.addEventListener('click', () => { block = Number(b.dataset.block); draw(); }));
-        // Tiles only show a number, so they open the episode's page instead of playing.
-        list.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/item/${encodeURIComponent(b.dataset.goto)}`; }));
       };
       draw();
     } else if (view === 'row') {
