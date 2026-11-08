@@ -68,7 +68,7 @@ async function route(opts = {}) {
   }
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
-    case 'library': return libraryView(viewEl, ctx, id);
+    case 'library': return libraryView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'search': return searchView(viewEl, ctx);
     case 'music': return comingSoonView(viewEl, 'Music from Navidrome will live here.');

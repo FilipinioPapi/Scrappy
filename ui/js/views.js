@@ -76,7 +76,8 @@ export async function homeView(root, ctx) {
         <div class="section-head"><h2>My Media</h2></div>
         <div class="row">${views.map(libTile).join('')}</div>
       </section>
-      ${views.filter((v) => !NO_LATEST.has(v.CollectionType)).map((v) => `<div data-row="latest-${esc(v.Id)}"></div>`).join('')}`;
+      ${views.filter((v) => !NO_LATEST.has(v.CollectionType)).map((v) => `<div data-row="latest-${esc(v.Id)}"></div>`).join('')}
+      <div data-row="genres"></div>`;
     root.querySelectorAll('[data-row]').forEach((r) => {
       if (oldRows[r.dataset.row]) r.replaceWith(oldRows[r.dataset.row]);
     });
@@ -91,6 +92,7 @@ function loadRows(root, ctx, views) {
   rowsLoadedFor = ctx;
   const q = `Fields=${FIELDS}&${IMG_OPTS}`;
 
+  genreSection(root, ctx, views);
   const heroPools = {};
   const feedHero = (name, items) => { heroPools[name] = items; buildHero(root, ctx, heroPools); };
 
@@ -125,6 +127,104 @@ function loadRows(root, ctx, views) {
         }, ctx.alive).catch(() => {});
       }
     });
+}
+
+// ---------------- Browse by genre ----------------
+// One tab per Movies / TV library (so TV shows and anime stay apart), each with
+// a row per genre, biggest genres first. Rows fill in as you scroll to them.
+
+const GENRE_LIBS = new Set(['movies', 'tvshows', 'mixed', undefined, null, '']);
+const GENRE_MIN = 6;
+
+function genreTypes(v) {
+  if (v.CollectionType === 'movies') return 'Movie';
+  if (v.CollectionType === 'tvshows') return 'Series';
+  return 'Movie,Series';
+}
+
+function genreSection(root, ctx, views) {
+  const slot = root.querySelector('[data-row=genres]');
+  if (!slot || slot.dataset.ready) return;
+  const libs = views.filter((v) => GENRE_LIBS.has(v.CollectionType) && v.CollectionType !== 'boxsets');
+  if (!libs.length) return;
+  slot.dataset.ready = '1';
+  let current = localStorage.getItem('genreLib');
+  if (!libs.some((l) => l.Id === current)) current = libs[0].Id;
+  slot.innerHTML = `
+    <section class="section genre-section">
+      <div class="genre-head">
+        <h2 class="genre-title">BROWSE BY GENRE</h2>
+        ${libs.length > 1 ? `<div class="season-tabs">${libs.map((l) => `<button class="season-tab ${l.Id === current ? 'active' : ''}" data-lib="${esc(l.Id)}">${esc(l.Name)}</button>`).join('')}</div>` : ''}
+      </div>
+      <div class="genre-rows"></div>
+    </section>`;
+  const rowsEl = slot.querySelector('.genre-rows');
+  slot.querySelectorAll('[data-lib]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.lib === current) return;
+    current = b.dataset.lib;
+    localStorage.setItem('genreLib', current);
+    slot.querySelectorAll('[data-lib]').forEach((t) => t.classList.toggle('active', t === b));
+    b.classList.add('live');
+    showLib(libs.find((l) => l.Id === current), true);
+  }));
+  let io = null;
+  ctx.onLeave(() => io?.disconnect());
+  let gen = 0;
+  async function showLib(lib, live) {
+    const my = ++gen;
+    io?.disconnect();
+    rowsEl.classList.toggle('live', !!live);
+    rowsEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    const types = genreTypes(lib);
+    let genres = [];
+    try {
+      const path = `/Genres?ParentId=${lib.Id}&UserId={userId}&IncludeItemTypes=${types}&Recursive=true&SortBy=SortName`;
+      const data = (await api.cached(path)) || (await api.get(path));
+      genres = data?.Items || [];
+      api.get(path).catch(() => {}); // keep the saved copy fresh for next time
+    } catch { genres = []; }
+    if (my !== gen || !ctx.alive()) return;
+    // Count each genre so the biggest come first and tiny ones are skipped.
+    const counted = await Promise.all(genres.map(async (g) => {
+      const path = `/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${g.Id}&IncludeItemTypes=${types}&Recursive=true&Limit=0`;
+      try {
+        const r = (await api.cached(path)) || (await api.get(path));
+        api.get(path).catch(() => {});
+        return { g, n: r?.TotalRecordCount || 0 };
+      } catch { return { g, n: 0 }; }
+    }));
+    if (my !== gen || !ctx.alive()) return;
+    const list = counted.filter((x) => x.n >= GENRE_MIN).sort((a, b) => b.n - a.n);
+    if (!list.length) { rowsEl.innerHTML = '<div class="empty">No genres with enough titles yet.</div>'; return; }
+    rowsEl.innerHTML = list.map(({ g, n }) => `
+      <div class="genre-row" data-genre="${esc(g.Id)}">
+        <div class="section-head"><h2>${esc(g.Name)}</h2><span class="count">${n} titles</span><span class="spacer"></span>
+          <a class="see-all" href="#/library/${encodeURIComponent(lib.Id)}/${encodeURIComponent(g.Id)}">See all ›</a></div>
+        <div class="row genre-items"><div class="genre-ph"></div></div>
+      </div>`).join('');
+    io = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        io.unobserve(en.target);
+        fillGenreRow(en.target, lib, types, ctx, my, () => gen);
+      }
+    }, { rootMargin: '400px' });
+    rowsEl.querySelectorAll('.genre-row').forEach((r) => io.observe(r));
+  }
+  showLib(libs.find((l) => l.Id === current), false);
+}
+
+async function fillGenreRow(rowEl, lib, types, ctx, my, getGen) {
+  const id = rowEl.dataset.genre;
+  try {
+    // Random order so each visit shows something different.
+    const data = await api.get(`/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${id}&IncludeItemTypes=${types}&Recursive=true&SortBy=Random&Limit=20&Fields=${FIELDS}&${IMG_OPTS}`);
+    if (my !== getGen() || !ctx.alive()) return;
+    const items = data?.Items || [];
+    const box = rowEl.querySelector('.genre-items');
+    box.innerHTML = items.map((i) => card(i, { shape: 'portrait' })).join('');
+    rowEl.classList.add('filled');
+  } catch {}
 }
 
 // ---------------- Home banner ----------------
@@ -305,23 +405,25 @@ function libraryQuery(view) {
   }
 }
 
-export async function libraryView(root, ctx, id) {
+// genreId: show only that genre inside the library ("See all" from a genre row).
+export async function libraryView(root, ctx, id, genreId = '') {
   root.innerHTML = loadingHtml();
-  let view;
+  let view, genre = null;
   try {
     view = (await api.cached(`/Users/{userId}/Items/${id}`)) || (await api.get(`/Users/{userId}/Items/${id}`));
+    if (genreId) genre = (await api.cached(`/Users/{userId}/Items/${genreId}`)) || (await api.get(`/Users/{userId}/Items/${genreId}`));
   } catch (e) {
     return ctx.fail(e);
   }
   if (!ctx.alive()) return;
-  const sortKey = 'sort:' + id;
+  const sortKey = 'sort:' + id + (genreId ? ':g' : '');
   let sortIdx = Number(localStorage.getItem(sortKey) || 0);
   if (!SORTS[sortIdx]) sortIdx = 0;
 
   root.innerHTML = `
     <section class="section">
       <div class="section-head">
-        <h2>${esc(view.Name)}</h2><span class="count" id="count"></span>
+        <h2>${genre ? `${esc(genre.Name)} <span class="h-dim">· ${esc(view.Name)}</span>` : esc(view.Name)}</h2><span class="count" id="count"></span>
         <span class="spacer"></span>
         <select id="sort">${SORTS.map((s, i) => `<option value="${i}" ${i === sortIdx ? 'selected' : ''}>${s[2]}</option>`).join('')}</select>
       </div>
@@ -336,7 +438,7 @@ export async function libraryView(root, ctx, id) {
 
   const base = () => {
     const [by, order] = SORTS[sortIdx];
-    return `/Users/{userId}/Items?ParentId=${id}&${libraryQuery(view)}&SortBy=${by},SortName&SortOrder=${order}&Fields=${FIELDS}&${IMG_OPTS}&Limit=${PAGE}`;
+    return `/Users/{userId}/Items?ParentId=${id}&${libraryQuery(view)}${genreId ? `&GenreIds=${genreId}` : ''}&SortBy=${by},SortName&SortOrder=${order}&Fields=${FIELDS}&${IMG_OPTS}&Limit=${PAGE}`;
   };
 
   async function more() {

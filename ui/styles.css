@@ -702,3 +702,18 @@ textarea:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(236,40,46,
 .p-pi-overview { font-size: 15px; color: #EADADA; line-height: 1.55; margin-top: 12px; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .p-pi-meta { font-size: 13px; color: var(--muted); margin-top: 16px; }
 #player.pause-info .p-spinner { display: none; }
+
+/* ---------- Browse by genre ---------- */
+.genre-section { margin-top: 40px; }
+.genre-head { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+.genre-title { margin: 0; font-family: var(--display); font-weight: 400; font-size: 30px; color: var(--red); letter-spacing: .5px; text-shadow: 0 2px 0 #000; }
+.genre-head .season-tabs { margin: 0; padding: 0; }
+.genre-row { margin-bottom: 28px; min-height: 290px; }
+.genre-row.filled .genre-items .card { animation: rowIn .45s var(--spring) both; }
+#view.quiet .genre-rows.live .genre-row.filled .genre-items .card { animation: rowIn .45s var(--spring) both !important; }
+.genre-ph { width: 100%; height: 255px; border-radius: var(--radius); background: linear-gradient(90deg, var(--bg-2), #24191a, var(--bg-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.see-all { font-size: 13px; font-weight: 700; color: var(--muted); transition: color .15s, transform .25s var(--spring); display: inline-block; }
+.see-all:hover { color: var(--text); transform: translateX(3px); }
+.h-dim { color: var(--muted); font-weight: 600; }
+.row .card.portrait { width: 170px; }
