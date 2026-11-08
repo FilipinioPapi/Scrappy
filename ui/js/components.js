@@ -94,7 +94,7 @@ export function card(it, opts = {}) {
 // One click handler for every "play" button anywhere in the app.
 export async function playItem(id, fromStart = false) {
   const player = await import('./player.js');
-  player.startPlayback(id, fromStart);
+  player.startPlayback(id, { fromStart });
 }
 
 document.addEventListener('click', (e) => {

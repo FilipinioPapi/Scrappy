@@ -8,7 +8,7 @@ export const api = {
   logout: () => invoke('logout'),
   get: (path) => invoke('api_get', { path }),
   cached: (path) => invoke('api_cached', { path }),
-  play: (itemId, fromStart = false, embedded = true) => invoke('play', { itemId, fromStart, embedded }),
+  play: (itemId, o = {}) => invoke('play', { itemId, fromStart: !!o.fromStart, embedded: o.embedded ?? true, startSecs: o.startSecs ?? null, maxBitrate: o.maxBitrate ?? null }),
   clearCache: () => invoke('clear_cache'),
 };
 

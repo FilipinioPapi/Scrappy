@@ -130,6 +130,7 @@ struct NowPlaying {
     pos_ticks: i64,
     paused: bool,
     started: bool,
+    external_subs: Vec<(String, String, String)>,
 }
 
 fn report_body(np: &NowPlaying, event: Option<&str>) -> Value {
@@ -203,6 +204,16 @@ fn on_mpv_event(app: &AppHandle, player_id: usize, last_emit: &Mutex<std::time::
             let _ = app.emit("mpv-prop", json!({ "name": name, "value": value }));
         }
         mpv::Event::FileLoaded => {
+            // Add the server's external subtitle files (without switching to them).
+            let subs = state.now.lock().unwrap().as_ref().map(|n| n.external_subs.clone()).unwrap_or_default();
+            if !subs.is_empty() {
+                let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
+                if let Some(p) = p {
+                    for (url, title, lang) in subs {
+                        let _ = p.command(&["sub-add", &url, "auto", &title, &lang]);
+                    }
+                }
+            }
             let snapshot = {
                 let mut now = state.now.lock().unwrap();
                 now.as_mut().map(|np| {
@@ -333,16 +344,22 @@ async fn play(
     item_id: String,
     from_start: Option<bool>,
     embedded: Option<bool>,
+    start_secs: Option<f64>,
+    max_bitrate: Option<u64>,
 ) -> Result<Value, String> {
     let embedded = embedded.unwrap_or(true);
     let cfg = state.cfg();
-    let item = emby::get(&state.http, &cfg, &format!("/Users/{{userId}}/Items/{item_id}")).await?;
-    let start_ticks = if from_start.unwrap_or(false) {
+    let item = emby::get(&state.http, &cfg, &format!("/Users/{{userId}}/Items/{item_id}?Fields=Chapters")).await?;
+    let start_ticks = if let Some(s) = start_secs {
+        (s * 10_000_000.0) as i64
+    } else if from_start.unwrap_or(false) {
         0
     } else {
         item["UserData"]["PlaybackPositionTicks"].as_i64().unwrap_or(0)
     };
-    let target = emby::playback_target(&state.http, &cfg, &item_id, start_ticks).await?;
+    // mpv seeks to the start point itself, so the stream always starts at 0 and
+    // positions stay true to the file even when Emby transcodes.
+    let target = emby::playback_target(&state.http, &cfg, &item_id, 0, max_bitrate).await?;
 
     // Save the resume point of whatever was playing before.
     finish_current(&app);
@@ -356,6 +373,11 @@ async fn play(
         pos_ticks: start_ticks,
         paused: false,
         started: false,
+        external_subs: target
+            .external_subs
+            .iter()
+            .map(|s| (s.url.clone(), s.title.clone(), s.lang.clone()))
+            .collect(),
     });
     let title = display_title(&item);
     let start = if start_ticks > 10_000_000 {

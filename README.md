@@ -32,7 +32,7 @@ npx tauri build   # installer in src-tauri/target/release/bundle/nsis
 
 1. ✅ Log in, browse libraries, play with mpv
 2. 🔧 Progress sync, Continue Watching, Latest rows, next episode, built-in player
-3. Subtitles, audio tracks, speed, aspect ratio, quality
-4. Skip intro and credits
+3. 🔧 Subtitles, audio tracks, speed, aspect ratio, quality, adjustable skip lengths
+4. 🔧 Skip intro and credits (uses Emby's intro/credits markers)
 5. Window modes, keyboard shortcuts, settings
 6. App icon

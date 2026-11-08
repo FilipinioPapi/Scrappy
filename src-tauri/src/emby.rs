@@ -243,8 +243,15 @@ pub fn device_profile(max_bitrate: u64) -> Value {
     })
 }
 
+pub struct ExternalSub {
+    pub url: String,
+    pub title: String,
+    pub lang: String,
+}
+
 pub struct PlayTarget {
     pub url: String,
+    pub external_subs: Vec<ExternalSub>,
     pub play_method: String,
     pub media_source_id: String,
     pub play_session_id: String,
@@ -256,12 +263,19 @@ pub async fn playback_target(
     cfg: &Config,
     item_id: &str,
     start_ticks: i64,
+    max_bitrate: Option<u64>,
 ) -> Result<PlayTarget, String> {
-    let max_bitrate: u64 = 200_000_000;
-    let path = format!(
+    // No limit = "Original": direct play whenever possible.
+    // A limit = the user picked a lower quality, so ask Emby to transcode.
+    let capped = max_bitrate.is_some();
+    let max_bitrate: u64 = max_bitrate.unwrap_or(200_000_000);
+    let mut path = format!(
         "/Items/{item_id}/PlaybackInfo?UserId={}&StartTimeTicks={start_ticks}&IsPlayback=true&AutoOpenLiveStream=true&MaxStreamingBitrate={max_bitrate}",
         cfg.user_id
     );
+    if capped {
+        path.push_str("&EnableDirectPlay=false&EnableDirectStream=false");
+    }
     let info = send(
         http,
         cfg,
@@ -281,8 +295,28 @@ pub async fn playback_target(
         .ok_or("Emby returned no playable version of this item.")?;
     let media_source_id = source["Id"].as_str().unwrap_or_default().to_string();
 
-    let direct = source["SupportsDirectPlay"].as_bool().unwrap_or(false)
-        || source["SupportsDirectStream"].as_bool().unwrap_or(false);
+    // Subtitle files that sit next to the video on the server.
+    let mut external_subs = Vec::new();
+    for st in source["MediaStreams"].as_array().cloned().unwrap_or_default() {
+        if st["Type"].as_str() != Some("Subtitle") || !st["IsExternal"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let Some(rel) = st["DeliveryUrl"].as_str() else { continue };
+        let mut url = if rel.starts_with("http") { rel.to_string() } else { format!("{}{}", cfg.server, rel) };
+        if !url.contains("api_key=") {
+            url.push_str(if url.contains('?') { "&" } else { "?" });
+            url.push_str(&format!("api_key={}", cfg.token));
+        }
+        external_subs.push(ExternalSub {
+            url,
+            title: st["DisplayTitle"].as_str().or(st["Title"].as_str()).unwrap_or("External").to_string(),
+            lang: st["Language"].as_str().unwrap_or("").to_string(),
+        });
+    }
+
+    let direct = !capped
+        && (source["SupportsDirectPlay"].as_bool().unwrap_or(false)
+            || source["SupportsDirectStream"].as_bool().unwrap_or(false));
 
     // Remote items (e.g. .strm files pointing to a URL) are played straight from their URL.
     if direct
@@ -292,6 +326,7 @@ pub async fn playback_target(
         if let Some(p) = source["Path"].as_str() {
             return Ok(PlayTarget {
                 url: p.to_string(),
+                external_subs,
                 play_method: "DirectPlay".into(),
                 media_source_id,
                 play_session_id,
@@ -310,6 +345,7 @@ pub async fn playback_target(
         );
         return Ok(PlayTarget {
             url,
+            external_subs,
             play_method: "DirectStream".into(),
             media_source_id,
             play_session_id,
@@ -323,6 +359,7 @@ pub async fn playback_target(
         }
         return Ok(PlayTarget {
             url,
+            external_subs,
             play_method: "Transcode".into(),
             media_source_id,
             play_session_id,
