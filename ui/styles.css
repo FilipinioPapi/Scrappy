@@ -26,7 +26,8 @@
   --accent-hi: var(--red-hi);
   --radius: 10px;
   --gutter: 48px;
-  --spring: cubic-bezier(.34,1.56,.64,1);
+  --spring: cubic-bezier(.2,.8,.2,1);      /* soft, no overshoot (style B) */
+  --ease: cubic-bezier(.2,.8,.2,1);
   --ease-out: cubic-bezier(.22,1,.36,1);
   --display: "Luckiest Guy", "Inter", sans-serif;
   color-scheme: dark;
@@ -899,3 +900,74 @@ select.pick:hover { border-color: var(--red-border); }
 /* Details page cog */
 .icon-toggle.cog svg { transition: transform .45s var(--spring); }
 .icon-toggle.cog:hover svg { transform: rotate(70deg); }
+
+/* =====================================================================
+   Style B (approved for Music, now app-wide): soft rounded squares,
+   see-through fills, flat red for main/selected, thin 1.75 line icons,
+   gentle hover and press. Overrides the old raised buttons above.
+   ===================================================================== */
+button svg [stroke-width], a svg [stroke-width], .ctx-item svg [stroke-width], svg.line [stroke-width] { stroke-width: 1.75; }
+.raised, .icon-btn, .btn, .season-tab, .back-btn, .p-btn, .p-pill, .p-speed, .icon-toggle, .ep-block {
+  border: 0 !important; background: rgba(255,255,255,.08); color: #E9DADB; box-shadow: none !important;
+  transition: background .28s var(--ease), color .28s var(--ease), transform .28s var(--ease), opacity .28s var(--ease);
+}
+.raised:hover, .icon-btn:hover, .btn:hover, .season-tab:hover, .back-btn:hover, .p-btn:hover, .p-pill:hover, .p-speed:hover, .icon-toggle:hover, .ep-block:hover {
+  transform: none; background: rgba(255,255,255,.14); color: #fff;
+}
+.raised:active, .icon-btn:active, .btn:active, .season-tab:active, .back-btn:active, .p-btn:active, .p-pill:active, .p-speed:active, .icon-toggle:active, .ep-block:active {
+  transform: scale(.96); transition-duration: .1s;
+}
+.btn:not(.secondary), .season-tab.active, .raised.on, .p-cc.on, .p-cog.on, .p-epsbtn.on, .icon-toggle.on, .ep-tile.next, .ctx-item.primary {
+  background: var(--red) !important; color: #fff; border: 0 !important; box-shadow: none !important;
+}
+.btn:not(.secondary):hover, .season-tab.active:hover, .raised.on:hover, .p-cc.on:hover, .p-cog.on:hover, .p-epsbtn.on:hover, .icon-toggle.on:hover, .ctx-item.primary:hover { background: #F2393F !important; }
+.btn:not(.secondary):hover { transform: scale(1.03); }
+.btn:not(.secondary):active { transform: scale(.96); }
+.tabs a.active, .season-tab.active, .raised.on, .bounce { animation: none; }
+#view.quiet .season-tab.active.live { animation: none !important; }
+.btn, .season-tab, select.pick, .ep-block { border-radius: 10px; }
+.btn { height: 42px; font-weight: 600; }
+.icon-btn, .back-btn, .icon-toggle { border-radius: 10px; }
+.icon-btn:hover svg, .back-btn:hover svg, .icon-toggle:hover svg, .p-btn:hover svg, .ctx-item:hover svg { transform: scale(1.08); }
+.icon-btn svg, .back-btn svg, .icon-toggle svg, .p-btn svg { transition: transform .3s var(--ease); }
+
+/* Top tabs: one segmented control with a red pill that slides between tabs. */
+.tabs { position: relative; gap: 2px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.06); }
+.tabs a { position: relative; z-index: 1; height: 36px; padding: 0 18px; border-radius: 9px; border: 0; background: transparent; box-shadow: none; color: #D9C3C4; font-weight: 600;
+  transition: color .3s var(--ease), background .3s var(--ease); }
+.tabs a:hover { transform: none; background: rgba(255,255,255,.06); color: #fff; box-shadow: none; }
+.tabs a:active { transform: scale(.96); box-shadow: none; }
+.tabs a.active { color: #fff; background: transparent; border: 0; box-shadow: none; }
+.tabs a.active:hover { background: transparent; box-shadow: none; }
+.tabs .tab-pill { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 4px; width: 0; border-radius: 9px; background: var(--red); pointer-events: none; }
+.tabs .tab-pill.ready { transition: left .5s var(--ease), width .5s var(--ease); }
+.tabs:not(.has-pill) a.active { background: var(--red); }
+
+/* Cards: the play button is a flat red circle. */
+.play-over span { background: var(--red); border: 0; box-shadow: 0 6px 16px rgba(0,0,0,.45); transition: transform .3s var(--ease), background .2s; }
+.play-over span:hover { transform: scale(1.06) !important; background: #F2393F; }
+.play-over span:active { transform: scale(.94) !important; }
+
+/* Player controls: soft round buttons, flat red play button. */
+.p-btn, .p-pill, .p-speed { background: rgba(255,255,255,.1); backdrop-filter: blur(10px); }
+.p-play { border: 0 !important; background: var(--red) !important; box-shadow: none !important; transition: transform .28s var(--ease), background .2s; }
+.p-play:hover { transform: scale(1.05); background: #F2393F !important; }
+.p-play:active { transform: scale(.94); }
+.p-btn.p-next:hover { transform: scale(1.03); }
+.p-skip { border: 0; background: rgba(30,20,21,.85); backdrop-filter: blur(14px); box-shadow: none; }
+.p-skip:hover { transform: none; }
+
+/* Right-click menu and pop-ups: frosted glass. */
+.ctx-menu, .menu { background: rgba(40,26,27,.86) !important; backdrop-filter: blur(22px) saturate(1.4); border-color: rgba(255,255,255,.08) !important; border-radius: 14px; }
+.ctx-item { border-radius: 8px; font-weight: 500; }
+.ctx-item:hover { background: rgba(255,255,255,.08); }
+.ctx-item.primary { margin: 2px 2px 8px; }
+
+/* Episode layout switch and blocks: same segmented look as the tabs. */
+.seg { border: 0; border-radius: 12px; background: rgba(255,255,255,.06); }
+.seg button { border-radius: 9px; transition: background .28s var(--ease), color .28s var(--ease); }
+.seg button.on, .seg button.active { background: var(--red); color: #fff; box-shadow: none; }
+select.pick { background-color: rgba(255,255,255,.08); border: 0; }
+.ep-tile:hover, .card:hover .art, .img-opt:hover { transform: translateY(-3px); }
+.search-box input { border-radius: 12px; }
+.p-skip svg { color: var(--red); } .p-skip:hover svg { color: #fff; }

@@ -57,6 +57,17 @@ function makeCtx() {
   };
 }
 
+// The red pill behind the active top tab slides to whichever tab is picked.
+function moveTabPill() {
+  const nav = document.querySelector('.tabs'); if (!nav || nav.closest('[hidden]')) return;
+  let pill = nav.querySelector('.tab-pill');
+  if (!pill) { pill = document.createElement('span'); pill.className = 'tab-pill'; nav.prepend(pill); nav.classList.add('has-pill'); }
+  const on = nav.querySelector('a.active'); if (!on || !on.offsetWidth) { requestAnimationFrame(moveTabPill); return; }
+  pill.style.left = on.offsetLeft + 'px'; pill.style.width = on.offsetWidth + 'px';
+  if (!pill.classList.contains('ready')) requestAnimationFrame(() => pill.classList.add('ready'));
+}
+window.addEventListener('resize', moveTabPill);
+
 async function route(opts = {}) {
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
@@ -68,6 +79,7 @@ async function route(opts = {}) {
   topbar.hidden = name === 'login';
   document.querySelectorAll('.tabs a').forEach((a) =>
     a.classList.toggle('active', a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
+  moveTabPill();
   document.getElementById('userMenu').hidden = true;
 
   const ctx = makeCtx();
