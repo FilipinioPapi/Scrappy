@@ -408,7 +408,14 @@ async function imagesDialog(id) {
         const x = list[Number(b.dataset.i)];
         b.classList.add('working');
         try {
+          const before = it.BackdropImageTags?.length || 0;
           await api.post(`/Items/${id}/RemoteImages/Download?Type=${type}&ImageUrl=${encodeURIComponent(x.Url)}&ProviderName=${encodeURIComponent(x.ProviderName || '')}`);
+          // Emby adds a downloaded backdrop at the end of the list, so move it to
+          // the front, otherwise the old one keeps showing everywhere.
+          if (type === 'Backdrop') {
+            const now = (await fresh(id)).BackdropImageTags?.length || 0;
+            if (now > before && now > 1) await api.post(`/Items/${id}/Images/Backdrop/${now - 1}/Index?newIndex=0`);
+          }
           grid.querySelectorAll('.img-opt.picked').forEach((p) => p.classList.remove('picked'));
           b.classList.add('picked');
           toast('Image updated');

@@ -397,7 +397,33 @@ async function buildHero(root, ctx) {
   heroReady();
 }
 
+// The banner keeps the same set of picks for a few hours, so it doesn't
+// reshuffle every time Home reloads (after watching or editing something).
+const HERO_KEEP_FOR = 6 * 60 * 60 * 1000;
+const heroSetKey = (ctx) => `heroSet:${ctx.session?.server || ''}:${ctx.session?.userId || ''}`;
+async function keptHeroPicks(ctx) {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(heroSetKey(ctx)) || 'null'); } catch {}
+  if (!saved?.list?.length || Date.now() - saved.at > HERO_KEEP_FOR) return null;
+  const d = await api.get(`/Users/{userId}/Items?Ids=${saved.list.map((x) => x.id).join(',')}&Fields=${FIELDS},Overview,DateCreated,Genres&${IMG_OPTS}&EnableUserData=true`);
+  const byId = new Map((d?.Items || []).map((it) => [it.Id, it]));
+  const picks = [];
+  for (const x of saved.list) {
+    const it = byId.get(x.id);
+    // Gone from the server, or a movie/episode you've since finished: drop it.
+    if (!it || (it.Type !== 'Series' && it.UserData?.Played)) continue;
+    const b = heroBackdrop(it);
+    if (!b) continue;
+    picks.push({ it, kicker: x.kicker, why: x.why, url: img(b.id, 'Backdrop', b.tag, 1920, 0) });
+  }
+  return picks.length >= Math.min(3, saved.list.length) ? picks : null;
+}
+
 async function fillHero(slot, ctx, my) {
+  let kept = null;
+  try { kept = await keptHeroPicks(ctx); } catch {}
+  if (my !== heroGen || !ctx.alive()) return;
+  if (kept) return showHeroPicks(slot, ctx, my, kept, false);
   let P;
   try { P = await heroPools(); } catch { P = {}; }
   for (const k of ['pickBack', 'newEps', 'because', 'added', 'never', 'oldFavs']) P[k] = P[k] || [];
@@ -435,6 +461,11 @@ async function fillHero(slot, ctx, my) {
   }
   // Nothing usable this time: keep whatever banner is already showing.
   if (!picks.length) return;
+  return showHeroPicks(slot, ctx, my, picks, true);
+}
+
+async function showHeroPicks(slot, ctx, my, picks, isNew) {
+  if (isNew) try { localStorage.setItem(heroSetKey(ctx), JSON.stringify({ at: Date.now(), list: picks.map((p) => ({ id: p.it.Id, kicker: p.kicker, why: p.why })) })); } catch {}
   const seriesInfo = {};
   await Promise.all(picks.filter((p) => p.it.Type === 'Episode' && p.it.SeriesId).map(async (p) => {
     try { seriesInfo[p.it.SeriesId] = (await api.cached(`/Users/{userId}/Items/${p.it.SeriesId}`)) || (await api.get(`/Users/{userId}/Items/${p.it.SeriesId}`)); } catch {}
@@ -539,7 +570,10 @@ function renderHero(slot, ctx, picks, seriesInfo) {
       Object.assign(seriesInfo, info);
       const cur = picks[i];
       const key = (p) => p.it.SeriesId || p.it.Id;
-      picks = [cur, ...fresh.filter((p) => key(p) !== key(cur))].slice(0, HERO_SLIDES);
+      const same = fresh.find((p) => key(p) === key(cur));
+      // Same title but a new picture (e.g. after Edit images): swap it in place.
+      if (same && same.url !== cur.url) { const im = box.querySelector('.hero-bg img'); if (im) im.src = same.url; }
+      picks = [same || cur, ...fresh.filter((p) => key(p) !== key(cur))].slice(0, HERO_SLIDES);
       i = 0;
       drawNav();
       restart();
