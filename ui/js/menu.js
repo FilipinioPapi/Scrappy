@@ -1,7 +1,7 @@
 // Right-click menu for posters and cards, plus the "Manage" windows
 // (edit metadata, images, subtitles, identify, refresh, delete).
 import { api, img } from './api.js';
-import { esc, toast, playItem, isPlayable } from './components.js';
+import { esc, toast, playItem, playSeries, isPlayable } from './components.js';
 
 const ICON = {
   play: '<svg viewBox="0 0 24 24"><path d="M7 5v14l11-7z" fill="currentColor"/></svg>',
@@ -14,10 +14,49 @@ const ICON = {
   cc: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 14h4M13 14h4M7 10.5h2M11 10.5h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   identify: '<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 9h6M9 13h6M9 17h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   refresh: '<svg viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 5v4h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  grid: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="9" rx="1.5"/><rect x="3" y="15" width="18" height="6" rx="1.5"/></g></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
 };
 
 const refreshPage = () => window.dispatchEvent(new Event('scrappy:refresh'));
+
+// Fold a card out of its row: it shrinks away and its neighbours glide over.
+// Returns a function that brings it back.
+function foldAway(cardEl) {
+  const parent = cardEl.parentNode, next = cardEl.nextSibling;
+  const section = cardEl.closest('section');
+  cardEl.style.width = cardEl.offsetWidth + 'px';
+  void cardEl.offsetWidth;
+  cardEl.classList.add('folding');
+  setTimeout(() => {
+    cardEl.remove();
+    cardEl.classList.remove('folding');
+    cardEl.style.width = '';
+    // Last card gone: tuck the whole row away too.
+    if (section && !parent.querySelector('.card')) section.classList.add('row-gone');
+  }, 420);
+  return () => {
+    section?.classList.remove('row-gone');
+    parent.insertBefore(cardEl, next && next.parentNode === parent ? next : null);
+    cardEl.classList.remove('unfold');
+    void cardEl.offsetWidth;
+    cardEl.classList.add('unfold');
+    setTimeout(() => cardEl.classList.remove('unfold'), 500);
+  };
+}
+
+// A toast with a button (e.g. Undo) that stays a little longer.
+function actionToast(msg, label, onClick, ms = 6000) {
+  const el = document.createElement('div');
+  el.className = 'toast with-action';
+  el.innerHTML = `<span></span><button class="btn small"></button>`;
+  el.querySelector('span').textContent = msg;
+  const b = el.querySelector('button');
+  b.textContent = label;
+  b.addEventListener('click', () => { el.remove(); onClick(); });
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
 
 // ---------- What this account may do ----------
 
@@ -114,7 +153,16 @@ function render(it, inResume, pol, cardEl) {
   const row = (act, icon, label, cls = '') => `<button class="ctx-item ${cls}" data-act="${act}">${icon}<span>${label}</span></button>`;
   const manage = canEdit || canSubs || canDelete;
   menu.dataset.id = it.Id;
-  menu.innerHTML = `
+  if (it.Type === 'Person') {
+    // Cast & crew: open their page, or fix their details and photo.
+    menu.innerHTML = `
+    <div class="ctx-head">
+      <div class="ctx-thumb">${thumb ? `<img src="${esc(thumb)}" alt="">` : ''}</div>
+      <div class="ctx-names"><b>${esc(it.Name)}</b><span>Cast &amp; crew</span></div>
+    </div>
+    ${row('person', ICON.grid, 'See everything they’re in', 'primary')}
+    ${canEdit ? '<div class="ctx-sep"></div><div class="ctx-label">MANAGE</div>' + row('meta', ICON.pencil, 'Edit metadata…') + row('images', ICON.image, 'Edit images…') : ''}`;
+  } else menu.innerHTML = `
     <div class="ctx-head">
       <div class="ctx-thumb">${thumb ? `<img src="${esc(thumb)}" alt="">` : ''}</div>
       <div class="ctx-names"><b>${esc(it.Name)}</b><span>${esc(String(sub))}</span></div>
@@ -122,7 +170,7 @@ function render(it, inResume, pol, cardEl) {
     ${playable ? row('play', ICON.play, resumable ? 'Resume' : 'Play', 'primary') : ''}
     ${resumable ? row('restart', ICON.restart, 'Play from start') : ''}
     ${row('fav', ICON.heart(ud.IsFavorite), ud.IsFavorite ? 'Remove from Favorites' : 'Add to Favorites', ud.IsFavorite ? 'on' : '')}
-    ${row('played', ICON.check, ud.Played ? 'Mark Unplayed' : 'Mark Played', ud.Played ? 'on' : '')}
+    ${row('played', ICON.check, ud.Played ? 'Mark Unwatched' : 'Mark Watched', ud.Played ? 'on' : '')}
     ${inResume ? row('unresume', ICON.remove, 'Remove from Continue Watching') : ''}
     ${manage ? '<div class="ctx-sep"></div><div class="ctx-label">MANAGE</div>' : ''}
     ${canEdit ? row('meta', ICON.pencil, 'Edit metadata…') : ''}
@@ -141,7 +189,8 @@ function render(it, inResume, pol, cardEl) {
 }
 
 const ACTIONS = {
-  play: (it) => playItem(it.Id, false),
+  person: (it) => { location.hash = `#/person/${encodeURIComponent(it.Id)}`; },
+  play: (it) => (it.Type === 'Series' ? playSeries(it.Id) : it.Type === 'Season' && it.SeriesId ? playSeries(it.SeriesId) : playItem(it.Id, false)),
   restart: (it) => playItem(it.Id, true),
   async fav(it) {
     const on = !it.UserData?.IsFavorite;
@@ -155,21 +204,29 @@ const ACTIONS = {
     const on = !it.UserData?.Played;
     try {
       await (on ? api.post(`/Users/{userId}/PlayedItems/${it.Id}`) : api.del(`/Users/{userId}/PlayedItems/${it.Id}`));
-      toast(on ? `Marked ${it.Name} as played` : `Marked ${it.Name} as unplayed`);
+      toast(on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`);
       refreshPage();
     } catch (e) { toast(String(e), true); }
   },
   async unresume(it, cardEl) {
+    const oldTicks = it.UserData?.PlaybackPositionTicks || 0;
+    let hidden = true;
     try {
       await api.post(`/Users/{userId}/Items/${it.Id}/HideFromResume?Hide=true`);
     } catch (e) {
       // Older servers: clear the saved position instead.
+      hidden = false;
       try { await api.post(`/Users/{userId}/Items/${it.Id}/UserData`, { PlaybackPositionTicks: 0 }); }
       catch { toast(String(e), true); return; }
     }
-    cardEl?.classList.add('leaving');
-    toast(`Removed ${it.Name} from Continue Watching`);
-    setTimeout(refreshPage, 320);
+    const restore = cardEl ? foldAway(cardEl) : null;
+    actionToast(`Removed ${it.Name} from Continue Watching`, 'Undo', async () => {
+      try {
+        if (hidden) await api.post(`/Users/{userId}/Items/${it.Id}/HideFromResume?Hide=false`);
+        else await api.post(`/Users/{userId}/Items/${it.Id}/UserData`, { PlaybackPositionTicks: oldTicks });
+        restore?.();
+      } catch (e) { toast(String(e), true); }
+    });
   },
   meta: (it) => metadataDialog(it.Id),
   images: (it) => imagesDialog(it.Id),
@@ -487,3 +544,5 @@ function deleteDialog(it) {
     } catch (err) { toast(String(err), true); busy(e.target, false, 'Delete'); }
   };
 }
+
+export { subtitlesDialog };

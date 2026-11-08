@@ -78,8 +78,10 @@ export function card(it, opts = {}) {
     : ud.UnplayedItemCount
     ? `<span class="badge">${ud.UnplayedItemCount}</span>`
     : '';
+  // Episodes and Continue Watching: clicking anywhere on the picture plays it.
+  const clickPlay = isPlayable(it) && (opts.clickPlay || it.Type === 'Episode');
   return `
-    <a class="card ${shape}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
+    <a class="card ${shape}${clickPlay ? ' click-play' : ''}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
       <div class="art">
         <div class="ph">${esc(it.Name)}</div>
         ${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
@@ -98,9 +100,61 @@ export async function playItem(id, fromStart = false) {
 }
 
 document.addEventListener('click', (e) => {
+  const art = e.target.closest('.card.click-play .art');
+  if (!art || e.target.closest('[data-play]')) return;
+  e.preventDefault();
+  playItem(art.closest('.card').dataset.id);
+});
+
+document.addEventListener('click', (e) => {
   const p = e.target.closest('[data-play]');
   if (!p) return;
   e.preventDefault();
   e.stopPropagation();
   playItem(p.dataset.play, p.dataset.fromStart === '1');
+});
+
+// ---------- Shows: which episode "Play" should start ----------
+// Part-way through an episode → that one. Started the show → the next one.
+// Never started (or finished it) → the first episode.
+const EP_FIELDS = 'Fields=Overview,PrimaryImageAspectRatio';
+const targets = new Map();
+export async function seriesTarget(seriesId, fresh = false) {
+  if (!fresh && targets.has(seriesId)) return targets.get(seriesId);
+  const one = async (path) => {
+    try { const d = await api.get(path); return (Array.isArray(d) ? d : d?.Items || [])[0] || null; } catch { return null; }
+  };
+  const [resume, next, firsts] = await Promise.all([
+    one(`/Users/{userId}/Items/Resume?ParentId=${seriesId}&Recursive=true&MediaTypes=Video&Limit=1&${EP_FIELDS}`),
+    one(`/Shows/NextUp?SeriesId=${seriesId}&UserId={userId}&Limit=1&${EP_FIELDS}`),
+    api.get(`/Shows/${seriesId}/Episodes?UserId={userId}&Limit=40&${EP_FIELDS}`).then((d) => d?.Items || []).catch(() => []),
+  ]);
+  const first = firsts.find((e) => e.ParentIndexNumber !== 0) || firsts[0] || null;
+  const same = (a, b) => a && b && a.Id === b.Id;
+  let t;
+  if (resume) t = { ep: resume, first, started: true, resume: true };
+  else if (next && !same(next, first)) t = { ep: next, first, started: true, resume: false };
+  else t = { ep: first, first, started: false, resume: false };
+  targets.set(seriesId, t);
+  return t;
+}
+
+export function seriesPlayLabel(t) {
+  if (!t?.ep) return 'Play';
+  return t.started ? `Play ${epCode(t.ep) || ''}`.trim() : 'Play';
+}
+
+export async function playSeries(seriesId, fromStart = false) {
+  const t = await seriesTarget(seriesId, true);
+  if (fromStart) { if (t.first) playItem(t.first.Id, true); return; }
+  if (t.ep) playItem(t.ep.Id, false);
+  else toast('No episodes to play yet.', true);
+}
+
+document.addEventListener('click', (e) => {
+  const p = e.target.closest('[data-play-series]');
+  if (!p) return;
+  e.preventDefault();
+  e.stopPropagation();
+  playSeries(p.dataset.playSeries, p.dataset.fromStart === '1');
 });

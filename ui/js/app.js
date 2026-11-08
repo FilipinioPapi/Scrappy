@@ -2,7 +2,7 @@ import { api, quiet } from './api.js';
 import './player.js';
 import './menu.js';
 import { toast } from './components.js';
-import { loginView, homeView, libraryView, itemView, searchView, comingSoonView } from './views.js';
+import { loginView, homeView, libraryView, itemView, personView, searchView, comingSoonView } from './views.js';
 
 const viewEl = document.getElementById('view');
 const topbar = document.getElementById('topbar');
@@ -70,6 +70,7 @@ async function route(opts = {}) {
     case 'login': return loginView(viewEl, ctx);
     case 'library': return libraryView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
+    case 'person': return personView(viewEl, ctx, id);
     case 'search': return searchView(viewEl, ctx);
     case 'music': return comingSoonView(viewEl, 'Music from Navidrome will live here.');
     case 'audiobooks': return comingSoonView(viewEl, 'Audiobooks from Audiobookshelf will live here.');
