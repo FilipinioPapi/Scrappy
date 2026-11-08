@@ -70,7 +70,7 @@ export async function homeView(root, ctx) {
     const oldRows = {};
     root.querySelectorAll('[data-row]').forEach((r) => (oldRows[r.dataset.row] = r));
     root.innerHTML = `
-      <div data-row="hero"></div>
+      <div data-row="hero"><section class="hero hero-wait"></section></div>
       <div data-row="resume"></div>
       <section class="section">
         <div class="section-head"><h2>Library</h2></div>
@@ -363,16 +363,38 @@ async function heroPools() {
 
 let heroTimer = null;
 let heroGen = 0;
+const heroReady = () => window.dispatchEvent(new Event('scrappy:ready'));
+const heroCacheKey = (ctx) => `heroCache:${ctx.session?.server || ''}:${ctx.session?.userId || ''}`;
+// Just what a slide needs, so the saved copy stays small.
+const HERO_KEEP = ['Id', 'Type', 'Name', 'SeriesId', 'SeriesName', 'ProductionYear', 'ChildCount', 'RunTimeTicks', 'OfficialRating', 'Overview', 'UserData', 'IndexNumber', 'ParentIndexNumber'];
+function saveHeroCache(ctx, picks, seriesInfo) {
+  try {
+    const slim = picks.slice(0, 1).map((p) => ({ url: p.url, kicker: p.kicker, why: p.why, it: Object.fromEntries(HERO_KEEP.filter((k) => p.it[k] != null).map((k) => [k, p.it[k]])) }));
+    const info = {};
+    slim.forEach((p) => { const s = seriesInfo[p.it.SeriesId]; if (s) info[p.it.SeriesId] = { Name: s.Name, Overview: s.Overview }; });
+    localStorage.setItem(heroCacheKey(ctx), JSON.stringify({ picks: slim, seriesInfo: info }));
+  } catch {}
+}
+
 async function buildHero(root, ctx) {
   const slot = root.querySelector('[data-row=hero]');
   if (!slot) return;
   const my = ++heroGen;
+  // Show last time's first slide straight away; the rest are fetched fresh.
+  if (!slot._hero) {
+    try {
+      const c = JSON.parse(localStorage.getItem(heroCacheKey(ctx)) || 'null');
+      if (c?.picks?.length) { slot._hero = renderHero(slot, ctx, c.picks, c.seriesInfo || {}); heroReady(); }
+    } catch {}
+  }
   try {
     await fillHero(slot, ctx, my);
   } catch (e) {
     // Never let one odd item take the whole banner down.
     console.error('banner', e);
   }
+  if (my === heroGen && slot.querySelector('.hero-wait')) slot.innerHTML = '';
+  heroReady();
 }
 
 async function fillHero(slot, ctx, my) {
@@ -418,7 +440,11 @@ async function fillHero(slot, ctx, my) {
     try { seriesInfo[p.it.SeriesId] = (await api.cached(`/Users/{userId}/Items/${p.it.SeriesId}`)) || (await api.get(`/Users/{userId}/Items/${p.it.SeriesId}`)); } catch {}
   }));
   if (my !== heroGen || !ctx.alive()) return;
-  renderHero(slot, ctx, picks, seriesInfo);
+  saveHeroCache(ctx, picks, seriesInfo);
+  // A banner is already showing (saved copy, or coming back to Home): keep the
+  // current slide where it is and slot the fresh ones in after it.
+  if (slot._hero && slot.contains(slot._hero.el)) slot._hero.update(ctx, picks, seriesInfo);
+  else slot._hero = renderHero(slot, ctx, picks, seriesInfo);
 }
 
 const CHEVRON_L = '<svg viewBox="0 0 28 56" aria-hidden="true"><path d="M22 4 6 28l16 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -453,14 +479,29 @@ function renderHero(slot, ctx, picks, seriesInfo) {
         </div>
       </div>`;
   };
-  const many = picks.length > 1;
   slot.innerHTML = `
     <section class="hero">
       <div class="hero-slide fwd">${slide(picks[0])}</div>
-      ${many ? `<button class="hero-arrow l" aria-label="Previous">${CHEVRON_L}</button><button class="hero-arrow r" aria-label="Next">${CHEVRON_R}</button>` : ''}
-      ${many ? `<div class="hero-dots">${picks.map((_, n) => `<button class="hero-dot ${n === 0 ? 'on' : ''}" data-n="${n}" aria-label="Show item ${n + 1}"></button>`).join('')}</div>` : ''}
+      <div class="hero-nav"></div>
     </section>`;
   const box = slot.querySelector('.hero-slide');
+  const nav = slot.querySelector('.hero-nav');
+  // Fade the picture in only once it has loaded, so it never pops in.
+  const softImg = () => {
+    const im = box.querySelector('.hero-bg img');
+    if (im && !im.complete) { im.classList.add('wait'); im.addEventListener('load', () => im.classList.remove('wait'), { once: true }); im.addEventListener('error', () => im.classList.remove('wait'), { once: true }); }
+  };
+  softImg();
+  const drawNav = () => {
+    const many = picks.length > 1;
+    nav.innerHTML = many
+      ? `<button class="hero-arrow l" aria-label="Previous">${CHEVRON_L}</button><button class="hero-arrow r" aria-label="Next">${CHEVRON_R}</button>
+         <div class="hero-dots">${picks.map((_, n) => `<button class="hero-dot ${n === i ? 'on' : ''}" data-n="${n}" aria-label="Show item ${n + 1}"></button>`).join('')}</div>`
+      : '';
+    nav.querySelectorAll('.hero-dot').forEach((d) => d.addEventListener('click', () => { const n = Number(d.dataset.n); show(n, n >= i ? 'fwd' : 'back'); restart(); }));
+    nav.querySelector('.hero-arrow.l')?.addEventListener('click', () => { show(i - 1, 'back'); restart(); });
+    nav.querySelector('.hero-arrow.r')?.addEventListener('click', () => { show(i + 1, 'fwd'); restart(); });
+  };
   // Shows: the Play button says which episode it will start.
   const fillSeriesLabel = () => {
     const b = box.querySelector('[data-play-series]');
@@ -474,22 +515,37 @@ function renderHero(slot, ctx, picks, seriesInfo) {
     void box.offsetWidth;
     box.innerHTML = slide(picks[i]);
     box.classList.add(dir);
+    softImg();
     slot.querySelectorAll('.hero-dot').forEach((d, k) => d.classList.toggle('on', k === i));
     fillSeriesLabel();
   };
   fillSeriesLabel();
-  slot.querySelectorAll('.hero-dot').forEach((d) => d.addEventListener('click', () => { const n = Number(d.dataset.n); show(n, n >= i ? 'fwd' : 'back'); restart(); }));
-  slot.querySelector('.hero-arrow.l')?.addEventListener('click', () => { show(i - 1, 'back'); restart(); });
-  slot.querySelector('.hero-arrow.r')?.addEventListener('click', () => { show(i + 1, 'fwd'); restart(); });
   let paused = false;
-  slot.querySelector('.hero').addEventListener('mouseenter', () => (paused = true));
-  slot.querySelector('.hero').addEventListener('mouseleave', () => (paused = false));
+  const el = slot.querySelector('.hero');
+  el.addEventListener('mouseenter', () => (paused = true));
+  el.addEventListener('mouseleave', () => (paused = false));
   const restart = () => {
     clearInterval(heroTimer);
-    if (many) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden) show(i + 1); }, 8000);
+    if (picks.length > 1) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden) show(i + 1); }, 8000);
   };
+  drawNav();
   restart();
   ctx.onLeave(() => clearInterval(heroTimer));
+  return {
+    el,
+    // Swap in a fresh set of slides without touching the one on screen.
+    update(newCtx, fresh, info) {
+      ctx = newCtx;
+      Object.assign(seriesInfo, info);
+      const cur = picks[i];
+      const key = (p) => p.it.SeriesId || p.it.Id;
+      picks = [cur, ...fresh.filter((p) => key(p) !== key(cur))].slice(0, HERO_SLIDES);
+      i = 0;
+      drawNav();
+      restart();
+      ctx.onLeave(() => clearInterval(heroTimer));
+    },
+  };
 }
 
 function libTile(v) {
@@ -683,6 +739,7 @@ function crumbsHtml(it) {
 // ---- Detail page pieces ----
 
 const ICON_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_COG = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
 const ICON_HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="var(--heart-fill, none)" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 const CHEV = '<svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
 const PERSON_ICON = '<svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
@@ -795,10 +852,18 @@ function iconButtonsHtml(it) {
   const ud = it.UserData || {};
   return `
     <button class="icon-toggle ${ud.Played ? 'on' : ''}" data-toggle="played" aria-label="Mark watched">${ICON_CHECK}<span class="tip">${ud.Played ? 'Mark unwatched' : it.Type === 'Series' ? 'Mark whole show watched' : 'Mark watched'}</span></button>
-    <button class="icon-toggle ${ud.IsFavorite ? 'on' : ''}" data-toggle="fav" aria-label="Add to favorites">${ICON_HEART}<span class="tip">${ud.IsFavorite ? 'Remove from favorites' : 'Add to favorites'}</span></button>`;
+    <button class="icon-toggle ${ud.IsFavorite ? 'on' : ''}" data-toggle="fav" aria-label="Add to favorites">${ICON_HEART}<span class="tip">${ud.IsFavorite ? 'Remove from favorites' : 'Add to favorites'}</span></button>
+    <button class="icon-toggle cog" data-manage aria-label="Manage">${ICON_COG}<span class="tip">Manage</span></button>`;
 }
 
 function wireIconButtons(scope, it) {
+  const cog = scope.querySelector('[data-manage]');
+  if (cog) {
+    import('./menu.js').then(({ canManage, toggleManageMenu }) => {
+      canManage(it).then((ok) => { if (!ok) cog.remove(); });
+      cog.addEventListener('click', (e) => { e.stopPropagation(); toggleManageMenu(it.Id, cog); });
+    });
+  }
   scope.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => {
     const kind = b.dataset.toggle;
     const on = !b.classList.contains('on');

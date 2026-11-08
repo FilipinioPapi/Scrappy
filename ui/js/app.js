@@ -5,6 +5,23 @@ import { toast } from './components.js';
 import { loginView, homeView, libraryView, itemView, personView, searchView, comingSoonView } from './views.js';
 
 const viewEl = document.getElementById('view');
+
+// Opening intro: stays until the first page is ready (the home banner, or any
+// other page), at least 1.2s so it doesn't flash, and never past ~2.5s.
+const introStart = performance.now();
+let introGone = false;
+function hideIntro() {
+  if (introGone) return;
+  introGone = true;
+  const el = document.getElementById('intro');
+  if (!el) return;
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 500);
+  }, Math.max(0, 1200 - (performance.now() - introStart)));
+}
+window.addEventListener('scrappy:ready', hideIntro, { once: true });
+setTimeout(hideIntro, 2000);
 const topbar = document.getElementById('topbar');
 let session = null;
 let routeId = 0;
@@ -66,6 +83,8 @@ async function route(opts = {}) {
     clearTimeout(enterTimer);
     enterTimer = setTimeout(() => viewEl.classList.remove('entering'), 700);
   }
+  // Home says when its banner is ready; every other page is ready once drawn.
+  if (!['home', undefined, ''].includes(name)) setTimeout(hideIntro, 0);
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
     case 'library': return libraryView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');

@@ -102,14 +102,31 @@ document.addEventListener('contextmenu', (e) => {
   const typing = e.target.closest('input, textarea');
   if (typing) return;
   e.preventDefault();
+  if (document.documentElement.classList.contains('playing')) { closeMenu(); return; }
+  const seasonTab = e.target.closest('.season-tab[data-season]');
+  if (seasonTab) { openMenu(seasonTab.dataset.season, e.clientX, e.clientY, { mode: 'season' }); return; }
   const cardEl = e.target.closest('.card[data-id]');
-  if (!cardEl || document.documentElement.classList.contains('playing')) { closeMenu(); return; }
-  openMenu(cardEl, e.clientX, e.clientY);
+  if (!cardEl) { closeMenu(); return; }
+  openMenu(cardEl.dataset.id, e.clientX, e.clientY, { cardEl, inResume: !!cardEl.closest('[data-cw]') });
 });
 
-async function openMenu(cardEl, x, y) {
-  const id = cardEl.dataset.id;
-  const inResume = !!cardEl.closest('[data-cw]');
+// The round cog on a details page: opens just the Manage part, under the button.
+// Clicking it again closes it.
+export function toggleManageMenu(id, btn) {
+  if (!menu.hidden && menu.dataset.id === id && menu.dataset.mode === 'manage') { closeMenu(); return; }
+  const r = btn.getBoundingClientRect();
+  openMenu(id, r.left, r.bottom + 10, { mode: 'manage' });
+}
+
+// Whether this account has anything under Manage for this item.
+export async function canManage(it) {
+  const { canEdit, canDelete, canSubs } = rights(await getPolicy(), it);
+  return canEdit || canDelete || canSubs;
+}
+
+async function openMenu(id, x, y, opts = {}) {
+  const { cardEl = null, inResume = false, mode = 'full' } = opts;
+  menu.dataset.mode = mode;
   const path = `/Users/{userId}/Items/${id}`;
   // Show straight away from the saved copy, then check with the server.
   let it = await api.cached(path);
@@ -119,9 +136,9 @@ async function openMenu(cardEl, x, y) {
     try { it = await api.get(path); } catch (e) { closeMenu(); toast(String(e), true); return; }
   }
   const pol = await getPolicy();
-  render(it, inResume, pol, cardEl);
+  render(it, inResume, pol, cardEl, mode);
   place(x, y);
-  api.get(path).then((fresh) => { if (!menu.hidden && menu.dataset.id === id) render(fresh, inResume, pol, cardEl); }).catch(() => {});
+  api.get(path).then((fresh) => { if (!menu.hidden && menu.dataset.id === id) render(fresh, inResume, pol, cardEl, mode); }).catch(() => {});
 }
 
 function place(x, y) {
@@ -138,7 +155,7 @@ function place(x, y) {
   menu.style.transformOrigin = `${x - left}px ${y - top}px`;
 }
 
-function render(it, inResume, pol, cardEl) {
+function render(it, inResume, pol, cardEl, mode = 'full') {
   const ud = it.UserData || {};
   const { canEdit, canDelete, canSubs } = rights(pol, it);
   const playable = isPlayable(it) || ['Series', 'Season', 'BoxSet'].includes(it.Type);
@@ -162,6 +179,20 @@ function render(it, inResume, pol, cardEl) {
     </div>
     ${row('person', ICON.grid, 'See everything they’re in', 'primary')}
     ${canEdit ? '<div class="ctx-sep"></div><div class="ctx-label">MANAGE</div>' + row('meta', ICON.pencil, 'Edit metadata…') + row('images', ICON.image, 'Edit images…') : ''}`;
+  } else if (mode === 'manage' || mode === 'season') {
+    // Details page cog (Play, watched and favorite are already on screen) and
+    // right-click on a season tab: no header, just what's useful there.
+    const top = mode === 'season'
+      ? row('playSeason', ICON.play, `Play ${esc(it.Name || 'season')}`, 'primary') + row('played', ICON.check, ud.Played ? 'Mark Unwatched' : 'Mark Watched', ud.Played ? 'on' : '')
+      : '';
+    const tools = (canEdit ? row('meta', ICON.pencil, 'Edit metadata…') + row('images', ICON.image, 'Edit images…') : '')
+      + (canSubs && hasVideo ? row('subs', ICON.cc, 'Edit subtitles…') : '')
+      + (canEdit && canIdentify ? row('identify', ICON.identify, 'Identify…') : '')
+      + (canEdit ? row('refresh', ICON.refresh, 'Refresh metadata') : '')
+      + (canDelete ? '<div class="ctx-sep"></div>' + row('delete', ICON.trash, 'Delete…', 'danger') : '');
+    menu.innerHTML = top
+      + (manage ? (top ? '<div class="ctx-sep"></div>' : '') + '<div class="ctx-label">MANAGE</div>' + tools : '')
+      + (!top && !manage ? '<div class="ctx-label">Nothing to manage on this account</div>' : '');
   } else menu.innerHTML = `
     <div class="ctx-head">
       <div class="ctx-thumb">${thumb ? `<img src="${esc(thumb)}" alt="">` : ''}</div>
@@ -192,6 +223,15 @@ const ACTIONS = {
   person: (it) => { location.hash = `#/person/${encodeURIComponent(it.Id)}`; },
   play: (it) => (it.Type === 'Series' ? playSeries(it.Id) : it.Type === 'Season' && it.SeriesId ? playSeries(it.SeriesId) : playItem(it.Id, false)),
   restart: (it) => playItem(it.Id, true),
+  // Play a season: pick up where you left off in it, else its first unwatched episode.
+  async playSeason(it) {
+    try {
+      const d = await api.get(`/Shows/${it.SeriesId}/Episodes?SeasonId=${it.Id}&UserId={userId}&Fields=UserData`);
+      const eps = d?.Items || [];
+      const ep = eps.find((e) => e.UserData?.PlaybackPositionTicks > 0 && !e.UserData?.Played) || eps.find((e) => !e.UserData?.Played) || eps[0];
+      if (ep) playItem(ep.Id, false); else toast('This season has no episodes yet.', true);
+    } catch (e) { toast(String(e), true); }
+  },
   async fav(it) {
     const on = !it.UserData?.IsFavorite;
     try {

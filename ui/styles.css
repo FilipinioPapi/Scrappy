@@ -868,3 +868,34 @@ select.pick:hover { border-color: var(--red-border); }
 .ep-thumb .ep-name { margin-top: 7px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .15s; }
 .ep-thumb:hover .ep-name { color: #fff; }
 #view.quiet .live .ep-thumb { animation: rowIn .35s var(--spring) both !important; }
+
+/* ---------- Opening intro ---------- */
+#intro { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 45%, #2a0f11 0%, var(--bg) 60%); transition: opacity .42s ease, transform .5s var(--ease-out); }
+#intro.out { opacity: 0; transform: scale(1.05); pointer-events: none; }
+.intro-mid { text-align: center; }
+.intro-dog { display: block; width: 128px; height: 128px; margin: 0 auto; border-radius: 28px; box-shadow: 0 18px 40px rgba(0,0,0,.6); animation: introDog .55s cubic-bezier(.34,1.56,.64,1) both; }
+@keyframes introDog { 0% { opacity: 0; transform: scale(.4) rotate(-12deg); } 60% { opacity: 1; transform: scale(1.1) rotate(4deg); } 80% { transform: scale(.96) rotate(-2deg); } 100% { transform: none; } }
+.intro-name { font-family: var(--display); color: var(--red); font-size: 58px; line-height: 1; margin-top: 20px; text-shadow: 0 3px 0 #000; animation: introUp .45s cubic-bezier(.34,1.56,.64,1) .18s both; }
+.intro-sub { font-size: 12px; font-weight: 800; letter-spacing: 3.8px; color: var(--muted); margin-top: 6px; animation: introUp .4s ease .28s both; }
+.intro-dots { display: flex; gap: 7px; justify-content: center; margin-top: 24px; animation: introUp .35s ease .36s both; }
+.intro-dots i { width: 8px; height: 8px; border-radius: 9px; background: var(--red); animation: introBob 1s ease-in-out infinite; }
+.intro-dots i:nth-child(2) { animation-delay: .15s; } .intro-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes introUp { from { opacity: 0; transform: translateY(18px); } }
+@keyframes introBob { 0%, 100% { transform: translateY(0); opacity: .5; } 50% { transform: translateY(-6px); opacity: 1; } }
+.intro-foot { position: absolute; left: 0; right: 0; bottom: 30px; display: flex; align-items: center; justify-content: center; gap: 10px; animation: introUp .4s ease .45s both; }
+.intro-foot img { width: 34px; height: 34px; border-radius: 9px; object-fit: cover; border: 1.5px solid var(--text); box-shadow: 0 0 0 3px rgba(236,40,46,.22), 0 4px 10px rgba(0,0,0,.5); animation: introPfp .5s cubic-bezier(.34,1.56,.64,1) .5s both; }
+@keyframes introPfp { 0% { opacity: 0; transform: scale(.5) rotate(-10deg); } 70% { opacity: 1; transform: scale(1.12) rotate(3deg); } 100% { transform: none; } }
+.intro-foot .k { font-size: 9px; font-weight: 800; letter-spacing: 2.2px; color: #8F7778; }
+.intro-foot .n { display: flex; align-items: flex-end; font-family: var(--display); font-size: 17px; line-height: 1; margin-top: 3px; padding-top: 2px; color: var(--text); text-shadow: 0 2px 0 #000; }
+.intro-foot .bt { font-family: "Inter", sans-serif; font-size: 7px; font-weight: 800; letter-spacing: .6px; line-height: 1; color: #fff; background: var(--red); border-radius: 3px; padding: 2px 3px 1.5px; margin: 0 0 2px 5px; text-shadow: none; }
+
+/* ---------- Banner: keep its space while it loads ---------- */
+.hero-wait { background: linear-gradient(90deg, #1a1213, #241819, #1a1213); background-size: 200% 100%; animation: heroShimmer 1.4s linear infinite; }
+@keyframes heroShimmer { to { background-position: -200% 0; } }
+.hero-nav { display: contents; }
+.hero-bg img.wait { opacity: 0; animation: none !important; }
+#view.quiet .hero-wait { animation: heroShimmer 1.4s linear infinite !important; }
+
+/* Details page cog */
+.icon-toggle.cog svg { transition: transform .45s var(--spring); }
+.icon-toggle.cog:hover svg { transform: rotate(70deg); }
