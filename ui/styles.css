@@ -341,16 +341,25 @@ html.playing body { overflow: hidden; }
 
 /* Skip Intro / Skip Credits */
 .p-skip {
-  position: absolute; right: 32px; bottom: 40px; height: 52px; padding: 0 26px 0 22px; overflow: hidden;
-  display: flex; align-items: center; gap: 10px; border: 0; border-radius: 26px; cursor: pointer;
-  background: rgba(28,27,26,.92); color: #fff; font-size: 16px; font-weight: 700;
-  box-shadow: 0 0 0 2px var(--accent), 0 10px 28px rgba(0,0,0,.6); transition: bottom .25s, background .15s;
+  position: absolute; right: 32px; bottom: 40px; height: 48px; padding: 0 22px 0 18px; overflow: hidden;
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
+  background: rgba(18,17,16,.82); backdrop-filter: blur(10px);
+  color: #fff; font-size: 15px; font-weight: 600; letter-spacing: .2px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  transition: bottom .25s, background .15s, border-color .15s, transform .15s;
   animation: pop .2s ease-out;
 }
-.p-skip:hover { background: var(--accent); }
-.p-skip svg { width: 20px; height: 20px; fill: var(--accent); }
+.p-skip:hover { background: var(--accent); border-color: var(--accent); }
+.p-skip:active { transform: scale(.97); }
+.p-skip svg { width: 18px; height: 18px; fill: var(--accent); transition: fill .15s; }
 .p-skip:hover svg { fill: #fff; }
-.p-skip-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); width: 0; }
+/* Time left in the intro: a thin bar along the bottom edge that shrinks. */
+.p-skip-bar {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 0;
+  background: var(--accent); transition: width .25s linear;
+}
+.p-skip:hover .p-skip-bar { background: rgba(255,255,255,.7); }
 .p-skip[hidden] { display: none; }
 #player:not(.idle) .p-skip, #player:not(.idle) .p-upnext { bottom: 130px; }
 
