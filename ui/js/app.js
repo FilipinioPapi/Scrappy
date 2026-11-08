@@ -1,4 +1,4 @@
-import { api } from './api.js';
+import { api, quiet } from './api.js';
 import './player.js';
 import { toast } from './components.js';
 import { loginView, homeView, libraryView, itemView, searchView, comingSoonView } from './views.js';
@@ -8,6 +8,7 @@ const topbar = document.getElementById('topbar');
 let session = null;
 let routeId = 0;
 let leaveHandlers = [];
+let enterTimer;
 
 async function refreshSession() {
   session = await api.session();
@@ -41,7 +42,7 @@ function makeCtx() {
 async function route(opts = {}) {
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
-  const [, name, arg] = hash.split('/');
+  const [, name, arg, arg2] = hash.split('/');
 
   if (!session.loggedIn && name !== 'login') { location.hash = '#/login'; return; }
   if (session.loggedIn && name === 'login') { location.hash = '#/home'; return; }
@@ -52,12 +53,22 @@ async function route(opts = {}) {
   document.getElementById('userMenu').hidden = true;
 
   const ctx = makeCtx();
+  if (opts.keepScroll) quiet();
   const id = arg ? decodeURIComponent(arg) : '';
-  if (!opts.keepScroll) window.scrollTo(0, 0);
+  if (!opts.keepScroll) {
+    window.scrollTo(0, 0);
+    viewEl.classList.remove('quiet');
+    // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
+    viewEl.classList.remove('entering');
+    void viewEl.offsetWidth;
+    viewEl.classList.add('entering');
+    clearTimeout(enterTimer);
+    enterTimer = setTimeout(() => viewEl.classList.remove('entering'), 700);
+  }
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
     case 'library': return libraryView(viewEl, ctx, id);
-    case 'item': return itemView(viewEl, ctx, id);
+    case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'search': return searchView(viewEl, ctx);
     case 'music': return comingSoonView(viewEl, 'Music from Navidrome will live here.');
     case 'audiobooks': return comingSoonView(viewEl, 'Audiobooks from Audiobookshelf will live here.');

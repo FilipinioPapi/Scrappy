@@ -23,10 +23,20 @@ export async function load(path, render, isAlive = () => true) {
   }
   try {
     const fresh = await api.get(path);
-    if (isAlive() && JSON.stringify(fresh) !== shown) render(fresh, false);
+    if (isAlive() && JSON.stringify(fresh) !== shown) {
+      // Swapping in fresher data for what's already on screen: don't replay entrance animations.
+      if (shown) quiet();
+      render(fresh, false);
+    }
   } catch (e) {
     if (!cached) throw e;
   }
+}
+
+// Turns off entrance animations on the current page until the next page change
+// (removing it earlier would make everything replay its animation).
+export function quiet() {
+  document.getElementById('view')?.classList.add('quiet');
 }
 
 // Images are served by Rust from a disk cache through the img:// protocol.

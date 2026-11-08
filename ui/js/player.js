@@ -191,13 +191,30 @@ function drawTime() {
   $('.p-dur').textContent = fmt(d);
 }
 
+// Replay the little "tick" pop on a button.
+function bounce(b) {
+  b.classList.remove('tick');
+  void b.offsetWidth;
+  b.classList.add('tick');
+}
+
 function drawButtons() {
-  $('[data-act=pause]').innerHTML = S.paused ? ICONS.play : ICONS.pause;
+  const playBtn = $('[data-act=pause]');
+  const playIcon = S.paused ? ICONS.play : ICONS.pause;
+  if (playBtn.dataset.icon !== playIcon) {
+    if (playBtn.dataset.icon) bounce(playBtn);
+    playBtn.dataset.icon = playIcon;
+    playBtn.innerHTML = playIcon;
+  }
   $('[data-act=mute]').innerHTML = S.muted || S.volume === 0 ? ICONS.muted : ICONS.vol;
   $('[data-act=fs]').innerHTML = S.fullscreen ? ICONS.fsExit : ICONS.fs;
   $('[data-act=rew]').textContent = `−${skipBack()}`;
   $('[data-act=fwd]').textContent = `+${skipFwd()}`;
-  $('[data-act=speed]').textContent = `${S.speed}×`;
+  const speedBtn = $('[data-act=speed]');
+  if (speedBtn.textContent !== `${S.speed}×`) {
+    if (speedBtn.textContent) bounce(speedBtn);
+    speedBtn.textContent = `${S.speed}×`;
+  }
   $('.p-cc').classList.toggle('on', S.sid != null);
   $('.p-cc').setAttribute('aria-pressed', String(S.sid != null));
   $('.p-cog').classList.toggle('on', S.settingsOpen);

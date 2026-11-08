@@ -11,7 +11,8 @@ export function loginView(root, ctx) {
   root.innerHTML = `
     <div class="login-wrap">
       <form class="login-card" id="loginForm" autocomplete="off">
-        <h1>Scrappy Media Center</h1>
+        <img class="login-logo" src="logo.png" alt="">
+        <h1>Scrappy<small>MEDIA CENTER</small></h1>
         <p class="sub">Sign in to your Emby server</p>
         <div class="field">
           <label for="server">Server address</label>
@@ -268,10 +269,19 @@ export async function libraryView(root, ctx, id) {
 
 // ---------------- Item detail ----------------
 
-export async function itemView(root, ctx, id) {
+export async function itemView(root, ctx, id, seasonId = '') {
   root.innerHTML = loadingHtml();
+  let moved = false;
   try {
-    await load(`/Users/{userId}/Items/${id}`, (it) => renderItem(root, ctx, it), ctx.alive);
+    await load(`/Users/{userId}/Items/${id}`, (it) => {
+      // A season opens as its show's page with that season's tab picked,
+      // so every season stays one click away.
+      if (it.Type === 'Season' && it.SeriesId) {
+        if (!moved) { moved = true; location.replace(`#/item/${encodeURIComponent(it.SeriesId)}/${encodeURIComponent(it.Id)}`); }
+        return;
+      }
+      renderItem(root, ctx, it, seasonId);
+    }, () => ctx.alive() && !moved);
   } catch (e) {
     ctx.fail(e);
   }
@@ -289,10 +299,30 @@ function metaLine(it) {
     const end = new Date(Date.now() + (it.RunTimeTicks - (it.UserData?.PlaybackPositionTicks || 0)) / 10000);
     parts.push(`Ends at ${end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
   }
-  return parts.join('');
+  return parts.map((x) => (x.startsWith('<span') ? x : `<span>${x}</span>`)).join('');
 }
 
-function renderItem(root, ctx, it) {
+const BACK_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// "Movies & TV › Dark › Season 1" with a round back button.
+function crumbsHtml(it) {
+  const parts = ['<a href="#/home">Movies &amp; TV</a>'];
+  if (it.Type === 'Episode') {
+    parts.push(`<a href="#/item/${esc(it.SeriesId)}">${esc(it.SeriesName)}</a>`);
+    if (it.SeasonId) parts.push(`<a href="#/item/${esc(it.SeriesId)}/${esc(it.SeasonId)}">${esc(it.SeasonName || 'Season')}</a>`);
+    parts.push(`<span class="here">${esc(it.Name)}</span>`);
+  } else if (it.Type === 'Series') {
+    parts.push(`<span class="here">${esc(it.Name)}</span>`);
+  } else {
+    parts.push(`<span class="here">${esc(it.Name)}</span>`);
+  }
+  return `<div class="crumbs">
+    <button class="back-btn" id="backBtn" title="Back (Backspace)" aria-label="Back">${BACK_ICON}</button>
+    <div class="crumb-trail">${parts.join('<span class="sep">›</span>')}${it.Type === 'Series' ? '<span class="sep" hidden>›</span><span class="here red" id="crumbSeason" hidden></span>' : ''}</div>
+  </div>`;
+}
+
+function renderItem(root, ctx, it, seasonId = '') {
   const ud = it.UserData || {};
   const isEp = it.Type === 'Episode';
   const t = it.ImageTags || {};
@@ -305,9 +335,7 @@ function renderItem(root, ctx, it) {
   else if (t.Primary) poster = img(it.Id, 'Primary', t.Primary, 600);
   else if (it.SeriesPrimaryImageTag) poster = img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, 600);
 
-  let kicker = '';
-  if (isEp) kicker = `<a href="#/item/${esc(it.SeriesId)}">${esc(it.SeriesName)}</a> · ${esc(epCode(it))}`;
-  else if (it.Type === 'Season') kicker = `<a href="#/item/${esc(it.SeriesId)}">${esc(it.SeriesName)}</a>`;
+  const kicker = isEp ? esc(epCode(it)) : '';
 
   const resumable = isPlayable(it) && ud.PlaybackPositionTicks > 0;
   let buttons = '';
@@ -334,6 +362,7 @@ function renderItem(root, ctx, it) {
           <div class="art">${poster ? `<img src="${esc(poster)}" alt="">` : ''}</div>
         </div>
         <div class="detail-info">
+          ${crumbsHtml(it)}
           ${kicker ? `<div class="kicker">${kicker}</div>` : ''}
           <h1>${esc(it.Name)}</h1>
           <div class="meta">${metaLine(it)}</div>
@@ -347,46 +376,93 @@ function renderItem(root, ctx, it) {
       <div id="children"></div>
     </div>`;
 
+  root.querySelector('#backBtn').addEventListener('click', () => {
+    if (history.length > 1) history.back(); else location.hash = '#/home';
+  });
+
   const kids = root.querySelector('#children');
-  if (it.Type === 'Series') renderSeasons(kids, ctx, it);
-  else if (it.Type === 'Season') renderEpisodes(kids, ctx, it.SeriesId, it.Id, 'Episodes');
-  else if (isEp) renderEpisodes(kids, ctx, it.SeriesId, it.SeasonId, it.SeasonName || 'More from this season', it.Id);
+  if (it.Type === 'Series') renderSeasonBrowser(kids, ctx, it.Id, seasonId, '', root.querySelector('#crumbSeason'));
+  else if (isEp) renderSeasonBrowser(kids, ctx, it.SeriesId, it.SeasonId, it.Id, null);
   else if (it.IsFolder) renderChildren(kids, ctx, it);
 }
 
-async function renderSeasons(el, ctx, series) {
-  await load(`/Shows/${series.Id}/Seasons?UserId={userId}&Fields=${FIELDS}`, (data) => {
-    const seasons = data?.Items || [];
-    el.innerHTML = seasons.length
-      ? `<section class="section"><div class="section-head"><h2>Seasons</h2><span class="count">${seasons.length}</span></div>
-          <div class="row">${seasons.map((s) => card(s, { shape: 'portrait', subtitle: s.UserData?.UnplayedItemCount ? `${s.UserData.UnplayedItemCount} unwatched` : '' })).join('')}</div></section>`
+// Season tabs with the episode list underneath. Clicking a tab swaps the list in place.
+async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId, crumbEl) {
+  if (!seriesId) return;
+  let selected = '';
+  await load(`/Shows/${seriesId}/Seasons?UserId={userId}&Fields=${FIELDS},ChildCount`, (data) => {
+    let seasons = data?.Items || [];
+    // Specials go last.
+    seasons = [...seasons.filter((s) => s.IndexNumber !== 0), ...seasons.filter((s) => s.IndexNumber === 0)];
+    if (!seasons.length) { el.innerHTML = ''; return; }
+    const pick =
+      seasons.find((s) => s.Id === (selected || wantSeasonId)) ||
+      seasons.find((s) => s.IndexNumber !== 0 && s.UserData?.UnplayedItemCount) ||
+      seasons[0];
+    selected = pick.Id;
+    const tabs = seasons.length > 1
+      ? `<div class="season-tabs" role="tablist">${seasons.map((s) => `
+          <button class="season-tab ${s.Id === selected ? 'active' : ''}" role="tab" data-season="${esc(s.Id)}" data-name="${esc(s.Name)}">
+            ${esc(s.Name)}${s.ChildCount ? `<span class="n">${s.ChildCount}</span>` : ''}
+          </button>`).join('')}</div>`
       : '';
+    el.innerHTML = `
+      <section class="section">
+        <div class="section-head"><h2>${seasons.length > 1 ? 'Seasons' : esc(pick.Name || 'Episodes')}</h2><span class="count" id="epCount"></span></div>
+        ${tabs}
+        <div class="episodes" id="epList"></div>
+      </section>`;
+    const list = el.querySelector('#epList');
+    const count = el.querySelector('#epCount');
+    const setCrumb = (name, animate) => {
+      if (!crumbEl) return;
+      crumbEl.hidden = false;
+      crumbEl.textContent = name;
+      crumbEl.previousElementSibling?.removeAttribute('hidden');
+      if (animate) { crumbEl.style.animation = 'none'; void crumbEl.offsetWidth; crumbEl.style.animation = ''; }
+    };
+    setCrumb(pick.Name, false);
+    el.querySelectorAll('.season-tab').forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.season === selected) return;
+      selected = b.dataset.season;
+      el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t === b));
+      b.classList.add('live');
+      setCrumb(b.dataset.name, true);
+      // Keep the address in step so Back and refresh land on this season.
+      if (crumbEl) history.replaceState(null, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`);
+      renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true);
+    }));
+    renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, false);
   }, ctx.alive).catch(() => {});
 }
 
-async function renderEpisodes(el, ctx, seriesId, seasonId, heading, currentId) {
-  if (!seriesId || !seasonId) return;
+let epListToken = 0;
+async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId, live) {
+  const my = ++epListToken;
+  const alive = () => ctx.alive() && my === epListToken && list.isConnected;
+  list.classList.toggle('live', live);
   await load(`/Shows/${seriesId}/Episodes?SeasonId=${seasonId}&UserId={userId}&Fields=Overview,PrimaryImageAspectRatio`, (data) => {
     const eps = data?.Items || [];
-    el.innerHTML = `
-      <section class="section"><div class="section-head"><h2>${esc(heading)}</h2><span class="count">${eps.length} episodes</span></div>
-        <div class="episodes">
-          ${eps.map((e) => `
-            <div class="episode" data-href="#/item/${esc(e.Id)}" ${e.Id === currentId ? 'style="background:var(--bg-2)"' : ''}>
-              ${card(e, { shape: 'wide', noTitle: true })}
-              <div class="ep-text">
-                <div class="ep-title">${e.IndexNumber != null ? `${e.IndexNumber}. ` : ''}${esc(e.Name)}</div>
-                <div class="ep-meta">${[runtime(e.RunTimeTicks), e.PremiereDate ? new Date(e.PremiereDate).toLocaleDateString() : ''].filter(Boolean).join(' · ')}</div>
-                <div class="ep-overview">${esc(e.Overview || '')}</div>
-              </div>
-            </div>`).join('')}
-        </div></section>`;
-    el.querySelectorAll('.episode').forEach((row) =>
+    count.textContent = `${eps.length} episode${eps.length === 1 ? '' : 's'}`;
+    list.innerHTML = eps.map((e, i) => {
+      const ud = e.UserData || {};
+      const left = ud.PlaybackPositionTicks && e.RunTimeTicks ? runtime(e.RunTimeTicks - ud.PlaybackPositionTicks) + ' left' : '';
+      return `
+        <div class="episode ${e.Id === currentId ? 'current' : ''}" data-href="#/item/${esc(e.Id)}" style="animation-delay:${Math.min(i, 10) * 35}ms">
+          ${card(e, { shape: 'wide', noTitle: true })}
+          <div class="ep-text">
+            <div class="ep-title">${e.IndexNumber != null ? `${e.IndexNumber}. ` : ''}${esc(e.Name)}</div>
+            <div class="ep-meta">${[runtime(e.RunTimeTicks), e.PremiereDate ? new Date(e.PremiereDate).toLocaleDateString() : '', left, ud.Played ? '<span class="watched">Watched</span>' : ''].filter(Boolean).join(' · ')}</div>
+            <div class="ep-overview">${esc(e.Overview || '')}</div>
+          </div>
+        </div>`;
+    }).join('');
+    list.querySelectorAll('.episode').forEach((row) =>
       row.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-play]') || ev.target.closest('a')) return;
         location.hash = row.dataset.href;
       }));
-  }, ctx.alive).catch(() => {});
+  }, alive).catch(() => {});
 }
 
 async function renderChildren(el, ctx, folder) {
