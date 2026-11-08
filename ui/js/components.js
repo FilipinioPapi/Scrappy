@@ -158,3 +158,34 @@ document.addEventListener('click', (e) => {
   e.stopPropagation();
   playSeries(p.dataset.playSeries, p.dataset.fromStart === '1');
 });
+
+// ---------- Arrows on every sideways row ----------
+// Same thin arrows as the home banner. They appear when the mouse is over a
+// row and only on a side that has more to scroll to.
+const ROW_L = '<svg viewBox="0 0 28 56" aria-hidden="true"><path d="M22 4 6 28l16 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ROW_R = '<svg viewBox="0 0 28 56" aria-hidden="true"><path d="M6 4l16 24L6 52" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function addRowArrows(row) {
+  if (row.dataset.arrows || !row.parentNode) return;
+  row.dataset.arrows = '1';
+  const wrap = document.createElement('div');
+  wrap.className = 'row-wrap';
+  row.parentNode.insertBefore(wrap, row);
+  wrap.appendChild(row);
+  wrap.insertAdjacentHTML('beforeend', `<button class="row-arrow l" aria-label="Scroll left">${ROW_L}</button><button class="row-arrow r" aria-label="Scroll right">${ROW_R}</button>`);
+  const update = () => {
+    const max = row.scrollWidth - row.clientWidth;
+    wrap.classList.toggle('can-l', row.scrollLeft > 4);
+    wrap.classList.toggle('can-r', max > 4 && row.scrollLeft < max - 4);
+  };
+  const go = (dir) => row.scrollBy({ left: dir * Math.max(200, row.clientWidth * 0.85), behavior: 'smooth' });
+  wrap.querySelector('.row-arrow.l').addEventListener('click', (e) => { e.stopPropagation(); go(-1); });
+  wrap.querySelector('.row-arrow.r').addEventListener('click', (e) => { e.stopPropagation(); go(1); });
+  row.addEventListener('scroll', update, { passive: true });
+  wrap.addEventListener('mouseenter', update);
+  new ResizeObserver(update).observe(row);
+  update();
+}
+
+const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows])').forEach(addRowArrows);
+new MutationObserver(scanRows).observe(document.getElementById('view'), { childList: true, subtree: true });

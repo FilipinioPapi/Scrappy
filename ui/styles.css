@@ -844,3 +844,15 @@ select.pick:hover { border-color: var(--red-border); }
 .ep-grid-note { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
 .btn[hidden] { display: none !important; }
 .hash-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; margin-right: 8px; border-radius: 5px; background: var(--red); color: #fff; font-size: 10.5px; font-weight: 800; letter-spacing: 1px; vertical-align: 2px; }
+
+/* Arrows on sideways rows (same look as the banner's) */
+.row-wrap { position: relative; }
+.row-arrow { position: absolute; top: 0; height: calc(100% - 58px); width: 64px; padding: 0; border: 0; display: grid; place-items: center; cursor: pointer; z-index: 3; opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+.row-arrow.l { left: calc(-1 * var(--gutter)); width: calc(var(--gutter) + 40px); background: linear-gradient(90deg, rgba(18,12,12,.92), rgba(18,12,12,0)); }
+.row-arrow.r { right: calc(-1 * var(--gutter)); width: calc(var(--gutter) + 40px); background: linear-gradient(270deg, rgba(18,12,12,.92), rgba(18,12,12,0)); }
+.row-wrap.can-l:hover .row-arrow.l, .row-wrap.can-r:hover .row-arrow.r { opacity: .9; pointer-events: auto; }
+.row-wrap .row-arrow:hover { opacity: 1; }
+.row-arrow svg { width: 22px; height: 44px; transition: transform .28s var(--spring); filter: drop-shadow(0 2px 6px rgba(0,0,0,.7)); }
+.row-arrow.l:hover svg { transform: translateX(-4px) scale(1.15); }
+.row-arrow.r:hover svg { transform: translateX(4px) scale(1.15); }
+.row-arrow:active svg { transform: scale(.9); transition-duration: .08s; }
