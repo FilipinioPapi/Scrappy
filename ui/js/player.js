@@ -1,6 +1,6 @@
 // Scrappy's own player screen. mpv draws the video into the window behind
 // this page; this file draws the controls on top and talks to mpv.
-import { api, listen, img } from './api.js';
+import { api, listen, img, load, IMG_BASE } from './api.js';
 import { esc, toast, epCode, runtime } from './components.js';
 
 const { invoke } = window.__TAURI__.core;
@@ -16,6 +16,7 @@ const ICONS = {
   fsExit: '<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   cog: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   skip: '<svg viewBox="0 0 24 24"><path d="M5 5l8 7-8 7zM13 5l8 7-8 7z"/></svg>',
+  eps: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="7" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="5" width="7" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
 };
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -69,6 +70,29 @@ el.innerHTML = `
       <button class="btn secondary" data-act="up-cancel">Cancel</button>
     </div>
   </div>
+  <div class="p-pauseinfo">
+    <div class="p-pi-text">
+      <div class="p-pi-kicker">YOU'RE WATCHING</div>
+      <div class="p-pi-title"></div>
+      <div class="p-pi-ep"></div>
+      <div class="p-pi-overview"></div>
+      <div class="p-pi-meta"></div>
+    </div>
+  </div>
+  <div class="p-eps" hidden>
+    <div class="p-eps-head"><b class="p-eps-show"></b><div class="p-eps-tabs"></div></div>
+    <div class="p-eps-row"></div>
+  </div>
+  <div class="p-still" hidden>
+    <div class="p-still-box">
+      <div class="p-still-title">ARE YOU STILL WATCHING?</div>
+      <div class="p-still-sub"></div>
+      <div class="p-still-btns">
+        <button class="btn" data-act="still-yes">Keep watching</button>
+        <button class="btn secondary" data-act="still-no">Back to browsing</button>
+      </div>
+    </div>
+  </div>
   <div class="p-settings" hidden>
     <div class="p-set-head"><b>Playback settings</b><span class="p-set-scope"></span></div>
     <label>Audio<select data-set="audio"></select></label>
@@ -93,7 +117,7 @@ el.innerHTML = `
       <div class="p-seek">
         <div class="p-track"><div class="p-buf"></div><div class="p-fill"></div></div>
         <div class="p-knob"></div>
-        <div class="p-hover"></div>
+        <div class="p-hover"><img class="p-thumb" alt="" hidden><span class="p-htime"></span></div>
       </div>
       <span class="p-dur">0:00</span>
     </div>
@@ -102,6 +126,7 @@ el.innerHTML = `
       <button class="p-play" data-act="pause" title="Play/Pause (Space)" aria-label="Play or pause"></button>
       <button class="p-pill" data-act="fwd" title="Skip forward (→)"></button>
       <div class="p-spacer"></div>
+      <button class="p-btn p-epsbtn" data-act="eps" title="Episodes (E)" hidden>${ICONS.eps}<span>Episodes</span></button>
       <button class="p-btn p-next" data-act="next" title="Next episode (N)" hidden>${ICONS.next}<span>Next episode</span></button>
       <button class="p-btn" data-act="mute" title="Mute (M)" aria-label="Mute"></button>
       <input class="p-vol" type="range" min="0" max="100" step="1" title="Volume (↑/↓)" aria-label="Volume">
@@ -221,6 +246,8 @@ function drawButtons() {
   $('.p-vol').value = S.volume;
   $('.p-vol').style.setProperty('--v', S.volume + '%');
   $('.p-next').hidden = !S.next;
+  $('.p-epsbtn').hidden = !(S.item?.Type === 'Episode' && S.item?.SeriesId);
+  $('.p-epsbtn').classList.toggle('on', !!S.epsOpen);
   el.classList.toggle('buffering', S.buffering);
   el.classList.toggle('paused', S.paused);
 }
@@ -328,8 +355,9 @@ function wake() {
   el.classList.remove('idle');
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (!S.paused && !S.dragging && !S.settingsOpen && !el.querySelector('.p-bottom:hover, .p-top:hover')) el.classList.add('idle');
+    if (!S.paused && !S.dragging && !S.settingsOpen && !S.epsOpen && !S.stillOpen && !el.querySelector('.p-bottom:hover, .p-top:hover, .p-eps:hover')) el.classList.add('idle');
   }, 3000);
+  schedulePauseInfo();
 }
 el.addEventListener('mousemove', wake);
 
@@ -361,6 +389,10 @@ async function hideOverlay() {
   hideUpNext();
   showSkip(null);
   toggleSettings(false);
+  toggleEps(false);
+  hideStill();
+  clearTimeout(pauseInfoTimer);
+  el.classList.remove('pause-info');
   if (S.fullscreen) await setFullscreen(false);
   if (wasOpen) window.dispatchEvent(new Event('scrappy:refresh'));
 }
@@ -378,7 +410,9 @@ export async function startPlayback(id, opts = {}) {
   }
   S.pos = opts.startSecs || 0; S.duration = 0; S.cache = 0; S.buffering = true;
   S.tracks = []; S.aid = null; S.sid = null; S.prefsApplied = false;
-  S.creditsHandled = false; S.introDismissed = false;
+  S.creditsHandled = false; S.introDismissed = false; S.previews = null;
+  toggleEps(false);
+  hideStill();
   drawTitle(); drawTime(); drawButtons();
   showOverlay();
   if (!S.embedded) toast('Starting playback…', false, 2500);
@@ -448,7 +482,7 @@ function showUpNext(mode) {
   S.upNextTimer = setInterval(() => {
     count--;
     $('.p-up-count').textContent = count;
-    if (count <= 0) playNext();
+    if (count <= 0) playNext(true);
   }, 1000);
   return true;
 }
@@ -460,10 +494,18 @@ function hideUpNext() {
   $('.p-upnext').hidden = true;
 }
 
-function playNext() {
+// auto: started by the countdown rather than by you.
+function playNext(auto = false) {
   const n = S.next;
   hideUpNext();
-  if (n) startPlayback(n.Id, { fromStart: true });
+  if (!n) return;
+  if (auto) {
+    S.autoChain = (S.autoChain || 0) + 1;
+    if (S.autoChain > stillLimit()) { showStill(n); return; }
+  } else {
+    S.autoChain = 0;
+  }
+  startPlayback(n.Id, { fromStart: true });
 }
 
 // The page is only see-through while mpv is drawing video, otherwise the
@@ -510,7 +552,8 @@ listen('mpv-prop', ({ payload: { name, value } }) => {
   }
 });
 
-listen('player-loaded', () => {
+listen('player-loaded', ({ payload }) => {
+  loadPreviews(payload?.itemId);
   S.frameSeen = false;
   updateVideoOn();
   S.buffering = false;
@@ -626,6 +669,7 @@ el.querySelector('.p-settings').addEventListener('change', (e) => {
 
 el.addEventListener('click', (e) => {
   if (S.settingsOpen && !e.target.closest('.p-settings, [data-act=settings]')) toggleSettings(false);
+  if (S.epsOpen && !e.target.closest('.p-eps, [data-act=eps]')) toggleEps(false);
   const b = e.target.closest('[data-act]');
   if (!b) return;
   e.stopPropagation();
@@ -638,7 +682,16 @@ el.addEventListener('click', (e) => {
     case 'mute': setProp('mute', S.muted ? 'no' : 'yes'); break;
     case 'cc': toggleSubs(); break;
     case 'speed': cycleSpeed(); break;
-    case 'settings': toggleSettings(); break;
+    case 'settings': toggleEps(false); toggleSettings(); break;
+    case 'eps': toggleSettings(false); toggleEps(); break;
+    case 'still-yes': {
+      const n = S.stillNext;
+      S.autoChain = 0;
+      hideStill();
+      if (n) startPlayback(n.Id, { fromStart: true });
+      break;
+    }
+    case 'still-no': hideStill(); exitPlayer(); break;
     case 'fs': toggleFullscreen(); break;
     case 'skip': doSkip(); break;
     case 'up-now': playNext(); break;
@@ -678,7 +731,17 @@ const ratioAt = (x) => {
 seek.addEventListener('mousemove', (e) => {
   const r = ratioAt(e.clientX);
   const h = $('.p-hover');
-  h.textContent = fmt(r * dur());
+  $('.p-htime').textContent = fmt(r * dur());
+  const thumb = $('.p-thumb');
+  const pv = S.previews;
+  if (pv) {
+    const n = Math.max(0, Math.min(pv.count - 1, Math.floor((r * dur() * 1000) / pv.intervalMs)));
+    const src = `${IMG_BASE}/bif/${encodeURIComponent(pv.id)}/${n}`;
+    if (thumb.dataset.src !== src) { thumb.dataset.src = src; thumb.src = src; }
+    thumb.hidden = false;
+  } else {
+    thumb.hidden = true;
+  }
   h.style.left = r * 100 + '%';
 });
 seek.addEventListener('mousedown', (e) => {
@@ -703,6 +766,119 @@ seek.addEventListener('mousedown', (e) => {
   window.addEventListener('mouseup', up);
 });
 
+// ---------- Seek previews, episode picker, still watching, paused info ----------
+
+async function loadPreviews(itemId) {
+  if (!itemId) return;
+  try {
+    const r = await invoke('load_previews', { itemId });
+    if (r?.count && S.item?.Id === itemId) S.previews = { id: itemId, count: r.count, intervalMs: r.intervalMs || 10000 };
+  } catch {}
+}
+
+function toggleEps(force) {
+  S.epsOpen = force ?? !S.epsOpen;
+  $('.p-eps').hidden = !S.epsOpen;
+  if (S.epsOpen) drawEps(S.item?.SeasonId);
+  drawButtons();
+  if (force === undefined) wake();
+}
+
+let epsSeq = 0;
+async function drawEps(seasonId) {
+  const it = S.item;
+  if (!it?.SeriesId) return;
+  const my = ++epsSeq;
+  $('.p-eps-show').textContent = it.SeriesName || '';
+  try {
+    await load(`/Shows/${it.SeriesId}/Seasons?UserId={userId}`, (data) => {
+      if (my !== epsSeq) return;
+      let seasons = data?.Items || [];
+      seasons = [...seasons.filter((s) => s.IndexNumber !== 0), ...seasons.filter((s) => s.IndexNumber === 0)];
+      const tabs = $('.p-eps-tabs');
+      tabs.innerHTML = seasons.length > 1 ? seasons.map((s) => `<button class="season-tab ${s.Id === seasonId ? 'active' : ''}" data-season="${esc(s.Id)}">${esc(s.Name)}</button>`).join('') : '';
+      tabs.querySelectorAll('[data-season]').forEach((b) => b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        tabs.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t === b));
+        drawEpisodes(b.dataset.season);
+      }));
+    });
+  } catch {}
+  drawEpisodes(seasonId);
+}
+
+async function drawEpisodes(seasonId) {
+  const it = S.item;
+  const row = $('.p-eps-row');
+  const my = ++epsSeq;
+  try {
+    await load(`/Shows/${it.SeriesId}/Episodes?SeasonId=${seasonId}&UserId={userId}&Fields=PrimaryImageAspectRatio`, (data) => {
+      if (my !== epsSeq) return;
+      const eps = data?.Items || [];
+      row.innerHTML = eps.map((e, i) => {
+        const ud = e.UserData || {};
+        const cur = e.Id === it.Id;
+        const pct = cur ? (dur() ? (S.pos / dur()) * 100 : 0) : ud.Played ? 100 : ud.PlayedPercentage || 0;
+        const src = e.ImageTags?.Primary ? img(e.Id, 'Primary', e.ImageTags.Primary, 400) : '';
+        return `
+          <button class="p-ep ${cur ? 'cur' : ''}" data-ep="${esc(e.Id)}" style="animation-delay:${Math.min(i, 8) * 30}ms">
+            <div class="p-ep-img">${src ? `<img src="${esc(src)}" alt="" loading="lazy">` : ''}${pct ? `<i style="width:${pct.toFixed(1)}%"></i>` : ''}</div>
+            <div class="p-ep-title">${e.IndexNumber != null ? `${e.IndexNumber}. ` : ''}${esc(e.Name)}</div>
+            <div class="p-ep-meta">${cur ? 'Playing now' : ud.Played ? 'Watched' : runtime(e.RunTimeTicks)}</div>
+          </button>`;
+      }).join('');
+      row.querySelectorAll('[data-ep]').forEach((b) => b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (b.dataset.ep === it.Id) { toggleEps(false); return; }
+        toggleEps(false);
+        S.autoChain = 0;
+        startPlayback(b.dataset.ep);
+      }));
+      row.querySelector('.p-ep.cur')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    });
+  } catch {}
+}
+
+const stillLimit = () => Number(ls.get('stillWatching', 3));
+function showStill(next) {
+  S.stillOpen = true;
+  S.stillNext = next;
+  setProp('pause', 'yes');
+  $('.p-still-sub').textContent = [next.SeriesName, epCode(next), next.Name].filter(Boolean).join(' · ');
+  $('.p-still').hidden = false;
+  el.classList.remove('idle');
+}
+function hideStill() {
+  S.stillOpen = false;
+  S.stillNext = null;
+  $('.p-still').hidden = true;
+}
+
+// Any click, key or scroll in the player means someone is there.
+['mousedown', 'keydown', 'wheel'].forEach((t) => window.addEventListener(t, () => { if (S.open && !S.stillOpen) S.autoChain = 0; }, true));
+
+let pauseInfoTimer;
+function schedulePauseInfo() {
+  clearTimeout(pauseInfoTimer);
+  el.classList.remove('pause-info');
+  if (!S.open || !S.paused || !S.item) return;
+  pauseInfoTimer = setTimeout(() => {
+    if (!S.open || !S.paused || S.settingsOpen || S.epsOpen || S.stillOpen || S.dragging || S.upNextMode) return;
+    drawPauseInfo();
+    el.classList.add('pause-info', 'idle');
+  }, 5000);
+}
+function drawPauseInfo() {
+  const it = S.item;
+  const isEp = it.Type === 'Episode';
+  $('.p-pi-title').textContent = isEp ? it.SeriesName || it.Name : it.Name;
+  $('.p-pi-ep').textContent = isEp ? [epCode(it), it.Name].filter(Boolean).join(' · ') : [it.ProductionYear, it.OfficialRating].filter(Boolean).join(' · ');
+  $('.p-pi-overview').textContent = it.Overview || '';
+  const left = Math.max(0, dur() - S.pos) / (S.speed || 1);
+  const ends = new Date(Date.now() + left * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  $('.p-pi-meta').textContent = `Paused · ${fmt(S.pos)} of ${fmt(dur())} · ends at ${ends}`;
+}
+
 // Keyboard (only while the player is open).
 // Mouse wheel over the video changes the volume (not over the settings panel, which scrolls).
 el.addEventListener('wheel', (e) => {
@@ -725,9 +901,11 @@ window.addEventListener('keydown', (e) => {
     case 'c': case 'C': toggleSubs(); break;
     case 'f': case 'F': case 'F11': toggleFullscreen(); break;
     case 'n': case 'N': if (S.next) playNext(); break;
+    case 'e': case 'E': if (S.item?.Type === 'Episode') { toggleSettings(false); toggleEps(); } break;
     case 's': case 'S': if (skipMode) doSkip(); else return; break;
     case 'Escape':
       if (S.settingsOpen) toggleSettings(false);
+      else if (S.epsOpen) toggleEps(false);
       else if (S.fullscreen) setFullscreen(false);
       else exitPlayer();
       break;

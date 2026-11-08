@@ -43,7 +43,7 @@ export function quiet() {
 }
 
 // Images are served by Rust from a disk cache through the img:// protocol.
-const IMG_BASE = navigator.userAgent.includes('Windows') ? 'http://img.localhost' : 'img://localhost';
+export const IMG_BASE = navigator.userAgent.includes('Windows') ? 'http://img.localhost' : 'img://localhost';
 
 export function img(itemId, type, tag, width = 400, index) {
   if (!itemId || !tag) return null;

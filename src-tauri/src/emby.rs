@@ -194,6 +194,25 @@ pub async fn send(
     finish(req).await
 }
 
+/// Download raw bytes. Ok(None) when the server says it doesn't have it.
+pub async fn get_bytes(http: &reqwest::Client, cfg: &Config, path: &str) -> Result<Option<Vec<u8>>, String> {
+    if !cfg.logged_in() {
+        return Err("Not logged in.".into());
+    }
+    let url = format!("{}{}", cfg.server, expand_path(cfg, path));
+    let r = http
+        .get(url)
+        .header("X-Emby-Authorization", cfg.auth_header())
+        .header("X-Emby-Token", &cfg.token)
+        .send()
+        .await
+        .map_err(friendly_error)?;
+    if !r.status().is_success() {
+        return Ok(None);
+    }
+    Ok(Some(r.bytes().await.map_err(|e| e.to_string())?.to_vec()))
+}
+
 /// Send a raw text body (used for image uploads, which Emby takes as base64).
 pub async fn send_raw(
     http: &reqwest::Client,

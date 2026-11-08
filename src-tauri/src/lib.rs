@@ -18,6 +18,8 @@ struct AppState {
     http: reqwest::Client,
     player: Mutex<Option<(usize, bool, mpv::Player)>>,
     now: Mutex<Option<NowPlaying>>,
+    /// Seek-bar preview pictures for the current video: (item id, frames).
+    bif: Mutex<Option<(String, Vec<Vec<u8>>)>>,
 }
 
 impl AppState {
@@ -419,6 +421,75 @@ async fn play(
     }))
 }
 
+// ---------- Seek-bar previews ----------
+//
+// Emby's "thumbnail image extraction" makes a BIF file per video: a list of
+// small JPEG frames taken every few seconds. We load it once per video and
+// serve single frames to the page through the img protocol.
+
+fn parse_bif(b: &[u8]) -> Option<(Vec<Vec<u8>>, u32)> {
+    if b.len() < 64 || &b[0..8] != b"\x89BIF\r\n\x1a\n" {
+        return None;
+    }
+    let u32_at = |i: usize| -> Option<u32> { b.get(i..i + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]])) };
+    let count = u32_at(12)? as usize;
+    let mut interval = u32_at(16)?;
+    if interval == 0 {
+        interval = 1000;
+    }
+    let mut entries = Vec::with_capacity(count + 1);
+    for n in 0..=count {
+        let at = 64 + n * 8;
+        let (ts, off) = (u32_at(at)?, u32_at(at + 4)? as usize);
+        entries.push((ts, off));
+        if ts == 0xffff_ffff {
+            break;
+        }
+    }
+    let mut frames = Vec::new();
+    for w in entries.windows(2) {
+        let (start, end) = (w[0].1, w[1].1);
+        if end <= start || end > b.len() {
+            break;
+        }
+        frames.push(b[start..end].to_vec());
+    }
+    if frames.is_empty() {
+        return None;
+    }
+    Some((frames, interval))
+}
+
+/// Load seek previews for what's playing. Returns {count, intervalMs} or count 0.
+#[tauri::command]
+async fn load_previews(state: State<'_, AppState>, item_id: String) -> Result<Value, String> {
+    let ms = state
+        .now
+        .lock()
+        .unwrap()
+        .as_ref()
+        .filter(|n| n.item_id == item_id)
+        .map(|n| n.media_source_id.clone())
+        .unwrap_or_default();
+    let cfg = state.cfg();
+    let tries = [
+        format!("/Videos/{item_id}/index.bif?width=320&MediaSourceId={ms}"),
+        format!("/Videos/{item_id}/index.bif?width=320"),
+        format!("/Videos/{item_id}/{ms}/index.bif?width=320"),
+    ];
+    for path in tries.iter() {
+        if let Ok(Some(bytes)) = emby::get_bytes(&state.http, &cfg, path).await {
+            if let Some((frames, interval)) = parse_bif(&bytes) {
+                let count = frames.len();
+                *state.bif.lock().unwrap() = Some((item_id.clone(), frames));
+                return Ok(json!({ "count": count, "intervalMs": interval }));
+            }
+        }
+    }
+    *state.bif.lock().unwrap() = None;
+    Ok(json!({ "count": 0, "intervalMs": 0 }))
+}
+
 /// Run an mpv command, e.g. ["seek", "10"] or ["cycle", "pause"].
 #[tauri::command]
 fn player_command(state: State<'_, AppState>, args: Vec<String>) -> Result<(), String> {
@@ -503,6 +574,19 @@ async fn serve_image(app: AppHandle, uri: String) -> Response<Vec<u8>> {
     };
     let parts: Vec<&str> = parsed.path().trim_matches('/').split('/').collect();
     if parts.len() < 2 {
+        return not_found();
+    }
+    // Seek preview frame: /bif/<item>/<n>
+    if parts[0] == "bif" && parts.len() >= 3 {
+        let n: usize = parts[2].parse().unwrap_or(usize::MAX);
+        let guard = state.bif.lock().unwrap();
+        if let Some((id, frames)) = guard.as_ref() {
+            if id == parts[1] {
+                if let Some(f) = frames.get(n) {
+                    return img_response(StatusCode::OK, "image/jpeg", f.clone());
+                }
+            }
+        }
         return not_found();
     }
     let (item_id, img_type) = (parts[0], parts[1]);
@@ -602,6 +686,7 @@ pub fn run() {
                 http: emby::http_client(),
                 player: Mutex::new(None),
                 now: Mutex::new(None),
+                bif: Mutex::new(None),
             });
 
             // Every 10 seconds, tell Emby where we are (so resume works elsewhere).
@@ -650,6 +735,7 @@ pub fn run() {
             api_cached,
             api_send,
             api_upload_image,
+            load_previews,
             play,
             player_command,
             player_set,

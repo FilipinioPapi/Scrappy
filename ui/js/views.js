@@ -70,11 +70,12 @@ export async function homeView(root, ctx) {
     const oldRows = {};
     root.querySelectorAll('[data-row]').forEach((r) => (oldRows[r.dataset.row] = r));
     root.innerHTML = `
+      <div data-row="hero"></div>
+      <div data-row="resume"></div>
       <section class="section">
         <div class="section-head"><h2>My Media</h2></div>
         <div class="row">${views.map(libTile).join('')}</div>
       </section>
-      <div data-row="resume"></div>
       ${views.filter((v) => !NO_LATEST.has(v.CollectionType)).map((v) => `<div data-row="latest-${esc(v.Id)}"></div>`).join('')}`;
     root.querySelectorAll('[data-row]').forEach((r) => {
       if (oldRows[r.dataset.row]) r.replaceWith(oldRows[r.dataset.row]);
@@ -90,8 +91,12 @@ function loadRows(root, ctx, views) {
   rowsLoadedFor = ctx;
   const q = `Fields=${FIELDS}&${IMG_OPTS}`;
 
+  const heroPools = {};
+  const feedHero = (name, items) => { heroPools[name] = items; buildHero(root, ctx, heroPools); };
+
   load(`/Users/{userId}/Items/Resume?Limit=24&Recursive=true&MediaTypes=Video&${q}`, (data) => {
     const items = data?.Items || [];
+    feedHero('resume', items);
     const slot = root.querySelector('[data-row=resume]');
     if (!slot) return;
     slot.innerHTML = items.length
@@ -109,6 +114,7 @@ function loadRows(root, ctx, views) {
         if (excluded.includes(v.Id)) { slot?.remove(); continue; }
         load(`/Users/{userId}/Items/Latest?ParentId=${v.Id}&Limit=20&${q}`, (data) => {
           const items = Array.isArray(data) ? data : data?.Items || [];
+          feedHero('latest-' + v.Id, items);
           const s = root.querySelector(`[data-row="latest-${CSS.escape(v.Id)}"]`);
           if (!s) return;
           s.innerHTML = items.length
@@ -119,6 +125,126 @@ function loadRows(root, ctx, views) {
         }, ctx.alive).catch(() => {});
       }
     });
+}
+
+// ---------------- Home banner ----------------
+// Rotates through things you're watching, new episodes and recent additions.
+// Only items whose backdrop is genuinely wide and sharp get in, so nothing
+// blurry or missing ever fills the top of the screen.
+
+const HERO_MIN_WIDTH = 1280;
+const heroChecked = new Map(); // backdrop url -> true/false
+
+function heroBackdrop(it) {
+  if (it.BackdropImageTags?.length) return { id: it.Id, tag: it.BackdropImageTags[0] };
+  if (it.ParentBackdropImageTags?.length && it.ParentBackdropItemId) return { id: it.ParentBackdropItemId, tag: it.ParentBackdropImageTags[0] };
+  return null;
+}
+
+function backdropIsGood(url) {
+  if (heroChecked.has(url)) return Promise.resolve(heroChecked.get(url));
+  return new Promise((resolve) => {
+    const im = new Image();
+    const done = (ok) => { heroChecked.set(url, ok); resolve(ok); };
+    im.onload = () => {
+      const ratio = im.naturalWidth / im.naturalHeight;
+      done(im.naturalWidth >= HERO_MIN_WIDTH && ratio >= 1.55 && ratio <= 2.1);
+    };
+    im.onerror = () => done(false);
+    setTimeout(() => done(false), 8000);
+    im.src = url;
+  });
+}
+
+let heroTimer = null;
+let heroGen = 0;
+async function buildHero(root, ctx, pools) {
+  const slot = root.querySelector('[data-row=hero]');
+  if (!slot) return;
+  const my = ++heroGen;
+  // Mix: up to 3 in-progress, then recent additions taken in turn from each library.
+  const resume = (pools.resume || []).slice(0, 6);
+  const latestLists = Object.entries(pools).filter(([k]) => k.startsWith('latest-')).map(([, v]) => v);
+  const latest = [];
+  for (let i = 0; i < 12; i++) for (const l of latestLists) if (l[i]) latest.push(l[i]);
+  const seen = new Set();
+  const candidates = [];
+  for (const it of [...resume.slice(0, 3), ...latest, ...resume.slice(3)]) {
+    const key = it.SeriesId || it.Id;
+    if (seen.has(key) || !heroBackdrop(it)) continue;
+    seen.add(key);
+    candidates.push(it);
+    if (candidates.length >= 14) break;
+  }
+  const picks = [];
+  for (const it of candidates) {
+    const b = heroBackdrop(it);
+    const url = img(b.id, 'Backdrop', b.tag, 1920, 0);
+    if (await backdropIsGood(url)) picks.push({ it, url, resume: resume.includes(it) });
+    if (my !== heroGen || !ctx.alive()) return;
+    if (picks.length >= 6) break;
+  }
+  if (!picks.length) { slot.innerHTML = ''; return; }
+  // Episodes show the show's details (more interesting than one episode's).
+  const seriesInfo = {};
+  await Promise.all(picks.filter((p) => p.it.Type === 'Episode' && p.it.SeriesId).map(async (p) => {
+    try { seriesInfo[p.it.SeriesId] = await api.cached(`/Users/{userId}/Items/${p.it.SeriesId}`) || await api.get(`/Users/{userId}/Items/${p.it.SeriesId}`); } catch {}
+  }));
+  if (my !== heroGen || !ctx.alive()) return;
+  renderHero(slot, ctx, picks, seriesInfo);
+}
+
+function renderHero(slot, ctx, picks, seriesInfo) {
+  let i = 0;
+  const slide = (p) => {
+    const it = p.it;
+    const ser = it.Type === 'Episode' ? seriesInfo[it.SeriesId] : null;
+    const ud = it.UserData || {};
+    const resumable = ud.PlaybackPositionTicks > 0 && it.RunTimeTicks;
+    const kicker = p.resume ? 'CONTINUE WATCHING' : it.Type === 'Episode' ? 'NEW EPISODE' : 'JUST ADDED';
+    const title = ser?.Name || it.SeriesName || it.Name;
+    const meta = it.Type === 'Episode'
+      ? [epCode(it), it.Name, resumable ? `${runtime(it.RunTimeTicks - ud.PlaybackPositionTicks)} left` : ''].filter(Boolean).join(' · ')
+      : [it.ProductionYear, it.RunTimeTicks ? runtime(it.RunTimeTicks) : '', it.OfficialRating, resumable ? `${runtime(it.RunTimeTicks - ud.PlaybackPositionTicks)} left` : ''].filter(Boolean).join(' · ');
+    const overview = (ser?.Overview || it.Overview || '');
+    const playId = it.Type === 'Series' ? null : it.Id;
+    return `
+      <div class="hero-bg"><img src="${esc(p.url)}" alt=""></div>
+      <div class="hero-text">
+        <div class="hero-kicker">${kicker}</div>
+        <h1 class="hero-title">${esc(title)}</h1>
+        <div class="hero-meta">${esc(meta)}</div>
+        <p class="hero-overview">${esc(overview)}</p>
+        <div class="hero-buttons">
+          ${playId ? `<button class="btn big" data-play="${esc(playId)}">${PLAY_ICON} ${resumable ? 'Resume' : 'Play'}</button>` : ''}
+          <a class="btn secondary big" href="#/item/${encodeURIComponent(it.SeriesId && it.Type === 'Episode' ? it.SeriesId : it.Id)}">More info</a>
+        </div>
+      </div>`;
+  };
+  slot.innerHTML = `
+    <section class="hero">
+      <div class="hero-slide">${slide(picks[0])}</div>
+      ${picks.length > 1 ? `<div class="hero-dots">${picks.map((_, n) => `<button class="hero-dot ${n === 0 ? 'on' : ''}" data-n="${n}" aria-label="Show item ${n + 1}"></button>`).join('')}</div>` : ''}
+    </section>`;
+  const box = slot.querySelector('.hero-slide');
+  const show = (n) => {
+    i = (n + picks.length) % picks.length;
+    box.classList.remove('in');
+    void box.offsetWidth;
+    box.innerHTML = slide(picks[i]);
+    box.classList.add('in');
+    slot.querySelectorAll('.hero-dot').forEach((d, k) => d.classList.toggle('on', k === i));
+  };
+  slot.querySelectorAll('.hero-dot').forEach((d) => d.addEventListener('click', () => { show(Number(d.dataset.n)); restart(); }));
+  let paused = false;
+  slot.querySelector('.hero').addEventListener('mouseenter', () => (paused = true));
+  slot.querySelector('.hero').addEventListener('mouseleave', () => (paused = false));
+  const restart = () => {
+    clearInterval(heroTimer);
+    if (picks.length > 1) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden) show(i + 1); }, 8000);
+  };
+  restart();
+  ctx.onLeave(() => clearInterval(heroTimer));
 }
 
 function libTile(v) {
