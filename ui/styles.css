@@ -341,13 +341,13 @@ html.playing body { overflow: hidden; }
 
 /* Skip Intro / Skip Credits */
 .p-skip {
-  position: absolute; right: 32px; bottom: 40px; height: 48px; padding: 0 22px 0 18px; overflow: hidden;
+  position: absolute; right: 32px; bottom: 132px; height: 48px; padding: 0 22px 0 18px; overflow: hidden;
   display: flex; align-items: center; gap: 10px; cursor: pointer;
   border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
   background: rgba(18,17,16,.82); backdrop-filter: blur(10px);
   color: #fff; font-size: 15px; font-weight: 600; letter-spacing: .2px;
   box-shadow: 0 8px 24px rgba(0,0,0,.45);
-  transition: bottom .25s, background .15s, border-color .15s, transform .15s;
+  transition: background .15s, border-color .15s, transform .15s;
   animation: pop .2s ease-out;
 }
 .p-skip:hover { background: var(--accent); border-color: var(--accent); }
@@ -361,12 +361,11 @@ html.playing body { overflow: hidden; }
 }
 .p-skip:hover .p-skip-bar { background: rgba(255,255,255,.7); }
 .p-skip[hidden] { display: none; }
-#player:not(.idle) .p-skip, #player:not(.idle) .p-upnext { bottom: 130px; }
 
 /* Up next card */
 .p-upnext {
-  position: absolute; right: 32px; bottom: 40px; width: 420px; box-sizing: border-box; padding: 16px;
-  display: flex; flex-direction: column; gap: 14px; transition: bottom .25s;
+  position: absolute; right: 32px; bottom: 132px; width: 420px; box-sizing: border-box; padding: 16px;
+  display: flex; flex-direction: column; gap: 14px;
   background: rgba(28,27,26,.95); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 16px 40px rgba(0,0,0,.6);
   animation: pop .2s ease-out;
 }
