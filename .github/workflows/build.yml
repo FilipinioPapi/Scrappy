@@ -2,8 +2,6 @@ name: Build Windows app
 
 on:
   push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -40,10 +38,41 @@ jobs:
           if (-not $dll) { throw "libmpv dll not found in archive" }
           Copy-Item $dll.FullName src-tauri/libmpv/libmpv-2.dll
 
+      # Keep the installer tools Tauri downloads, so a GitHub download hiccup can't break the build.
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: tauri-tools-v1
+
+      # Fetch the installer tools ourselves, with retries (Tauri's own download has no retry).
+      - name: Get installer tools
+        shell: pwsh
+        run: |
+          $tools = "$env:LOCALAPPDATA\tauri"
+          $dll = "$tools\NSIS\Plugins\x86-unicode\additional\nsis_tauri_utils.dll"
+          if (Test-Path $dll) { Write-Host "Installer tools already cached"; exit 0 }
+          New-Item -Force -ItemType Directory $tools | Out-Null
+          curl.exe -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o nsis.zip https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip
+          if ($LASTEXITCODE -ne 0) { throw "NSIS download failed" }
+          if (Test-Path "$tools\NSIS") { Remove-Item -Recurse -Force "$tools\NSIS" }
+          Expand-Archive nsis.zip -DestinationPath $tools -Force
+          Rename-Item "$tools\nsis-3.13" NSIS
+          New-Item -Force -ItemType Directory (Split-Path $dll) | Out-Null
+          curl.exe -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o $dll https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll
+          if ($LASTEXITCODE -ne 0) { throw "nsis_tauri_utils download failed" }
+
       - name: Build
+        shell: pwsh
         run: |
           npm ci
-          npx tauri build
+          # Retry if a tool download fails (network), up to 3 attempts.
+          for ($i = 1; $i -le 3; $i++) {
+            npx tauri build
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($i -eq 3) { exit 1 }
+            Write-Host "Build attempt $i failed; retrying in 30s"
+            Start-Sleep -Seconds 30
+          }
 
       - name: Make portable zip
         shell: pwsh
@@ -61,13 +90,13 @@ jobs:
             Scrappy-setup.exe
             Scrappy-portable.zip
 
-      # Every push to main refreshes the "Latest build" download page.
-      - name: Publish latest build
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      # main -> "Latest build"; any other branch -> "Preview build" (for testing before merging).
+      - name: Publish build
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest --yes --cleanup-tag 2>$null
-          $notes = "Built from commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
-          gh release create latest Scrappy-setup.exe Scrappy-portable.zip --title "Latest build" --notes $notes --prerelease --target ${{ github.sha }}
+          if ("${{ github.ref }}" -eq "refs/heads/main") { $tag = "latest"; $title = "Latest build" } else { $tag = "preview"; $title = "Preview build (${{ github.ref_name }})" }
+          gh release delete $tag --yes --cleanup-tag 2>$null
+          $notes = "Built from ${{ github.ref_name }} at commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
+          gh release create $tag Scrappy-setup.exe Scrappy-portable.zip --title $title --notes $notes --prerelease --target ${{ github.sha }}

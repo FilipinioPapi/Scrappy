@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub const CLIENT_NAME: &str = "Scrappy";
+pub const CLIENT_NAME: &str = "Scrappy Media Center";
 pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// What we remember between launches. The password is never stored, only the
@@ -191,10 +191,58 @@ pub async fn send(
     if let Some(b) = body {
         req = req.json(&b);
     }
+    finish(req).await
+}
+
+/// Download raw bytes. Ok(None) when the server says it doesn't have it.
+pub async fn get_bytes(http: &reqwest::Client, cfg: &Config, path: &str) -> Result<Option<Vec<u8>>, String> {
+    if !cfg.logged_in() {
+        return Err("Not logged in.".into());
+    }
+    let url = format!("{}{}", cfg.server, expand_path(cfg, path));
+    let r = http
+        .get(url)
+        .header("X-Emby-Authorization", cfg.auth_header())
+        .header("X-Emby-Token", &cfg.token)
+        .send()
+        .await
+        .map_err(friendly_error)?;
+    if !r.status().is_success() {
+        return Ok(None);
+    }
+    Ok(Some(r.bytes().await.map_err(|e| e.to_string())?.to_vec()))
+}
+
+/// Send a raw text body (used for image uploads, which Emby takes as base64).
+pub async fn send_raw(
+    http: &reqwest::Client,
+    cfg: &Config,
+    method: reqwest::Method,
+    path: &str,
+    body: String,
+    content_type: &str,
+) -> Result<Value, String> {
+    if !cfg.logged_in() {
+        return Err("Not logged in.".into());
+    }
+    let url = format!("{}{}", cfg.server, expand_path(cfg, path));
+    let req = http
+        .request(method, url)
+        .header("X-Emby-Authorization", cfg.auth_header())
+        .header("X-Emby-Token", &cfg.token)
+        .header("Content-Type", content_type)
+        .body(body);
+    finish(req).await
+}
+
+async fn finish(req: reqwest::RequestBuilder) -> Result<Value, String> {
     let r = req.send().await.map_err(friendly_error)?;
     let status = r.status();
     if status.as_u16() == 401 {
         return Err("SESSION_EXPIRED".into());
+    }
+    if status.as_u16() == 403 {
+        return Err("Your Emby account isn't allowed to do that.".into());
     }
     if !status.is_success() {
         return Err(format!("Server error ({status})."));
@@ -243,8 +291,15 @@ pub fn device_profile(max_bitrate: u64) -> Value {
     })
 }
 
+pub struct ExternalSub {
+    pub url: String,
+    pub title: String,
+    pub lang: String,
+}
+
 pub struct PlayTarget {
     pub url: String,
+    pub external_subs: Vec<ExternalSub>,
     pub play_method: String,
     pub media_source_id: String,
     pub play_session_id: String,
@@ -256,12 +311,19 @@ pub async fn playback_target(
     cfg: &Config,
     item_id: &str,
     start_ticks: i64,
+    max_bitrate: Option<u64>,
 ) -> Result<PlayTarget, String> {
-    let max_bitrate: u64 = 200_000_000;
-    let path = format!(
+    // No limit = "Original": direct play whenever possible.
+    // A limit = the user picked a lower quality, so ask Emby to transcode.
+    let capped = max_bitrate.is_some();
+    let max_bitrate: u64 = max_bitrate.unwrap_or(200_000_000);
+    let mut path = format!(
         "/Items/{item_id}/PlaybackInfo?UserId={}&StartTimeTicks={start_ticks}&IsPlayback=true&AutoOpenLiveStream=true&MaxStreamingBitrate={max_bitrate}",
         cfg.user_id
     );
+    if capped {
+        path.push_str("&EnableDirectPlay=false&EnableDirectStream=false");
+    }
     let info = send(
         http,
         cfg,
@@ -281,8 +343,28 @@ pub async fn playback_target(
         .ok_or("Emby returned no playable version of this item.")?;
     let media_source_id = source["Id"].as_str().unwrap_or_default().to_string();
 
-    let direct = source["SupportsDirectPlay"].as_bool().unwrap_or(false)
-        || source["SupportsDirectStream"].as_bool().unwrap_or(false);
+    // Subtitle files that sit next to the video on the server.
+    let mut external_subs = Vec::new();
+    for st in source["MediaStreams"].as_array().cloned().unwrap_or_default() {
+        if st["Type"].as_str() != Some("Subtitle") || !st["IsExternal"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let Some(rel) = st["DeliveryUrl"].as_str() else { continue };
+        let mut url = if rel.starts_with("http") { rel.to_string() } else { format!("{}{}", cfg.server, rel) };
+        if !url.contains("api_key=") {
+            url.push_str(if url.contains('?') { "&" } else { "?" });
+            url.push_str(&format!("api_key={}", cfg.token));
+        }
+        external_subs.push(ExternalSub {
+            url,
+            title: st["DisplayTitle"].as_str().or(st["Title"].as_str()).unwrap_or("External").to_string(),
+            lang: st["Language"].as_str().unwrap_or("").to_string(),
+        });
+    }
+
+    let direct = !capped
+        && (source["SupportsDirectPlay"].as_bool().unwrap_or(false)
+            || source["SupportsDirectStream"].as_bool().unwrap_or(false));
 
     // Remote items (e.g. .strm files pointing to a URL) are played straight from their URL.
     if direct
@@ -292,6 +374,7 @@ pub async fn playback_target(
         if let Some(p) = source["Path"].as_str() {
             return Ok(PlayTarget {
                 url: p.to_string(),
+                external_subs,
                 play_method: "DirectPlay".into(),
                 media_source_id,
                 play_session_id,
@@ -310,6 +393,7 @@ pub async fn playback_target(
         );
         return Ok(PlayTarget {
             url,
+            external_subs,
             play_method: "DirectStream".into(),
             media_source_id,
             play_session_id,
@@ -323,6 +407,7 @@ pub async fn playback_target(
         }
         return Ok(PlayTarget {
             url,
+            external_subs,
             play_method: "Transcode".into(),
             media_source_id,
             play_session_id,

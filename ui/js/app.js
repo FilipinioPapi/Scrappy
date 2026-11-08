@@ -1,12 +1,32 @@
-import { api, listen } from './api.js';
+import { api, quiet } from './api.js';
+import './player.js';
+import './menu.js';
 import { toast } from './components.js';
-import { loginView, homeView, libraryView, itemView, searchView, listenView } from './views.js';
+import { loginView, homeView, libraryView, itemView, personView, searchView, comingSoonView } from './views.js';
 
 const viewEl = document.getElementById('view');
+
+// Opening intro: stays until the first page is ready (the home banner, or any
+// other page), at least 1.2s so it doesn't flash, and never past ~2.5s.
+const introStart = performance.now();
+let introGone = false;
+function hideIntro() {
+  if (introGone) return;
+  introGone = true;
+  const el = document.getElementById('intro');
+  if (!el) return;
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 500);
+  }, Math.max(0, 1200 - (performance.now() - introStart)));
+}
+window.addEventListener('scrappy:ready', hideIntro, { once: true });
+setTimeout(hideIntro, 2000);
 const topbar = document.getElementById('topbar');
 let session = null;
 let routeId = 0;
 let leaveHandlers = [];
+let enterTimer;
 
 async function refreshSession() {
   session = await api.session();
@@ -37,28 +57,42 @@ function makeCtx() {
   };
 }
 
-async function route() {
+async function route(opts = {}) {
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
-  const [, name, arg] = hash.split('/');
+  const [, name, arg, arg2] = hash.split('/');
 
   if (!session.loggedIn && name !== 'login') { location.hash = '#/login'; return; }
   if (session.loggedIn && name === 'login') { location.hash = '#/home'; return; }
 
   topbar.hidden = name === 'login';
   document.querySelectorAll('.tabs a').forEach((a) =>
-    a.classList.toggle('active', a.dataset.tab === (name === 'listen' ? 'listen' : 'watch')));
+    a.classList.toggle('active', a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   document.getElementById('userMenu').hidden = true;
 
   const ctx = makeCtx();
+  if (opts.keepScroll) quiet();
   const id = arg ? decodeURIComponent(arg) : '';
-  window.scrollTo(0, 0);
+  if (!opts.keepScroll) {
+    window.scrollTo(0, 0);
+    viewEl.classList.remove('quiet');
+    // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
+    viewEl.classList.remove('entering');
+    void viewEl.offsetWidth;
+    viewEl.classList.add('entering');
+    clearTimeout(enterTimer);
+    enterTimer = setTimeout(() => viewEl.classList.remove('entering'), 700);
+  }
+  // Home says when its banner is ready; every other page is ready once drawn.
+  if (!['home', undefined, ''].includes(name)) setTimeout(hideIntro, 0);
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
-    case 'library': return libraryView(viewEl, ctx, id);
-    case 'item': return itemView(viewEl, ctx, id);
+    case 'library': return libraryView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
+    case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
+    case 'person': return personView(viewEl, ctx, id);
     case 'search': return searchView(viewEl, ctx);
-    case 'listen': return listenView(viewEl, ctx);
+    case 'music': return comingSoonView(viewEl, 'Music from Navidrome will live here.');
+    case 'audiobooks': return comingSoonView(viewEl, 'Audiobooks from Audiobookshelf will live here.');
     default: return homeView(viewEl, ctx);
   }
 }
@@ -92,9 +126,21 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('mouseup', (e) => { if (e.button === 3) history.back(); if (e.button === 4) history.forward(); });
 
 // Player events from Rust
-listen('player-ended', (e) => {
-  if (e.payload?.error) toast(e.payload.error, true, 8000);
+
+// Settings in the account menu (full settings page comes in step 5).
+const autoplayToggle = document.getElementById('autoplayToggle');
+const windowModeToggle = document.getElementById('windowModeToggle');
+autoplayToggle.checked = localStorage.getItem('autoplay') !== 'off';
+windowModeToggle.checked = localStorage.getItem('playerMode') === 'window';
+autoplayToggle.addEventListener('change', () => localStorage.setItem('autoplay', autoplayToggle.checked ? 'on' : 'off'));
+windowModeToggle.addEventListener('change', () => localStorage.setItem('playerMode', windowModeToggle.checked ? 'window' : 'embedded'));
+document.querySelector('.menu').addEventListener('click', (e) => { if (e.target.closest('label')) e.stopPropagation(); });
+
+// After playback, refresh the page so Continue Watching and progress bars update.
+window.addEventListener('scrappy:refresh', () => {
+  const name = (location.hash || '#/home').split('/')[1];
+  if (['home', 'item', undefined, ''].includes(name)) route({ keepScroll: true });
 });
 
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => route());
 route();

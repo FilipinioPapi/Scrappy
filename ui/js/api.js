@@ -8,7 +8,10 @@ export const api = {
   logout: () => invoke('logout'),
   get: (path) => invoke('api_get', { path }),
   cached: (path) => invoke('api_cached', { path }),
-  play: (itemId, fromStart = false) => invoke('play', { itemId, fromStart }),
+  post: (path, body = null) => invoke('api_send', { method: 'POST', path, body }),
+  del: (path) => invoke('api_send', { method: 'DELETE', path, body: null }),
+  uploadImage: (path, base64, contentType) => invoke('api_upload_image', { path, base64, contentType }),
+  play: (itemId, o = {}) => invoke('play', { itemId, fromStart: !!o.fromStart, embedded: o.embedded ?? true, startSecs: o.startSecs ?? null, maxBitrate: o.maxBitrate ?? null }),
   clearCache: () => invoke('clear_cache'),
 };
 
@@ -23,17 +26,32 @@ export async function load(path, render, isAlive = () => true) {
   }
   try {
     const fresh = await api.get(path);
-    if (isAlive() && JSON.stringify(fresh) !== shown) render(fresh, false);
+    if (isAlive() && JSON.stringify(fresh) !== shown) {
+      // Swapping in fresher data for what's already on screen: don't replay entrance animations.
+      if (shown) quiet();
+      render(fresh, false);
+    }
   } catch (e) {
     if (!cached) throw e;
   }
 }
 
+// Turns off entrance animations on the current page until the next page change
+// (removing it earlier would make everything replay its animation).
+export function quiet() {
+  document.getElementById('view')?.classList.add('quiet');
+}
+
 // Images are served by Rust from a disk cache through the img:// protocol.
-const IMG_BASE = navigator.userAgent.includes('Windows') ? 'http://img.localhost' : 'img://localhost';
+export const IMG_BASE = navigator.userAgent.includes('Windows') ? 'http://img.localhost' : 'img://localhost';
 
 export function img(itemId, type, tag, width = 400, index) {
   if (!itemId || !tag) return null;
   const idx = index !== undefined ? `/${index}` : '';
   return `${IMG_BASE}/${encodeURIComponent(itemId)}/${type}${idx}?tag=${encodeURIComponent(tag)}&w=${width}`;
+}
+
+// Ask for an image even when Emby didn't list one (e.g. auto-made library pictures).
+export function imgAny(itemId, type, width = 400) {
+  return `${IMG_BASE}/${encodeURIComponent(itemId)}/${type}?w=${width}`;
 }

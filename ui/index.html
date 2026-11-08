@@ -3,15 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Scrappy</title>
+  <title>Scrappy Media Center</title>
+  <link rel="icon" href="logo.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div id="intro" aria-hidden="true">
+    <div class="intro-mid">
+      <img class="intro-dog" src="logo.png" alt="">
+      <div class="intro-name">SCRAPPY</div>
+      <div class="intro-sub">MEDIA CENTER</div>
+      <div class="intro-dots"><i></i><i></i><i></i></div>
+    </div>
+    <div class="intro-foot">
+      <img src="jaydenater.gif" alt="">
+      <div><div class="k">POWERED BY</div><div class="n">JAYDENATER<span class="bt">BOT</span></div></div>
+    </div>
+  </div>
   <header id="topbar" hidden>
-    <div class="brand">Scrappy</div>
+    <a class="brand" href="#/home" aria-label="Scrappy home"><img src="logo.png" alt=""><div><div class="brand-name">SCRAPPY</div><div class="brand-sub">MEDIA CENTER</div></div></a>
     <nav class="tabs">
-      <a href="#/home" data-tab="watch">Watch</a>
-      <a href="#/listen" data-tab="listen">Listen</a>
+      <a href="#/home" data-tab="home">Movies &amp; TV</a>
+      <a href="#/music" data-tab="music">Music</a>
+      <a href="#/audiobooks" data-tab="audiobooks">Audiobooks</a>
     </nav>
     <div class="actions">
       <a href="#/search" class="icon-btn" title="Search" aria-label="Search">
@@ -23,6 +37,8 @@
         </button>
         <div class="menu" id="userMenu" hidden>
           <div class="menu-info" id="userInfo"></div>
+          <label class="toggle">Auto-play next episode <input type="checkbox" id="autoplayToggle"></label>
+          <label class="toggle">Play in separate mpv window <input type="checkbox" id="windowModeToggle"></label>
           <button id="clearCacheBtn">Clear image cache</button>
           <button id="logoutBtn">Sign out</button>
         </div>
