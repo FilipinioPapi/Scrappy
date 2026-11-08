@@ -38,10 +38,24 @@ jobs:
           if (-not $dll) { throw "libmpv dll not found in archive" }
           Copy-Item $dll.FullName src-tauri/libmpv/libmpv-2.dll
 
+      # Keep the installer tools Tauri downloads, so a GitHub download hiccup can't break the build.
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: tauri-tools-v1
+
       - name: Build
+        shell: pwsh
         run: |
           npm ci
-          npx tauri build
+          # Retry if a tool download fails (network), up to 3 attempts.
+          for ($i = 1; $i -le 3; $i++) {
+            npx tauri build
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($i -eq 3) { exit 1 }
+            Write-Host "Build attempt $i failed; retrying in 30s"
+            Start-Sleep -Seconds 30
+          }
 
       - name: Make portable zip
         shell: pwsh
