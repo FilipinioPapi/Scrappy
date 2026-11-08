@@ -1,4 +1,4 @@
-import { api, load, img } from './api.js';
+import { api, load, img, imgAny } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON } from './components.js';
 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
@@ -54,38 +54,108 @@ export function loginView(root, ctx) {
 
 // ---------------- Home (Watch) ----------------
 
+const NO_LATEST = new Set(['boxsets', 'playlists', 'livetv', 'channels', 'music']);
+
 export async function homeView(root, ctx) {
   root.innerHTML = loadingHtml();
+  let views = null;
   await load('/Users/{userId}/Views', (data) => {
-    const views = (data?.Items || []).filter((v) => v.CollectionType !== 'music');
+    views = (data?.Items || []).filter((v) => v.CollectionType !== 'music');
     if (!views.length) {
       root.innerHTML = '<div class="empty">No libraries found on this server for your account.</div>';
       return;
     }
+    // Keep already-loaded rows when the library list is refreshed.
+    const oldRows = {};
+    root.querySelectorAll('[data-row]').forEach((r) => (oldRows[r.dataset.row] = r));
     root.innerHTML = `
       <section class="section">
         <div class="section-head"><h2>My Media</h2></div>
-        <div class="row">
-          ${views.map(libTile).join('')}
-        </div>
+        <div class="row">${views.map(libTile).join('')}</div>
       </section>
-      <section class="section">
-        <div class="empty" style="padding:40px 0">Continue Watching and Latest rows arrive in step 2.</div>
-      </section>`;
-  }, ctx.alive);
+      <div data-row="resume"></div>
+      ${views.filter((v) => !NO_LATEST.has(v.CollectionType)).map((v) => `<div data-row="latest-${esc(v.Id)}"></div>`).join('')}`;
+    root.querySelectorAll('[data-row]').forEach((r) => {
+      if (oldRows[r.dataset.row]) r.replaceWith(oldRows[r.dataset.row]);
+    });
+    loadRows(root, ctx, views);
+  }, ctx.alive).catch((e) => ctx.fail(e));
+}
+
+let rowsLoadedFor = null;
+function loadRows(root, ctx, views) {
+  // Only fetch the rows once per page visit, even if the library list re-renders.
+  if (rowsLoadedFor === ctx) return;
+  rowsLoadedFor = ctx;
+  const q = `Fields=${FIELDS}&${IMG_OPTS}`;
+
+  load(`/Users/{userId}/Items/Resume?Limit=24&Recursive=true&MediaTypes=Video&${q}`, (data) => {
+    const items = data?.Items || [];
+    const slot = root.querySelector('[data-row=resume]');
+    if (!slot) return;
+    slot.innerHTML = items.length
+      ? `<section class="section"><div class="section-head"><h2>Continue Watching</h2></div>
+          <div class="row">${items.map((i) => card(i, { shape: 'wide' })).join('')}</div></section>`
+      : '';
+  }, ctx.alive).catch(() => {});
+
+  // Libraries you've hidden from "Latest" in Emby stay hidden here too.
+  api.get('/Users/{userId}').then((u) => u?.Configuration?.LatestItemsExcludes || []).catch(() => [])
+    .then((excluded) => {
+      for (const v of views) {
+        if (NO_LATEST.has(v.CollectionType)) continue;
+        const slot = root.querySelector(`[data-row="latest-${CSS.escape(v.Id)}"]`);
+        if (excluded.includes(v.Id)) { slot?.remove(); continue; }
+        load(`/Users/{userId}/Items/Latest?ParentId=${v.Id}&Limit=20&${q}`, (data) => {
+          const items = Array.isArray(data) ? data : data?.Items || [];
+          const s = root.querySelector(`[data-row="latest-${CSS.escape(v.Id)}"]`);
+          if (!s) return;
+          s.innerHTML = items.length
+            ? `<section class="section"><div class="section-head"><h2><a href="#/library/${encodeURIComponent(v.Id)}">Latest ${esc(v.Name)}</a></h2></div>
+                <div class="row">${items.map((i) => card(i)).join('')}</div></section>`
+            : '';
+          fillTileFallback(root, v.Id, items);
+        }, ctx.alive).catch(() => {});
+      }
+    });
 }
 
 function libTile(v) {
   const t = v.ImageTags || {};
-  const src = t.Primary ? img(v.Id, 'Primary', t.Primary, 600) : null;
+  // Emby makes library pictures automatically but doesn't always list them,
+  // so ask for one anyway; if there isn't one, a backdrop is filled in later.
+  const src = t.Primary ? img(v.Id, 'Primary', t.Primary, 640) : imgAny(v.Id, 'Primary', 640);
   return `
-    <a class="card lib-tile" href="#/library/${encodeURIComponent(v.Id)}">
+    <a class="card lib-tile" href="#/library/${encodeURIComponent(v.Id)}" data-lib="${esc(v.Id)}">
       <div class="art">
-        ${src ? `<img src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
-        <div class="ph">${src ? '' : esc(v.Name)}</div>
+        <div class="ph">${esc(v.Name)}</div>
+        <img src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.closest('.card').classList.add('noimg');this.removeAttribute('src')">
       </div>
       <div class="title">${esc(v.Name)}</div>
     </a>`;
+}
+
+// For a library with no picture, use the backdrop of its newest item.
+function fillTileFallback(root, viewId, items) {
+  const tile = root.querySelector(`[data-lib="${CSS.escape(viewId)}"]`);
+  if (!tile) return;
+  const apply = () => {
+    if (!tile.classList.contains('noimg')) return;
+    const it = items.find((i) => i.BackdropImageTags?.length || i.ParentBackdropImageTags?.length);
+    if (!it) return;
+    const src = it.BackdropImageTags?.length
+      ? img(it.Id, 'Backdrop', it.BackdropImageTags[0], 640, 0)
+      : img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], 640, 0);
+    const im = tile.querySelector('img');
+    tile.classList.remove('noimg');
+    tile.classList.add('fallback');
+    im.onerror = () => im.remove();
+    im.src = src;
+  };
+  apply();
+  // The library picture may still be loading; check again once it settles.
+  const im = tile.querySelector('img');
+  if (im && !im.complete) im.addEventListener('error', () => setTimeout(apply, 0), { once: true });
 }
 
 // ---------------- Library page ----------------

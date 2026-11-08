@@ -1,4 +1,5 @@
-import { api, listen } from './api.js';
+import { api } from './api.js';
+import './player.js';
 import { toast } from './components.js';
 import { loginView, homeView, libraryView, itemView, searchView, listenView } from './views.js';
 
@@ -37,7 +38,7 @@ function makeCtx() {
   };
 }
 
-async function route() {
+async function route(opts = {}) {
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
   const [, name, arg] = hash.split('/');
@@ -52,7 +53,7 @@ async function route() {
 
   const ctx = makeCtx();
   const id = arg ? decodeURIComponent(arg) : '';
-  window.scrollTo(0, 0);
+  if (!opts.keepScroll) window.scrollTo(0, 0);
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
     case 'library': return libraryView(viewEl, ctx, id);
@@ -92,9 +93,21 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('mouseup', (e) => { if (e.button === 3) history.back(); if (e.button === 4) history.forward(); });
 
 // Player events from Rust
-listen('player-ended', (e) => {
-  if (e.payload?.error) toast(e.payload.error, true, 8000);
+
+// Settings in the account menu (full settings page comes in step 5).
+const autoplayToggle = document.getElementById('autoplayToggle');
+const windowModeToggle = document.getElementById('windowModeToggle');
+autoplayToggle.checked = localStorage.getItem('autoplay') !== 'off';
+windowModeToggle.checked = localStorage.getItem('playerMode') === 'window';
+autoplayToggle.addEventListener('change', () => localStorage.setItem('autoplay', autoplayToggle.checked ? 'on' : 'off'));
+windowModeToggle.addEventListener('change', () => localStorage.setItem('playerMode', windowModeToggle.checked ? 'window' : 'embedded'));
+document.querySelector('.menu').addEventListener('click', (e) => { if (e.target.closest('label')) e.stopPropagation(); });
+
+// After playback, refresh the page so Continue Watching and progress bars update.
+window.addEventListener('scrappy:refresh', () => {
+  const name = (location.hash || '#/home').split('/')[1];
+  if (['home', 'item', undefined, ''].includes(name)) route({ keepScroll: true });
 });
 
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => route());
 route();

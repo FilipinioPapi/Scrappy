@@ -81,8 +81,8 @@ export function card(it, opts = {}) {
   return `
     <a class="card ${shape}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
       <div class="art">
+        <div class="ph">${esc(it.Name)}</div>
         ${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
-        <div class="ph">${src ? '' : esc(it.Name)}</div>
         ${isPlayable(it) ? `<div class="play-over"><span data-play="${esc(it.Id)}" title="Play">${PLAY_ICON}</span></div>` : ''}
         ${badge}
         ${pct ? `<div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>` : ''}
@@ -93,12 +93,8 @@ export function card(it, opts = {}) {
 
 // One click handler for every "play" button anywhere in the app.
 export async function playItem(id, fromStart = false) {
-  toast('Starting playback…', false, 2500);
-  try {
-    await api.play(id, fromStart);
-  } catch (e) {
-    toast(String(e), true, 7000);
-  }
+  const player = await import('./player.js');
+  player.startPlayback(id, fromStart);
 }
 
 document.addEventListener('click', (e) => {

@@ -16,8 +16,8 @@
         "height": 860,
         "minWidth": 900,
         "minHeight": 560,
-        "backgroundColor": "#1c1b1a",
-        "center": true
+        "center": true,
+        "transparent": true
       }
     ],
     "security": {
@@ -26,7 +26,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

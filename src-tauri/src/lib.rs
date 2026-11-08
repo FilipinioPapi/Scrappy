@@ -16,7 +16,8 @@ struct AppState {
     cache_dir: PathBuf,
     mpv_dirs: Vec<PathBuf>,
     http: reqwest::Client,
-    player: Mutex<Option<mpv::Session>>,
+    player: Mutex<Option<(usize, bool, mpv::Player)>>,
+    now: Mutex<Option<NowPlaying>>,
 }
 
 impl AppState {
@@ -115,14 +116,225 @@ fn api_cached(state: State<'_, AppState>, path: String) -> Value {
 }
 
 // ---------- Playback ----------
+//
+// One mpv instance lives while the player is open. In "embedded" mode it draws
+// into Scrappy's own window behind the (transparent) web page, and the page
+// draws our controls on top. In "window" mode mpv opens its own window.
 
+#[derive(Clone)]
+struct NowPlaying {
+    item_id: String,
+    media_source_id: String,
+    play_session_id: String,
+    play_method: String,
+    pos_ticks: i64,
+    paused: bool,
+    started: bool,
+}
+
+fn report_body(np: &NowPlaying, event: Option<&str>) -> Value {
+    let mut v = json!({
+        "ItemId": np.item_id,
+        "MediaSourceId": np.media_source_id,
+        "PlaySessionId": np.play_session_id,
+        "PlayMethod": np.play_method,
+        "PositionTicks": np.pos_ticks,
+        "IsPaused": np.paused,
+        "CanSeek": true,
+        "QueueableMediaTypes": ["Video"],
+    });
+    if let Some(e) = event {
+        v["EventName"] = json!(e);
+    }
+    v
+}
+
+/// Send a playback report to Emby in the background.
+fn report(app: &AppHandle, path: &'static str, body: Value) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let cfg = state.cfg();
+        let _ = emby::send(&state.http, &cfg, reqwest::Method::POST, path, Some(body)).await;
+    });
+}
+
+/// Tell Emby the current item stopped (saves the resume point) and forget it.
+fn finish_current(app: &AppHandle) -> Option<NowPlaying> {
+    let state = app.state::<AppState>();
+    let np = state.now.lock().unwrap().take()?;
+    if np.started {
+        report(app, "/Sessions/Playing/Stopped", report_body(&np, None));
+    }
+    Some(np)
+}
+
+fn on_mpv_event(app: &AppHandle, player_id: usize, last_emit: &Mutex<std::time::Instant>, ev: mpv::Event) {
+    let state = app.state::<AppState>();
+    match ev {
+        mpv::Event::Property(name, value) => {
+            if name == "time-pos" {
+                if let Some(secs) = value.as_f64() {
+                    if let Some(np) = state.now.lock().unwrap().as_mut() {
+                        np.pos_ticks = (secs * 10_000_000.0) as i64;
+                    }
+                }
+                // Only update the UI about 4 times a second.
+                let mut last = last_emit.lock().unwrap();
+                if last.elapsed().as_millis() < 250 {
+                    return;
+                }
+                *last = std::time::Instant::now();
+            }
+            if name == "pause" {
+                let paused = value.as_bool().unwrap_or(false);
+                let snapshot = {
+                    let mut now = state.now.lock().unwrap();
+                    now.as_mut().map(|np| {
+                        np.paused = paused;
+                        np.clone()
+                    })
+                };
+                if let Some(np) = snapshot.filter(|n| n.started) {
+                    let ev = if paused { "Pause" } else { "Unpause" };
+                    report(app, "/Sessions/Playing/Progress", report_body(&np, Some(ev)));
+                }
+            }
+            let _ = app.emit("mpv-prop", json!({ "name": name, "value": value }));
+        }
+        mpv::Event::FileLoaded => {
+            let snapshot = {
+                let mut now = state.now.lock().unwrap();
+                now.as_mut().map(|np| {
+                    np.started = true;
+                    np.clone()
+                })
+            };
+            if let Some(np) = snapshot {
+                report(app, "/Sessions/Playing", report_body(&np, None));
+                let _ = app.emit("player-loaded", json!({ "itemId": np.item_id }));
+            }
+        }
+        mpv::Event::EndFile { eof, error } => {
+            if let Some(err) = error {
+                let np = state.now.lock().unwrap().take();
+                let _ = app.emit(
+                    "player-ended",
+                    json!({ "itemId": np.map(|n| n.item_id), "eof": false, "error": err }),
+                );
+                return;
+            }
+            // An end event for a file we already replaced: ignore it.
+            let started = state.now.lock().unwrap().as_ref().map(|n| n.started).unwrap_or(false);
+            if !started {
+                return;
+            }
+            if let Some(np) = finish_current(app) {
+                let _ = app.emit("player-ended", json!({ "itemId": np.item_id, "eof": eof, "error": null }));
+            }
+        }
+        mpv::Event::Shutdown => {
+            finish_current(app);
+            let mut p = state.player.lock().unwrap();
+            if p.as_ref().map(|(id, _, _)| *id == player_id).unwrap_or(false) {
+                *p = None;
+            }
+            drop(p);
+            let _ = app.emit("player-closed", json!({}));
+        }
+    }
+}
+
+fn main_hwnd(app: &AppHandle) -> Option<i64> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let w = app.get_webview_window("main")?;
+    let h = w.window_handle().ok()?;
+    match h.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as i64),
+        RawWindowHandle::Xlib(h) => Some(h.window as i64),
+        _ => None,
+    }
+}
+
+const OBSERVED: &[&str] = &[
+    "time-pos", "duration", "pause", "paused-for-cache", "seeking", "volume", "mute",
+    "eof-reached", "demuxer-cache-time", "track-list", "speed",
+];
+
+fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String> {
+    let state = app.state::<AppState>();
+    {
+        let p = state.player.lock().unwrap();
+        if let Some((_, mode, player)) = p.as_ref() {
+            if *mode == embedded && player.alive() {
+                return Ok(player.clone());
+            }
+            player.quit();
+        }
+    }
+    let mut opts: Vec<(&str, String)> = vec![
+        ("config", "no".into()),
+        ("terminal", "no".into()),
+        ("idle", "yes".into()),
+        ("keep-open", "no".into()),
+        ("force-window", "yes".into()),
+        ("hwdec", "auto-safe".into()),
+        ("vo", "gpu".into()),
+        ("sub-auto", "fuzzy".into()),
+        ("cache", "yes".into()),
+        ("demuxer-max-bytes", "150MiB".into()),
+        ("user-agent", "Scrappy/mpv".into()),
+        ("input-default-bindings", "yes".into()),
+    ];
+    if embedded {
+        let wid = main_hwnd(app).ok_or("Couldn't find the Scrappy window to play in.")?;
+        opts.push(("wid", wid.to_string()));
+        opts.push(("osc", "no".into()));
+        opts.push(("osd-level", "0".into()));
+        opts.push(("input-vo-keyboard", "no".into()));
+        opts.push(("input-cursor", "no".into()));
+        opts.push(("cursor-autohide", "no".into()));
+    } else {
+        opts.push(("osc", "yes".into()));
+        opts.push(("input-vo-keyboard", "yes".into()));
+        opts.push(("input-media-keys", "yes".into()));
+        opts.push(("autofit", "85%x85%".into()));
+    }
+
+    static NEXT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+    let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let app2 = app.clone();
+    let last_emit = Mutex::new(std::time::Instant::now());
+    let player = mpv::Player::create(&state.mpv_dirs, &opts, OBSERVED, move |ev| {
+        on_mpv_event(&app2, id, &last_emit, ev)
+    })?;
+    *state.player.lock().unwrap() = Some((id, embedded, player.clone()));
+    Ok(player)
+}
+
+fn display_title(item: &Value) -> String {
+    match item["Type"].as_str() {
+        Some("Episode") => format!(
+            "{} - S{:02}E{:02} - {}",
+            item["SeriesName"].as_str().unwrap_or(""),
+            item["ParentIndexNumber"].as_i64().unwrap_or(0),
+            item["IndexNumber"].as_i64().unwrap_or(0),
+            item["Name"].as_str().unwrap_or("")
+        ),
+        _ => item["Name"].as_str().unwrap_or("Scrappy").to_string(),
+    }
+}
+
+/// Start playing an item. Returns the item's details for the player screen.
 #[tauri::command]
 async fn play(
     app: AppHandle,
     state: State<'_, AppState>,
     item_id: String,
     from_start: Option<bool>,
-) -> Result<(), String> {
+    embedded: Option<bool>,
+) -> Result<Value, String> {
+    let embedded = embedded.unwrap_or(true);
     let cfg = state.cfg();
     let item = emby::get(&state.http, &cfg, &format!("/Users/{{userId}}/Items/{item_id}")).await?;
     let start_ticks = if from_start.unwrap_or(false) {
@@ -132,46 +344,78 @@ async fn play(
     };
     let target = emby::playback_target(&state.http, &cfg, &item_id, start_ticks).await?;
 
-    let title = match item["Type"].as_str() {
-        Some("Episode") => format!(
-            "{} - S{:02}E{:02} - {}",
-            item["SeriesName"].as_str().unwrap_or(""),
-            item["ParentIndexNumber"].as_i64().unwrap_or(0),
-            item["IndexNumber"].as_i64().unwrap_or(0),
-            item["Name"].as_str().unwrap_or("")
-        ),
-        _ => item["Name"].as_str().unwrap_or("Scrappy").to_string(),
-    };
+    // Save the resume point of whatever was playing before.
+    finish_current(&app);
 
-    // Only one video at a time: close whatever is already playing.
-    if let Some(old) = state.player.lock().unwrap().take() {
-        old.quit();
-    }
-
-    let req = mpv::PlayRequest {
-        url: target.url,
-        title,
-        start_seconds: start_ticks as f64 / 10_000_000.0,
+    let player = ensure_player(&app, embedded)?;
+    *state.now.lock().unwrap() = Some(NowPlaying {
+        item_id: item_id.clone(),
+        media_source_id: target.media_source_id.clone(),
+        play_session_id: target.play_session_id.clone(),
+        play_method: target.play_method.clone(),
+        pos_ticks: start_ticks,
+        paused: false,
+        started: false,
+    });
+    let title = display_title(&item);
+    let start = if start_ticks > 10_000_000 {
+        format!("{:.3}", start_ticks as f64 / 10_000_000.0)
+    } else {
+        "none".to_string()
     };
-    let app2 = app.clone();
-    let id2 = item_id.clone();
-    let session = mpv::play(&state.mpv_dirs, req, move |ended| {
-        let _ = app2.emit("player-ended", json!({ "itemId": id2, "error": ended.error }));
-    })?;
-    *state.player.lock().unwrap() = Some(session);
-    let _ = app.emit(
-        "player-started",
-        json!({ "itemId": item_id, "playMethod": target.play_method }),
-    );
-    let _ = (target.media_source_id, target.play_session_id); // used for progress sync in step 2
-    Ok(())
+    let _ = player.set_property("start", &start);
+    let _ = player.set_property("force-media-title", &title);
+    let _ = player.set_property("title", &format!("{title} - Scrappy"));
+    let _ = player.set_property("pause", "no");
+    player.command(&["loadfile", &target.url, "replace"])?;
+
+    Ok(json!({
+        "item": item,
+        "title": title,
+        "playMethod": target.play_method,
+        "embedded": embedded,
+    }))
+}
+
+/// Run an mpv command, e.g. ["seek", "10"] or ["cycle", "pause"].
+#[tauri::command]
+fn player_command(state: State<'_, AppState>, args: Vec<String>) -> Result<(), String> {
+    let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
+    let p = p.ok_or("Nothing is playing.")?;
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    p.command(&refs)
 }
 
 #[tauri::command]
-fn stop_playback(state: State<'_, AppState>) {
-    if let Some(s) = state.player.lock().unwrap().take() {
-        s.quit();
+fn player_set(state: State<'_, AppState>, name: String, value: String) -> Result<(), String> {
+    let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
+    p.ok_or("Nothing is playing.")?.set_property(&name, &value)
+}
+
+#[tauri::command]
+fn player_get(state: State<'_, AppState>, name: String) -> Value {
+    let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
+    p.map(|p| p.get_property(&name)).unwrap_or(Value::Null)
+}
+
+#[tauri::command]
+fn stop_playback(app: AppHandle, state: State<'_, AppState>) {
+    finish_current(&app);
+    if let Some((_, _, p)) = state.player.lock().unwrap().take() {
+        p.quit();
     }
+}
+
+#[tauri::command]
+fn set_fullscreen(app: AppHandle, on: bool) -> Result<bool, String> {
+    let w = app.get_webview_window("main").ok_or("no window")?;
+    w.set_fullscreen(on).map_err(|e| e.to_string())?;
+    Ok(on)
+}
+
+#[tauri::command]
+fn is_fullscreen(app: AppHandle) -> bool {
+    app.get_webview_window("main").and_then(|w| w.is_fullscreen().ok()).unwrap_or(false)
 }
 
 // ---------- Poster/backdrop images, cached on disk ----------
@@ -279,6 +523,10 @@ fn clear_cache(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+async fn tokio_sleep(secs: u64) {
+    tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+}
+
 pub fn run() {
     tauri::Builder::default()
         .register_asynchronous_uri_scheme_protocol("img", |ctx, request, responder| {
@@ -311,8 +559,46 @@ pub fn run() {
                 mpv_dirs,
                 http: emby::http_client(),
                 player: Mutex::new(None),
+                now: Mutex::new(None),
+            });
+
+            // Every 10 seconds, tell Emby where we are (so resume works elsewhere).
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio_sleep(10).await;
+                    let state = handle.state::<AppState>();
+                    let np = state.now.lock().unwrap().clone();
+                    if let Some(np) = np.filter(|n| n.started && !n.paused) {
+                        report(&handle, "/Sessions/Playing/Progress", report_body(&np, Some("TimeUpdate")));
+                    }
+                }
             });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the app mid-video: save the resume point first.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                let app = window.app_handle().clone();
+                let state = app.state::<AppState>();
+                let np = state.now.lock().unwrap().take();
+                if let Some(np) = np.filter(|n| n.started) {
+                    let cfg = state.cfg();
+                    let http = state.http.clone();
+                    let body = report_body(&np, None);
+                    let _ = tauri::async_runtime::block_on(async move {
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(3),
+                            emby::send(&http, &cfg, reqwest::Method::POST, "/Sessions/Playing/Stopped", Some(body)),
+                        )
+                        .await
+                    });
+                }
+                let player = state.player.lock().unwrap().take();
+                if let Some((_, _, p)) = player {
+                    p.quit();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_session,
@@ -321,7 +607,12 @@ pub fn run() {
             api_get,
             api_cached,
             play,
+            player_command,
+            player_set,
+            player_get,
             stop_playback,
+            set_fullscreen,
+            is_fullscreen,
             clear_cache
         ])
         .run(tauri::generate_context!())

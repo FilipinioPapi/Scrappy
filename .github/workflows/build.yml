@@ -2,8 +2,6 @@ name: Build Windows app
 
 on:
   push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -61,13 +59,13 @@ jobs:
             Scrappy-setup.exe
             Scrappy-portable.zip
 
-      # Every push to main refreshes the "Latest build" download page.
-      - name: Publish latest build
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      # main -> "Latest build"; any other branch -> "Preview build" (for testing before merging).
+      - name: Publish build
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest --yes --cleanup-tag 2>$null
-          $notes = "Built from commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
-          gh release create latest Scrappy-setup.exe Scrappy-portable.zip --title "Latest build" --notes $notes --prerelease --target ${{ github.sha }}
+          if ("${{ github.ref }}" -eq "refs/heads/main") { $tag = "latest"; $title = "Latest build" } else { $tag = "preview"; $title = "Preview build (${{ github.ref_name }})" }
+          gh release delete $tag --yes --cleanup-tag 2>$null
+          $notes = "Built from ${{ github.ref_name }} at commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
+          gh release create $tag Scrappy-setup.exe Scrappy-portable.zip --title $title --notes $notes --prerelease --target ${{ github.sha }}

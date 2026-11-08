@@ -8,7 +8,7 @@ export const api = {
   logout: () => invoke('logout'),
   get: (path) => invoke('api_get', { path }),
   cached: (path) => invoke('api_cached', { path }),
-  play: (itemId, fromStart = false) => invoke('play', { itemId, fromStart }),
+  play: (itemId, fromStart = false, embedded = true) => invoke('play', { itemId, fromStart, embedded }),
   clearCache: () => invoke('clear_cache'),
 };
 
@@ -36,4 +36,9 @@ export function img(itemId, type, tag, width = 400, index) {
   if (!itemId || !tag) return null;
   const idx = index !== undefined ? `/${index}` : '';
   return `${IMG_BASE}/${encodeURIComponent(itemId)}/${type}${idx}?tag=${encodeURIComponent(tag)}&w=${width}`;
+}
+
+// Ask for an image even when Emby didn't list one (e.g. auto-made library pictures).
+export function imgAny(itemId, type, width = 400) {
+  return `${IMG_BASE}/${encodeURIComponent(itemId)}/${type}?w=${width}`;
 }
