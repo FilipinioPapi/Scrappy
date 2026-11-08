@@ -132,6 +132,7 @@ function loadRows(root, ctx, views) {
 
 const GENRE_LIBS = new Set(['movies', 'tvshows', 'mixed', undefined, null, '']);
 const GENRE_MIN = 6;
+const GENRE_BROAD = 0.8; // genres on 80%+ of a library's titles are hidden there
 
 function genreTypes(v) {
   if (v.CollectionType === 'movies') return 'Movie';
@@ -234,7 +235,19 @@ function genreSection(root, ctx, views) {
       } catch { return { g, n: 0 }; }
     }));
     if (my !== gen || !ctx.alive()) return;
-    const list = counted.filter((x) => x.n >= GENRE_MIN).sort((a, b) => b.n - a.n);
+    // A genre that covers nearly the whole library says nothing new there
+    // (e.g. "Animation" in an animated movies library, or "Anime" in an anime
+    // library), so leave it out. Smaller ones, like "Anime" among animated
+    // movies, stay.
+    let total = 0;
+    try {
+      const tp = `/Users/{userId}/Items?ParentId=${lib.Id}&IncludeItemTypes=${types}&Recursive=true&Limit=0`;
+      total = ((await api.cached(tp)) || (await api.get(tp)))?.TotalRecordCount || 0;
+      api.get(tp).catch(() => {});
+    } catch {}
+    if (my !== gen || !ctx.alive()) return;
+    const tooBroad = (n) => total >= 10 && n >= total * GENRE_BROAD;
+    const list = counted.filter((x) => x.n >= GENRE_MIN && !tooBroad(x.n)).sort((a, b) => b.n - a.n);
     const html = !list.length ? '<div class="empty">No genres with enough titles yet.</div>' : list.map(({ g, n }) => `
       <div class="genre-row" data-genre="${esc(g.Id)}">
         <div class="section-head"><h2>${esc(g.Name)}</h2><span class="count">${n} titles</span><span class="spacer"></span>
