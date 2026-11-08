@@ -91,7 +91,7 @@ select { width: auto; padding: 7px 10px; background: var(--bg-2); cursor: pointe
   width: 100%; max-width: 400px; padding: 36px;
   background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px;
 }
-.login-card h1 { margin: 0 0 4px; color: var(--accent); font-size: 30px; }
+.login-card h1 { margin: 0 0 4px; color: var(--accent); font-size: 28px; line-height: 1.15; }
 .login-card p.sub { margin: 0 0 24px; color: var(--muted); }
 .field { margin-bottom: 16px; }
 .field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--muted); }

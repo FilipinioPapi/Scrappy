@@ -1,4 +1,4 @@
-# Scrappy
+# Scrappy Media Center
 
 A lean, fast, watch-only Windows client for Emby, with playback through mpv.
 

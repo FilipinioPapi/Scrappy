@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub const CLIENT_NAME: &str = "Scrappy";
+pub const CLIENT_NAME: &str = "Scrappy Media Center";
 pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// What we remember between launches. The password is never stored, only the

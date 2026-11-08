@@ -11,7 +11,7 @@ export function loginView(root, ctx) {
   root.innerHTML = `
     <div class="login-wrap">
       <form class="login-card" id="loginForm" autocomplete="off">
-        <h1>Scrappy</h1>
+        <h1>Scrappy Media Center</h1>
         <p class="sub">Sign in to your Emby server</p>
         <div class="field">
           <label for="server">Server address</label>

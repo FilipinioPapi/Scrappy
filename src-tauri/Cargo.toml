@@ -1,7 +1,7 @@
 [package]
 name = "scrappy"
 version = "0.1.0"
-description = "Scrappy - a lean Emby client"
+description = "Scrappy Media Center - a lean Emby client"
 edition = "2021"
 
 [lib]

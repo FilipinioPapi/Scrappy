@@ -365,7 +365,7 @@ async fn play(
     };
     let _ = player.set_property("start", &start);
     let _ = player.set_property("force-media-title", &title);
-    let _ = player.set_property("title", &format!("{title} - Scrappy"));
+    let _ = player.set_property("title", &format!("{title} - Scrappy Media Center"));
     let _ = player.set_property("pause", "no");
     player.command(&["loadfile", &target.url, "replace"])?;
 
