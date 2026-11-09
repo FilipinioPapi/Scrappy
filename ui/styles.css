@@ -1688,3 +1688,6 @@ body.has-tp .tsearch { flex: 0 1 300px; max-width: 360px; min-width: 150px; }
 #topbar { transition: gap .5s cubic-bezier(.2,.8,.2,1); }
 .tsearch { max-width: 460px; }
 #tplayer > * { flex: none; }
+/* Handoff between players: the one leaving goes first, the one arriving follows a beat later. */
+body.tab-music #mbar { transition-delay: .14s; animation-delay: .14s; animation-fill-mode: backwards; }
+body:not(.tab-music) #tplayer:not(.off) { transition-delay: .14s; }
