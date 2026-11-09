@@ -159,7 +159,6 @@ async function playFrom(key) {
 const RKEY = 'srecent';
 const recents = () => { try { return JSON.parse(localStorage.getItem(RKEY) || '[]'); } catch { return []; } };
 const addRecent = (q) => { q = q.trim(); if (q.length < 2) return; try { localStorage.setItem(RKEY, JSON.stringify([q, ...recents().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 8))); } catch {} };
-const TRY = [['tame impla', 'a typo'], ['genre:rock year:2010-2019', 'filters'], ['type:album fav:yes', 'favorite albums'], ['in:movies is:unplayed', 'not watched yet']];
 
 export function mountSearch() {
   const box = document.getElementById('tsearch'); if (!box || box.dataset.wired) return;
@@ -176,7 +175,7 @@ export function mountSearch() {
     const jump = tabNow() === 'music' ? lib.rec.slice(0, 3) : [];
     show(`${rc.length ? `<div class="kicker sk">RECENT SEARCHES</div><div class="schips">${rc.map((q) => `<span class="schip" data-q="${esc(q)}">${SI.clock}<span>${esc(q)}</span><button type="button" data-rm="${esc(q)}" aria-label="Remove">${SI.x}</button></span>`).join('')}</div>` : ''}
       ${jump.length ? `<div class="kicker sk">JUMP BACK IN · MUSIC</div>${jump.map((e) => rowHtml({ href: href(kindOf(e.k), e.k.slice(3)), title: e.t, sub: e.sub, cover: e.cv ? cover(e.cv, 100) : null, round: kindOf(e.k) === 'artist' })).join('')}` : ''}
-      <div class="kicker sk">TRY</div><div class="schips">${TRY.map(([q, w]) => `<span class="schip try" data-q="${esc(q)}"><b>${esc(q)}</b><span>· ${esc(w)}</span></span>`).join('')}</div>${foot}`);
+      ${foot}`);
   };
   const run = async () => {
     const raw = input.value; const f = parseQuery(raw);
