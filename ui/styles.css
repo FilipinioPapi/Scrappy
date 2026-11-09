@@ -288,6 +288,7 @@ select { width: auto; padding: 7px 10px; background: var(--bg-2); cursor: pointe
 .coming-soon > div { animation: springOpen .45s var(--spring); }
 .coming-soon h1 { font-family: var(--display); font-weight: 400; color: var(--red); letter-spacing: .5px; font-size: 40px; margin: 0 0 8px; text-shadow: 0 2px 0 #000; }
 .coming-soon p { color: var(--muted); margin: 0; }
+.coming-soon .btn { margin-top: 18px; display: inline-flex; text-decoration: none; }
 .spinner {
   width: 34px; height: 34px; margin: 0 auto 14px; border-radius: 50%;
   border: 3px solid var(--bg-3); border-top-color: var(--accent);

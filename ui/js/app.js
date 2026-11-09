@@ -7,7 +7,7 @@ import './nowplaying.js';
 import { mountSearch, setSearchSession, searchPage } from './search.js';
 import './menu.js';
 import { toast } from './components.js';
-import { loginView, firstTab, homeView, libraryView, itemView, personView, searchView, comingSoonView } from './views.js';
+import { loginView, firstTab, homeView, libraryView, itemView, personView, searchView, comingSoonView, connectView } from './views.js';
 
 const viewEl = document.getElementById('view');
 
@@ -43,7 +43,8 @@ async function refreshSession() {
   document.getElementById('userInfo').innerHTML = rows || 'Not signed in';
   // Only servers you're signed in to get a tab.
   const tabFor = { home: 'emby', music: 'navidrome', audiobooks: 'audiobookshelf' };
-  document.querySelectorAll('.tabs a').forEach((a) => (a.hidden = !sv[tabFor[a.dataset.tab]]?.signedIn));
+  // Every tab always shows; a tab whose server isn't signed in offers a sign-in instead.
+  document.querySelectorAll('.tabs a').forEach((a) => (a.classList.toggle('off', !sv[tabFor[a.dataset.tab]]?.signedIn)));
   const pill = document.querySelector('.tab-pill'); if (pill) pill.classList.remove('ready');
 }
 const escapeText = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -89,9 +90,9 @@ async function route(opts = {}) {
 
   if (!session.loggedIn && name !== 'login') { location.hash = '#/login'; return; }
   if (session.loggedIn && name === 'login') { location.hash = firstTab(session); return; }
-  // A tab whose server isn't signed in goes to one that is.
-  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || (['login', 'servers'].includes(name) ? '' : 'emby');
-  if (need && !session.servers?.[need]?.signedIn) { location.hash = firstTab(session); return; }
+  // A tab whose server isn't signed in shows a sign-in prompt for it.
+  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || (['login', 'servers', 'search'].includes(name) ? '' : 'emby');
+  const notSigned = need && !session.servers?.[need]?.signedIn;
 
   topbar.hidden = name === 'login' || name === 'servers';
   document.querySelectorAll('.tabs a').forEach((a) =>
@@ -114,6 +115,7 @@ async function route(opts = {}) {
   }
   // Home says when its banner is ready; every other page is ready once drawn.
   if (!['home', undefined, ''].includes(name)) setTimeout(hideIntro, 0);
+  if (notSigned) return connectView(viewEl, need);
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
     case 'servers': return loginView(viewEl, ctx, id);

@@ -1434,4 +1434,19 @@ export function comingSoonView(root, text) {
     </div></div>`;
 }
 
+// Shown on a tab whose server isn't signed in yet.
+export function connectView(root, kind) {
+  const info = {
+    emby: ['Movies & TV', 'Emby'],
+    navidrome: ['Music', 'Navidrome'],
+    audiobookshelf: ['Audiobooks', 'Audiobookshelf'],
+  }[kind];
+  root.innerHTML = `
+    <div class="coming-soon"><div>
+      <h1>${esc(info[0])}</h1>
+      <p>Sign in to ${esc(info[1])} to see your ${esc(info[0].toLowerCase())} here.</p>
+      <a class="btn" href="#/servers/${kind}">Sign in to ${esc(info[1])}</a>
+    </div></div>`;
+}
+
 export { toast };
