@@ -1833,3 +1833,39 @@ body:not(.tab-music) #mbar { transition: transform .4s cubic-bezier(.4,0,.2,1), 
 /* Home banner: the fade at the bottom reaches the page colour fully, with no seam underneath. */
 .hero-bg::after { inset: -1px 0 -3px; background: linear-gradient(90deg, var(--bg) 0%, rgba(18,12,12,.8) 32%, rgba(18,12,12,.15) 65%, rgba(18,12,12,0) 100%), linear-gradient(rgba(18,12,12,0) 50%, var(--bg) 94%); }
 .hero:not(.hero-wait) { background: var(--bg); }
+
+/* ---------- Narrow windows / zoomed in (Ctrl +): nothing squeezes or gets cut off ---------- */
+html, body { overflow-x: hidden; }
+#topbar { min-width: 0; }
+#topbar .tsearch { min-width: 0; }
+@media (max-width: 1240px) {
+  body.has-tp #topbar { gap: 12px; }
+  body.has-tp .tp-r2 .tp-vol, body.has-tp .tp-v { display: none; }
+  body.has-tp .tp-mid { width: 180px; }
+  body.has-tp .tsearch { flex-basis: 260px; min-width: 120px; }
+  #mbar { gap: 14px; padding: 0 18px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, .9fr); }
+  .mb-right { gap: 4px; }
+  .mseek.vol { width: 72px; }
+}
+@media (max-width: 1080px) {
+  /* Top bar: search becomes a round button-sized box; the small player keeps play controls only */
+  body.has-tp .brand > div { display: none; }
+  body.has-tp .tsearch { flex: 0 1 200px; }
+  body.has-tp .tsearch .tfilt, body.has-tp .tsearch button:not(:first-child) { display: none; }
+  body.has-tp .tp-mid { width: 150px; }
+  body.has-tp .tp-r2 { display: none !important; }
+  /* Bottom bar: drop the extra buttons into the Now playing screen */
+  #mbLyr, #mbViz, #mbVol { display: none; }
+  .mb-ctl { gap: 10px; }
+  .mb-cover { width: 50px; height: 50px; }
+}
+@media (max-width: 960px) {
+  #topbar { gap: 14px; }
+  .brand > div { display: none; }
+  .tsearch { flex: 1 1 160px; }
+  .mb-sub { display: none; }
+}
+@media (max-height: 640px) {
+  .mn-art { width: min(220px, 26vh); }
+  .hero { height: 62vh; min-height: 300px; }
+}

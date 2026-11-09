@@ -193,3 +193,48 @@ document.querySelector('#topbar .brand')?.addEventListener('click', (e) => {
   e.preventDefault();
   if (location.hash === home) window.scrollTo({ top: 0, behavior: 'smooth' }); else location.hash = home;
 });
+
+// ---------- Ctrl + / Ctrl - / Ctrl 0: scale the whole app ----------
+// The level is remembered. It never zooms in so far that the app has less than
+// about 960 x 560 points of room, so nothing gets squeezed or cut off.
+const ZOOMS = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.33, 1.5];
+let zoom = Number((() => { try { return localStorage.getItem('zoom'); } catch { return null; } })()) || 1;
+const MIN_W = 960, MIN_H = 560;
+const roomFor = (z) => (innerWidth * zoomNow) / z >= MIN_W && (innerHeight * zoomNow) / z >= MIN_H;
+let zoomNow = 1; // the level currently applied (innerWidth is measured at this level)
+function applyZoom(z, say) {
+  zoom = z;
+  window.__TAURI__.core.invoke('set_zoom', { level: z }).then(() => {
+    zoomNow = z;
+    try { localStorage.setItem('zoom', String(z)); } catch {}
+    setTimeout(moveTabPill, 60);
+  }).catch(() => {});
+  if (say) toast(`Zoom ${Math.round(z * 100)}%`);
+}
+function stepZoom(dir) {
+  const i = ZOOMS.findIndex((v) => Math.abs(v - zoom) < 0.01);
+  const next = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, (i < 0 ? ZOOMS.indexOf(1) : i) + dir))];
+  if (next === zoom) return;
+  if (dir > 0 && !roomFor(next)) { toast('Make the window bigger to zoom in more.'); return; }
+  applyZoom(next, true);
+}
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  if (e.key === '=' || e.key === '+') { e.preventDefault(); e.stopPropagation(); stepZoom(1); }
+  else if (e.key === '-' || e.key === '_') { e.preventDefault(); e.stopPropagation(); stepZoom(-1); }
+  else if (e.key === '0') { e.preventDefault(); e.stopPropagation(); applyZoom(1, true); }
+}, true);
+window.addEventListener('wheel', (e) => { if (e.ctrlKey) { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); } }, { passive: false });
+// If the window is made smaller than the zoom level allows, step the zoom back down.
+window.addEventListener('resize', () => {
+  if (zoomNow <= 1 || innerWidth >= MIN_W && innerHeight >= MIN_H) return;
+  let z = zoomNow;
+  while (z > 1 && !roomFor(z)) z = ZOOMS[ZOOMS.indexOf(z) - 1] ?? 1;
+  if (z !== zoomNow) applyZoom(z, false);
+});
+if (zoom !== 1) {
+  // At start-up the window is at 100%, so check the saved level still fits.
+  let z = zoom;
+  while (z > 1 && !roomFor(z)) z = ZOOMS[ZOOMS.indexOf(z) - 1] ?? 1;
+  applyZoom(z, false);
+}

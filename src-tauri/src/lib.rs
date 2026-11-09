@@ -543,6 +543,12 @@ fn display_title(item: &Value) -> String {
     }
 }
 
+/// Ctrl + / Ctrl - : scale the whole app (the page asks for a clamped level).
+#[tauri::command]
+fn set_zoom(window: tauri::WebviewWindow, level: f64) -> Result<(), String> {
+    window.set_zoom(level.clamp(0.5, 2.0)).map_err(|e| e.to_string())
+}
+
 /// Start playing an item. Returns the item's details for the player screen.
 #[tauri::command]
 async fn play(
@@ -952,6 +958,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            set_zoom,
             get_session,
             login,
             logout,
