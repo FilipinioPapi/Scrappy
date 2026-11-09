@@ -286,6 +286,12 @@ async fn abs_get(state: State<'_, AppState>, path: String) -> Result<Value, Stri
     Ok(v)
 }
 
+#[tauri::command]
+async fn abs_send(state: State<'_, AppState>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+    let cfg = state.cfg();
+    servers::abs_send(&state.http, &cfg, &method, &path, body).await
+}
+
 /// Change (bytes + file name) or remove (no bytes) a playlist's cover.
 #[tauri::command]
 async fn nd_playlist_image(state: State<'_, AppState>, id: String, bytes: Option<Vec<u8>>, name: Option<String>) -> Result<(), String> {
@@ -785,6 +791,10 @@ async fn serve_image(app: AppHandle, uri: String) -> Response<Vec<u8>> {
         }
         return not_found();
     }
+    // Audiobookshelf book covers (/abs/<item id>?w=400&u=<updatedAt>) and author photos (/absa/<author id>?w=300&u=..)
+    if parts[0] == "abs" || parts[0] == "absa" {
+        return serve_abs_image(&state, parts[0] == "absa", parts[1], &parsed).await;
+    }
     // Navidrome cover art: /nd/<coverArt id>?w=300
     if parts[0] == "nd" {
         return serve_nd_cover(&state, parts[1], &parsed).await;
@@ -828,6 +838,41 @@ async fn serve_image(app: AppHandle, uri: String) -> Response<Vec<u8>> {
     );
     match state.http.get(url).header("X-Emby-Token", &cfg.token).send().await {
         Ok(r) if r.status().is_success() => match r.bytes().await {
+            Ok(b) => {
+                let b = b.to_vec();
+                if let Some(d) = file.parent() {
+                    let _ = std::fs::create_dir_all(d);
+                }
+                let _ = std::fs::write(&file, &b);
+                img_response(StatusCode::OK, sniff_mime(&b), b)
+            }
+            Err(_) => not_found(),
+        },
+        _ => not_found(),
+    }
+}
+
+async fn serve_abs_image(state: &AppState, author: bool, id: &str, parsed: &reqwest::Url) -> Response<Vec<u8>> {
+    let not_found = || img_response(StatusCode::NOT_FOUND, "text/plain", Vec::new());
+    let q = |key: &str| parsed.query_pairs().find(|(k, _)| k == key).map(|(_, v)| v.to_string());
+    let size = q("w").unwrap_or_else(|| "400".into());
+    let stamp = q("u").unwrap_or_default();
+    let kind = if author { "absa" } else { "abs" };
+    let file = state.cache_dir.join("img").join(format!("{kind}_{}_{}_{}", sanitize(id), sanitize(&size), sanitize(&stamp)));
+    if let Ok(bytes) = std::fs::read(&file) {
+        return img_response(StatusCode::OK, sniff_mime(&bytes), bytes);
+    }
+    let cfg = state.cfg();
+    if !cfg.abs_logged_in() {
+        return not_found();
+    }
+    let url = if author {
+        format!("{}/api/authors/{}/image?width={}&format=jpeg", cfg.abs_server, servers::enc(id), servers::enc(&size))
+    } else {
+        format!("{}/api/items/{}/cover?width={}&format=jpeg", cfg.abs_server, servers::enc(id), servers::enc(&size))
+    };
+    match state.http.get(url).bearer_auth(&cfg.abs_token).send().await {
+        Ok(r) if r.status().is_success() && r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false) => match r.bytes().await {
             Ok(b) => {
                 let b = b.to_vec();
                 if let Some(d) = file.parent() {
@@ -969,6 +1014,8 @@ pub fn run() {
             nd_cached,
             abs_get,
             abs_cached,
+            abs_send,
+            music::book_play,
             nd_playlist_image,
             nd_reauth,
             lyrics_find,

@@ -34,6 +34,10 @@ const S = {
   volume: 70, muted: false, started: false, from: null, scrobbled: false,
 };
 export const music = S;
+// The audio player is shared with Audiobooks. While a book is playing, `mode.book`
+// is true: this file ignores mpv's events and hides its bar (books have their own).
+export const mode = { book: false };
+export function enterBookMode() { mode.book = true; S.started = false; S.playing = false; notify(); }
 const subs = new Set();
 export const onMusic = (f) => { subs.add(f); return () => subs.delete(f); };
 const notify = () => { drawBar(); subs.forEach((f) => { try { f(S); } catch {} }); };
@@ -51,6 +55,7 @@ function save() {
 
 const CHUNK = 400; // songs handed to mpv at a time
 async function loadFrom(i) {
+  if (mode.book) { mode.book = false; window.dispatchEvent(new Event('book:stop')); }
   // Starting a song always means playing; mpv won't send a 'pause' change if it was already unpaused.
   S.idx = i; S.base = i; S.pos = 0; S.dur = S.queue[i]?.duration || 0; S.started = true; S.scrobbled = false; S.playing = true;
   const ids = S.queue.slice(i, i + CHUNK).map((s) => s.id);
@@ -218,6 +223,7 @@ export async function setFavorite(song, on) {
 
 // ---------- Events from mpv ----------
 listen('music-prop', ({ payload: { name, value } }) => {
+  if (mode.book) return;
   if (name === 'time-pos' && typeof value === 'number') {
     // Time moving forward means it's playing, even if a pause event was missed (keeps the records spinning).
     if (!S.playing && S.started && value > S.pos + 0.2 && value - S.pos < 3) { S.pos = value; S.playing = true; notify(); }
@@ -244,13 +250,14 @@ listen('music-prop', ({ payload: { name, value } }) => {
   }
 });
 listen('music-end', ({ payload }) => {
+  if (mode.book) return;
   if (payload.error) { toast(payload.error, true); return; }
   if (payload.eof && S.idx >= S.queue.length - 1) {
     if (S.repeat === 'all') loadFrom(0);
     else { S.playing = false; S.started = false; S.pos = 0; notify(); }
   }
 });
-listen('music-closed', () => { S.started = false; S.playing = false; notify(); });
+listen('music-closed', () => { if (mode.book) return; S.started = false; S.playing = false; notify(); });
 
 // ---------- The bar ----------
 const bar = document.createElement('div');
@@ -308,7 +315,7 @@ mountTop();
 let tpCoverId = null;
 function drawTop() {
   mountTop();
-  const cur = current();
+  const cur = mode.book ? null : current();
   const show = !!cur && !document.body.classList.contains('tab-music');
   tp.classList.toggle('off', !show);
   document.body.classList.toggle('has-tp', show);
@@ -342,9 +349,9 @@ let lastCoverId = null;
 
 function drawBar() {
   drawTop();
-  const cur = current();
+  const cur = mode.book ? null : current();
   bar.hidden = !cur;
-  document.body.classList.toggle('has-mbar', !!cur);
+  document.body.classList.toggle('has-mbar', !!cur || mode.book);
   if (!cur) return;
   if (cur.coverArt !== lastCoverId) {
     lastCoverId = cur.coverArt;
@@ -421,12 +428,14 @@ bar.addEventListener('pointerdown', (e) => {
 window.addEventListener('keydown', (e) => {
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
   const vp = document.getElementById('player');
-  if (typing || (vp && !vp.hidden)) return;
+  if (typing || (vp && !vp.hidden) || mode.book) return;
   if (e.code === 'Space' && current() && location.hash.startsWith('#/music')) { e.preventDefault(); togglePlay(); }
 });
-navigator.mediaSession?.setActionHandler?.('play', togglePlay);
-navigator.mediaSession?.setActionHandler?.('pause', togglePlay);
-navigator.mediaSession?.setActionHandler?.('nexttrack', next);
-navigator.mediaSession?.setActionHandler?.('previoustrack', prev);
+// Media keys go to whichever is playing: music or an audiobook.
+const viaBook = (f, ev) => () => (mode.book ? window.dispatchEvent(new Event(ev)) : f());
+navigator.mediaSession?.setActionHandler?.('play', viaBook(togglePlay, 'book:toggle'));
+navigator.mediaSession?.setActionHandler?.('pause', viaBook(togglePlay, 'book:toggle'));
+navigator.mediaSession?.setActionHandler?.('nexttrack', viaBook(next, 'book:next'));
+navigator.mediaSession?.setActionHandler?.('previoustrack', viaBook(prev, 'book:prev'));
 
 drawBar();

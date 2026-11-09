@@ -239,3 +239,30 @@ pub async fn abs_get(http: &reqwest::Client, cfg: &Config, path: &str) -> Result
     }
     r.json().await.map_err(|e| e.to_string())
 }
+
+/// POST / PATCH / DELETE to Audiobookshelf (playback sessions, progress).
+pub async fn abs_send(http: &reqwest::Client, cfg: &Config, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
+    if !cfg.abs_logged_in() {
+        return Err("Not signed in to Audiobookshelf.".into());
+    }
+    let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "Bad method".to_string())?;
+    let mut req = http.request(m, format!("{}{}", cfg.abs_server, path)).bearer_auth(&cfg.abs_token);
+    if let Some(b) = body {
+        req = req.json(&b);
+    }
+    let r = req.send().await.map_err(friendly_error)?;
+    if r.status().as_u16() == 401 {
+        return Err("ABS_SESSION_EXPIRED".into());
+    }
+    if !r.status().is_success() {
+        return Err(format!("Audiobookshelf error ({}).", r.status()));
+    }
+    let text = r.text().await.map_err(|e| e.to_string())?;
+    Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
+}
+
+/// Full address for one of a book's audio files (Audiobookshelf accepts the token in the address).
+pub fn abs_file_url(cfg: &Config, path: &str) -> String {
+    let sep = if path.contains('?') { '&' } else { '?' };
+    format!("{}{}{}token={}", cfg.abs_server, path, sep, enc(&cfg.abs_token))
+}

@@ -114,11 +114,40 @@ pub fn music_play(app: AppHandle, state: State<'_, AppState>, ids: Vec<String>, 
         let _ = p.set_property("volume", &format!("{v:.0}"));
     }
     p.command(&["stop"])?;
+    // An audiobook may have left a different speed or start point behind.
+    let _ = p.set_property("speed", "1");
+    let _ = p.set_property("start", "none");
     for id in &ids {
         p.command(&["loadfile", &stream_url(&state, id), "append"])?;
     }
     p.set_property("pause", "no")?;
     p.set_property("playlist-pos", "0")
+}
+
+/// Play an audiobook: its audio files in order, starting in file `index` at `start` seconds.
+/// The page resets mpv's "start" once the first file has loaded.
+#[tauri::command]
+pub fn book_play(app: AppHandle, state: State<'_, AppState>, paths: Vec<String>, index: usize, start: f64, volume: Option<f64>, speed: Option<f64>) -> Result<(), String> {
+    if paths.is_empty() {
+        return Err("This book has no audio files.".into());
+    }
+    let cfg = state.cfg();
+    if !cfg.abs_logged_in() {
+        return Err("ABS_SESSION_EXPIRED".into());
+    }
+    let p = ensure(&app)?;
+    if let Some(v) = volume {
+        let _ = p.set_property("volume", &format!("{v:.0}"));
+    }
+    p.command(&["stop"])?;
+    let _ = p.set_property("loop-file", "no");
+    let _ = p.set_property("speed", &format!("{:.2}", speed.unwrap_or(1.0)));
+    p.set_property("start", &format!("{:.2}", start.max(0.0)))?;
+    for path in &paths {
+        p.command(&["loadfile", &servers::abs_file_url(&cfg, path), "append"])?;
+    }
+    p.set_property("pause", "no")?;
+    p.set_property("playlist-pos", &index.min(paths.len() - 1).to_string())
 }
 
 /// Keep the current song playing and replace what comes after it.

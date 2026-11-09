@@ -6,6 +6,7 @@ import { api, img } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
 import { playSongs, cover, fmt, IC } from './mplayer.js';
 import { nd, coverHtml, href, plural, lib, kindOf } from './music.js';
+import { absCover } from './bplayer.js';
 
 const line = (d, n = 18) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const SI = {
@@ -140,7 +141,7 @@ function videoRows(v) {
 }
 function bookRows(b) {
   if (!b) return [];
-  return b.books.map((it) => { const md = it.media?.metadata || {}; return { href: '#/audiobooks', title: md.title || it.title || 'Book', sub: `Audiobook${md.authorName ? ' · ' + md.authorName : ''}`, cover: null, h: 20 }; });
+  return b.books.map((it) => { const md = it.media?.metadata || {}; return { href: `#/audiobooks/book/${encodeURIComponent(it.id)}`, title: md.title || it.title || 'Book', sub: `Audiobook${md.authorName ? ' · ' + md.authorName : ''}`, cover: absCover(it, 100), h: 20 }; });
 }
 const GROUPS = { music: ['MUSIC', musicRows], video: ['MOVIES & TV', videoRows], audiobooks: ['AUDIOBOOKS', bookRows] };
 const orderNow = () => { const t = tabNow(); return [t, ...['video', 'music', 'audiobooks'].filter((x) => x !== t)]; };

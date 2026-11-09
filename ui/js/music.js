@@ -526,7 +526,7 @@ export async function musicView(root, ctx) {
   const [, page = 'home', rawId = ''] = path.split('/');
   const id = decodeURIComponent(rawId);
   const params = new URLSearchParams(qs || '');
-  if (!root.querySelector('.mshell')) { root.innerHTML = shellHtml(); wireShell(root); }
+  if (!root.querySelector('.mshell:not(.bkshell)')) { root.innerHTML = shellHtml(); wireShell(root); }
   markActive();
   const main = root.querySelector('#mmain');
   main.className = 'mmain page-' + page;

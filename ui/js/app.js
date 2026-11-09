@@ -2,6 +2,7 @@ import { api, quiet } from './api.js';
 import './player.js';
 import './mplayer.js';
 import { musicView } from './music.js';
+import { booksView } from './books.js';
 import './music2.js';
 import './nowplaying.js';
 import { mountSearch, setSearchSession, searchPage } from './search.js';
@@ -132,7 +133,7 @@ async function route(opts = {}) {
     case 'person': return personView(viewEl, ctx, id);
     case 'search': return searchPage(viewEl, ctx);
     case 'music': return musicView(viewEl, ctx);
-    case 'audiobooks': return comingSoonView(viewEl, 'Audiobooks from Audiobookshelf will live here.');
+    case 'audiobooks': return booksView(viewEl, ctx);
     default: return homeView(viewEl, ctx);
   }
 }
