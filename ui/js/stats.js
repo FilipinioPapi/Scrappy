@@ -1,10 +1,12 @@
 // Stats pages (approved mock "Stats"): one per tab, with This week / This month /
-// This year / All time.
+// This year / All time, plus a Me / Everyone switch for admins.
 //  - Audiobooks: Audiobookshelf's own listening log (every app that plays through ABS).
-//  - Music: all time from Navidrome's play counts (every app). Dated history comes from
-//    Scrappy's own play log (plays made in Scrappy, from the day this shipped).
+//    Everyone: admins can read every user's sessions.
+//  - Music: all time from Navidrome's play counts, dated plays from Navidrome's own
+//    history (0.59+). Navidrome only shows each person their own plays, so no Everyone.
 //  - Movies & TV: Emby's played items. With the Playback Reporting plugin installed it
-//    also gets watch time per day and a "when you watch" grid.
+//    also gets watch time per day and a "when you watch" grid. Everyone needs an Emby
+//    admin account plus Playback Reporting.
 import { api, img, IMG_BASE } from './api.js';
 import { esc } from './components.js';
 import { genreLook } from './gtiles.js';
@@ -76,23 +78,28 @@ const gStyle = (g) => { const c = genreLook(g).c; return `background:linear-grad
 const ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
 const SOURCES = { abs: absModel, music: musicModel, tv: tvModel };
 const TITLES = { abs: 'Your listening', music: 'Your music', tv: 'Your watching' };
+const EVERYONE = { abs: "Everyone's listening", tv: "Everyone's watching" };
 
 /** Draws the stats page for 'abs', 'music' or 'tv' into `main`. */
 export async function statsPage(main, kind, alive) {
   let per = localStorage.getItem('statsPer:' + kind) || 'month';
   if (!PERIODS.some(([k]) => k === per)) per = 'month';
   main.innerHTML = `<div class="stx${kind === 'tv' ? ' full' : ''}"><div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
+    <div class="seg" id="stxWho" hidden title="Only admins see this"><button type="button" data-w="me" class="on">Me</button><button type="button" data-w="all">Everyone</button></div>
     <div class="seg" id="stxSeg">${PERIODS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === per ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div id="stxBody"><div class="stx-load t2">Adding up your stats…</div></div></div>`;
   const body = main.querySelector('#stxBody');
-  let raw = null, token = 0;
+  const src = SOURCES[kind], raws = {};
+  let token = 0, who = 'me';
   const draw = async () => {
     const my = ++token;
     try {
-      raw = raw || await SOURCES[kind].load();
+      const w = who;
+      if (!raws[w]) { if (w === 'all') body.innerHTML = '<div class="stx-load t2">Adding up everyone\'s stats…</div>'; raws[w] = await (w === 'all' ? src.loadAll() : src.load()); }
       if (!alive() || my !== token) return;
-      const m = SOURCES[kind].build(raw, per);
+      const m = (w === 'all' ? src.buildAll || src.build : src.build)(raws[w], per);
       main.querySelector('#stxSub').textContent = m.sub || '';
+      main.querySelector('.stx-h h1').textContent = w === 'all' ? EVERYONE[kind] : TITLES[kind];
       body.innerHTML = html(m);
     } catch (e) {
       if (!alive()) return;
@@ -105,28 +112,49 @@ export async function statsPage(main, kind, alive) {
     main.querySelectorAll('#stxSeg button').forEach((x) => x.classList.toggle('on', x === b));
     draw();
   });
+  // Admins can switch to the whole server (Audiobookshelf, and Emby with Playback Reporting).
+  // Navidrome only ever shows each person their own plays, so Music has no switch.
+  if (src.canAll) src.canAll().then((ok) => {
+    if (!ok || !alive()) return;
+    const seg = main.querySelector('#stxWho'); seg.hidden = false;
+    const set = (w) => { who = w; seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.w === w)); };
+    if (localStorage.getItem('statsWho:' + kind) === 'all') { set('all'); draw(); }
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-w]'); if (!b || b.dataset.w === who) return;
+      set(b.dataset.w); try { localStorage.setItem('statsWho:' + kind, who); } catch {}
+      draw();
+    });
+  }).catch(() => {});
   await draw();
 }
 
 function html(m) {
   const card = (c) => `<div class="stx-card${c.hot ? ' hot' : ''}"><div class="k">${esc(c.k)}</div><div class="v disp">${esc(c.v)}<small>${esc(c.u || '')}</small></div>${c.d ? `<div class="d ${c.d.c || 'n'}">${esc(c.d.t)}</div>` : ''}<span class="gl" aria-hidden="true">${c.g || ''}</span></div>`;
   const bars = (b) => `<div class="stx-bars">${b.map((x) => `<div class="b${x.v ? '' : ' z'}${x.future ? ' f' : ''}"><i style="height:${Math.max(x.v ? 3 : 1.5, x.h).toFixed(1)}%"></i><span class="tt">${esc(x.tip)}</span></div>`).join('')}</div><div class="stx-axis">${b.map((x) => `<span>${esc(x.axis)}</span>`).join('')}</div>`;
-  const list = (t, meter) => `<ol class="stx-top">${t.items.map((x, i) => `<li>${x.href ? `<a href="${x.href}">` : '<span class="li">'}<span class="rk">${i + 1}</span><span class="cv ${x.shape || ''}" style="--h:${x.hue || 0}">${x.img ? `<img loading="lazy" src="${x.img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span><span class="tx"><b>${esc(x.a)}</b><span>${esc(x.b || '')}</span></span>${meter ? `<span class="meter"><i style="width:${(x.w * 100).toFixed(1)}%"></i></span>` : ''}<span class="val">${esc(x.v)}</span>${x.href ? '</a>' : '</span>'}</li>`).join('')}</ol>`;
+  const list = (t, meter) => `<ol class="stx-top">${t.items.map((x, i) => `<li>${x.href ? `<a href="${x.href}">` : '<span class="li">'}<span class="rk">${i + 1}</span><span class="cv ${x.shape || ''}" style="--h:${x.hue || 0}">${x.ini ? `<em>${esc(x.ini)}</em>` : ''}${x.img ? `<img loading="lazy" src="${x.img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span><span class="tx"><b>${esc(x.a)}</b><span>${esc(x.b || '')}</span></span>${meter ? `<span class="meter"><i style="width:${(x.w * 100).toFixed(1)}%"></i></span>` : ''}<span class="val">${esc(x.v)}</span>${x.href ? '</a>' : '</span>'}</li>`).join('')}</ol>`;
   const box = (title, sub, inner, cls = '') => `<section class="stx-box ${cls}"><div class="bh"><b>${esc(title)}</b>${sub ? `<span class="t2">${esc(sub)}</span>` : ''}</div>${inner}</section>`;
   const empty = (t) => `<div class="t2 stx-none">${esc(t)}</div>`;
   return [
     m.chip ? `<div class="stx-chip">${ICON}<span>${esc(m.chip)}</span></div>` : '',
     m.callout ? `<div class="stx-call"><div class="ic">📊</div><div><b>${esc(m.callout.t)}</b><div class="t2">${esc(m.callout.d)}</div></div></div>` : '',
+    m.people ? box(m.people.title, m.people.sub, m.people.items.length ? list(m.people, true) : empty('Nobody yet.'), 'stx-ppl') : '',
     `<div class="stx-cards">${m.cards.map(card).join('')}</div>`,
     m.bars ? box(m.bars.title, m.bars.sub, m.bars.list.some((b) => b.v) ? bars(m.bars.list) : empty('Nothing played in this stretch yet.')) : '',
     m.heat ? box('Every day this year', m.heat.sub, `<div class="stx-heat">${m.heat.cells.map((c) => `<i class="l${c.l}" title="${esc(c.t)}"></i>`).join('')}</div><div class="stx-hleg">Less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> More</div>`) : '',
-    m.wk ? box('When you watch', m.wk.sub, `<div class="stx-wk"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hl">${h % 3 ? '' : (h % 12 || 12) + (h < 12 ? 'a' : 'p')}</span>`).join('')}${m.wk.rows.map((r) => `<span class="dl">${r.d}</span>${r.c.map((v) => `<i style="${v > 0.04 ? `background:rgba(236,40,46,${(0.15 + v * 0.85).toFixed(2)})` : ''}"></i>`).join('')}`).join('')}</div>`) : '',
+    m.wk ? box(m.wk.title || 'When you watch', m.wk.sub, `<div class="stx-wk"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hl">${h % 3 ? '' : (h % 12 || 12) + (h < 12 ? 'a' : 'p')}</span>`).join('')}${m.wk.rows.map((r) => `<span class="dl">${r.d}</span>${r.c.map((v) => `<i style="${v > 0.04 ? `background:rgba(236,40,46,${(0.15 + v * 0.85).toFixed(2)})` : ''}"></i>`).join('')}`).join('')}</div>`) : '',
     `<div class="stx-g2">${box(m.top.title, m.top.by, m.top.items.length ? list(m.top, true) : empty(m.top.none || 'Nothing yet.'))}${box(m.top2.title, '', m.top2.items.length ? list(m.top2, false) : empty(m.top2.none || 'Nothing yet.'))}</div>`,
-    `<div class="stx-g2">${box('Top genres', m.genres.sub, m.genres.items.length ? `<div class="stx-gen">${m.genres.items.map((g) => `<div class="gr"><span class="nm">${esc(g.n)}</span><div class="tr"><i style="width:${Math.max(14, g.w * 100).toFixed(1)}%;${gStyle(g.n)}">${esc(g.v)}</i></div></div>`).join('')}</div>` : empty('No genres to show yet.'))}${box('Fun facts', '', `<div class="stx-fun">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Play a bit more and these fill in.')}</div>`)}</div>`,
+    m.genres === null ? `${box('Fun facts', '', `<div class="stx-fun wide">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Nothing yet.')}</div>`)}` : `<div class="stx-g2">${box('Top genres', m.genres.sub, m.genres.items.length ? `<div class="stx-gen">${m.genres.items.map((g) => `<div class="gr"><span class="nm">${esc(g.n)}</span><div class="tr"><i style="width:${Math.max(14, g.w * 100).toFixed(1)}%;${gStyle(g.n)}">${esc(g.v)}</i></div></div>`).join('')}</div>` : empty('No genres to show yet.'))}${box('Fun facts', '', `<div class="stx-fun">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Play a bit more and these fill in.')}</div>`)}</div>`,
     m.shelf ? box(m.shelf.title, m.shelf.sub, m.shelf.items.length ? `<div class="row stx-shelf">${m.shelf.items.map((x) => `<a class="stx-mini${x.wide ? ' wide' : ''}" href="${x.href || '#'}"><span class="art" style="--h:${x.hue || 0}"><b>${esc(x.t)}</b>${x.img ? `<img loading="lazy" src="${x.img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span><span class="m">${esc(x.m || '')}</span></a>`).join('')}</div>` : empty(m.shelf.none || 'Nothing yet.')) : '',
   ].join('');
 }
 const hue = (s) => [...String(s || '')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 360;
+/** "Top listeners" list: rows = [{ u: name, t: time, what: title }] already in the period. */
+function people(rows, title, sub, fmt) {
+  const by = new Map();
+  rows.forEach((r) => { const o = by.get(r.u) || { n: r.u, t: 0, w: new Map() }; o.t += r.t; if (r.what) o.w.set(r.what, (o.w.get(r.what) || 0) + r.t); by.set(r.u, o); });
+  const l = [...by.values()].sort((a, b) => b.t - a.t);
+  return { title, sub, items: l.map((o) => ({ a: o.n, b: [...o.w.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '', shape: 'rd', ini: (o.n[0] || '?').toUpperCase(), hue: hue(o.n), w: o.t / (l[0]?.t || 1), v: fmt(o.t) })) };
+}
 const perWord = (p) => ({ week: 'this week', month: 'in the last 30 days', year: 'this year', all: 'all time' }[p]);
 const chartSub = (p) => ({ week: 'per day this week', month: 'per day, last 30 days', year: 'per month this year', all: 'per year' }[p]);
 
@@ -202,8 +230,37 @@ function absModel_build({ stats, me, sessions }, p) {
     shelf: { title: 'Finished ' + perWord(p), sub: 'newest first', none: `No books finished ${perWord(p)}.`, items: fin.slice(0, 20).map((x) => ({ t: '', img: absImg(x.libraryItemId, 200), hue: hue(x.libraryItemId), m: x.finishedAt ? new Date(x.finishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '', href: `#/audiobooks/book/${encodeURIComponent(x.libraryItemId)}` })) },
   };
 }
+// Everyone (admins): every user's sessions, added up the same way as one person's.
+async function absModel_canAll() { const me = await api.abs('/api/me'); return me?.type === 'admin' || me?.type === 'root'; }
+async function absModel_loadAll() {
+  const sessions = [];
+  for (let page = 0; page < 20; page++) {
+    let r; try { r = await api.abs(`/api/sessions?itemsPerPage=500&page=${page}&sort=updatedAt&desc=1`); } catch { break; }
+    sessions.push(...(r.sessions || []));
+    if (!r.sessions?.length || page + 1 >= (r.numPages || 1)) break;
+  }
+  const days = {}; let totalTime = 0;
+  sessions.forEach((x) => { const t = x.timeListening || 0; const k = x.date || dkey(x.startedAt || x.updatedAt); days[k] = (days[k] || 0) + t; totalTime += t; });
+  // Finished books for every user.
+  const users = (await api.abs('/api/users').catch(() => ({}))).users || [];
+  const full = await Promise.all(users.map((u) => api.abs(`/api/users/${encodeURIComponent(u.id)}`).catch(() => null)));
+  const mediaProgress = [];
+  full.forEach((u) => (u?.mediaProgress || []).forEach((m) => { mediaProgress.push(m); }));
+  mediaProgress.sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0));
+  return { stats: { days, totalTime }, me: { mediaProgress }, sessions };
+}
+function absModel_buildAll(raw, p) {
+  const m = absModel_build(raw, p), s0 = startOf(p);
+  // The finished shelf shows each book once even if several people finished it.
+  const ids = new Set(); m.shelf.items = m.shelf.items.filter((x) => (ids.has(x.href) ? false : ids.add(x.href)));
+  m.sub = 'From Audiobookshelf, everyone on the server';
+  m.cards[2] = { ...m.cards[2], k: 'SERVER STREAK' };
+  m.people = people(raw.sessions.filter((x) => (x.updatedAt || x.startedAt || 0) >= s0 && x.user).map((x) => ({ u: x.user.username, t: x.timeListening || 0, what: x.displayTitle || '' })), 'Top listeners', 'everyone on the server, ' + (p === 'all' ? 'all time' : perWord(p)), hm);
+  return m;
+}
 function absModel() {}
 absModel.load = absModel_load; absModel.build = absModel_build;
+absModel.canAll = absModel_canAll; absModel.loadAll = absModel_loadAll; absModel.buildAll = absModel_buildAll;
 
 // ---------- Music (Navidrome + Scrappy's own play log) ----------
 const ndImg = (id, w = 120) => (id ? `${IMG_BASE}/nd/${encodeURIComponent(id)}?w=${w}` : '');
@@ -367,5 +424,68 @@ function tvModel_build({ eps, movies, series, favCount, resume, pr }, p) {
     shelf: { title: 'Recently watched', sub: 'shows and movies', none: `Nothing watched ${perWord(p)}.`, items: [...[...shows.values()].map((s) => ({ last: s.last, it: byId.get(s.id), t: s.name, m: plural(s.n, 'episode') })), ...movP.map((m) => ({ last: when(m), it: m, t: m.Name, m: 'Movie' }))].sort((a, b) => b.last - a.last).slice(0, 20).map((x) => ({ wide: true, t: x.t, m: x.m, hue: hue(x.t), img: x.it ? img(x.it.Id, 'Thumb', x.it.ImageTags?.Thumb, 300) || img(x.it.Id, 'Backdrop', x.it.BackdropImageTags?.[0], 300) || embyImg(x.it, 300) : '', href: x.it ? `#/item/${encodeURIComponent(x.it.Id)}` : '' })) },
   };
 }
+// Everyone (admins): Playback Reporting records every user, so this view is built only from it.
+async function prQuery(sql) {
+  const r = await api.post('/user_usage_stats/submit_custom_query', { CustomQueryString: sql, ReplaceUserId: false });
+  const cols = (r?.colums || r?.columns || []).map((c) => String(c).toLowerCase());
+  if (!Array.isArray(r?.results)) throw new Error('no reports');
+  return r.results.map((x) => Object.fromEntries(cols.map((c, i) => [c, x[i]])));
+}
+async function tvModel_canAll() {
+  const me = await api.get('/Users/{userId}');
+  if (!me?.Policy?.IsAdministrator) return false;
+  await prQuery('SELECT DateCreated FROM PlaybackActivity LIMIT 1');
+  return true;
+}
+async function tvModel_loadAll() {
+  const [rows, users] = await Promise.all([
+    prQuery('SELECT DateCreated, UserId, PlayDuration, ItemType, ItemName FROM PlaybackActivity ORDER BY DateCreated DESC LIMIT 100000'),
+    api.get('/Users').catch(() => []),
+  ]);
+  const names = new Map((Array.isArray(users) ? users : users?.Items || []).map((u) => [String(u.Id).replace(/-/g, '').toLowerCase(), u.Name]));
+  return rows.map((x) => ({ t: Date.parse(String(x.datecreated).replace(' ', 'T')), d: Number(x.playduration) || 0, type: x.itemtype, name: String(x.itemname || ''), u: names.get(String(x.userid).replace(/-/g, '').toLowerCase()) || 'Someone' })).filter((x) => x.t);
+}
+function tvModel_buildAll(pr, p) {
+  const s0 = startOf(p), [ps, pe] = prevRange(p);
+  const inP = pr.filter((x) => x.t >= s0);
+  const watch = inP.reduce((a, x) => a + x.d, 0), prev = pr.filter((x) => x.t >= ps && x.t < pe).reduce((a, x) => a + x.d, 0);
+  // Playback Reporting names episodes "Show - s01e02 - Title".
+  const show = (x) => (x.type === 'Episode' ? x.name.split(' - ')[0] : x.name);
+  const group = (l) => { const m = new Map(); l.forEach((x) => { const k = show(x); const o = m.get(k) || { n: k, t: 0, c: 0 }; o.t += x.d; o.c++; m.set(k, o); }); return [...m.values()].sort((a, b) => b.t - a.t); };
+  const shows = group(inP.filter((x) => x.type === 'Episode')), movies = group(inP.filter((x) => x.type === 'Movie'));
+  const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
+  inP.forEach((x) => { const d = new Date(x.t); grid[(d.getDay() + 6) % 7][d.getHours()] += x.d; });
+  const mx = Math.max(1, ...grid.flat());
+  let bd = 0, bh = 0; grid.forEach((r, di) => r.forEach((v, h) => { if (v > grid[bd][bh]) { bd = di; bh = h; } }));
+  const f = (x) => (x % 12 || 12) + (x < 12 ? ' am' : ' pm');
+  const days = p === 'all' ? Math.max(1, new Set(pr.map((x) => dkey(x.t))).size) : Math.max(1, Math.ceil((Date.now() - s0) / DAY));
+  const ppl = new Set(inP.map((x) => x.u));
+  const bz = busiest(inP.map((x) => [x.t, x.d]));
+  const dayTot = new Map(); inP.forEach((x) => { const k = dkey(x.t); dayTot.set(k, (dayTot.get(k) || 0) + x.d); });
+  const big = [...dayTot.entries()].sort((a, b) => b[1] - a[1])[0];
+  return {
+    sub: 'From Emby + Playback Reporting, everyone on the server',
+    people: people(inP.map((x) => ({ u: x.u, t: x.d, what: show(x) })), 'Top watchers', 'everyone on the server, ' + (p === 'all' ? 'all time' : perWord(p)), hm),
+    cards: [
+      { hot: true, k: 'TIME WATCHED', v: hm(watch), d: vs(watch, prev, p), g: '📺' },
+      { k: 'PLAYS', v: n0(inP.length), d: { t: 'episodes and movies', c: 'n' }, g: '▶' },
+      { k: 'PEOPLE WATCHING', v: n0(ppl.size), d: { t: perWord(p), c: 'n' }, g: '👥' },
+      { k: 'AVERAGE A DAY', v: hm(watch / days), d: null, g: '⏱' },
+    ],
+    bars: { title: 'Watch time', sub: chartSub(p), list: buckets(pr.map((x) => [x.t, x.d]), p, hm) },
+    wk: { title: 'When people watch', sub: grid[bd][bh] ? `Busiest: ${WEEKDAYS[(bd + 1) % 7]}s around ${f(bh)}` : '', rows: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => ({ d, c: grid[i].map((v) => v / mx) })) },
+    top: { title: 'Top shows', by: 'by time', none: `No episodes watched ${perWord(p)}.`, items: shows.slice(0, 6).map((x) => ({ a: x.n, b: plural(x.c, 'play'), shape: 'ps', hue: hue(x.n), w: x.t / (shows[0]?.t || 1), v: hm(x.t) })) },
+    top2: { title: 'Top movies', none: `No movies ${perWord(p)}.`, items: movies.slice(0, 6).map((x) => ({ a: x.n, b: plural(x.c, 'play'), shape: 'po', hue: hue(x.n), v: hm(x.t) })) },
+    genres: null,
+    facts: [
+      { k: 'Busiest day', v: bz.any ? bz.day : '', s: bz.any ? `${hm(bz.avg)} on average` : '' },
+      { k: 'Favourite time', v: favHour(inP.map((x) => [x.t, x.d])), s: 'when the server is busiest' },
+      { k: 'Biggest day', v: big ? hm(big[1]) : '', s: big ? new Date(big[0] + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '' },
+      { k: 'Different shows', v: shows.length ? n0(shows.length) : '', s: `and ${plural(movies.length, 'movie')}` },
+    ],
+    shelf: null,
+  };
+}
 function tvModel() {}
 tvModel.load = tvModel_load; tvModel.build = tvModel_build;
+tvModel.canAll = tvModel_canAll; tvModel.loadAll = tvModel_loadAll; tvModel.buildAll = tvModel_buildAll;
