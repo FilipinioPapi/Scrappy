@@ -34,7 +34,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; }
+html { margin: 0; height: 100%; }
+body { margin: 0; min-height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -1018,7 +1019,7 @@ select.pick { background-color: rgba(255,255,255,.08); border: 0; }
 
 /* =================== Music (Navidrome) =================== */
 :root { --mbar: 96px; }
-body.has-mbar { padding-bottom: var(--mbar); }
+body.has-mbar.tab-music { padding-bottom: var(--mbar); }
 .disp { font-family: var(--display); font-weight: 400; letter-spacing: .5px; line-height: 1; }
 .t1 { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .t2 { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1044,7 +1045,7 @@ a.t2:hover, .meta a:hover, .mb-sub a:hover, a.mb-title:hover { color: var(--text
 .mshell { --mside: 272px; }
 .maside { position: fixed; left: 0; top: 72px; bottom: 0; width: var(--mside); z-index: 15; background: #0F0A0A; border-right: 1px solid #2A1C1D;
   padding: 18px 14px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overflow-x: hidden; transition: width .32s var(--ease); }
-body.has-mbar .maside { bottom: var(--mbar); }
+body.has-mbar.tab-music .maside { bottom: var(--mbar); }
 .mshell.resizing .maside { transition: none; }
 .mhead { display: flex; align-items: center; padding: 0 4px 8px 8px; }
 .mhead .lbl { flex: 1; font-size: 12px; font-weight: 800; letter-spacing: 1.6px; color: var(--muted); }
@@ -1088,12 +1089,15 @@ body.has-mbar .maside { bottom: var(--mbar); }
 .mshell.resizing .mmain { transition: none; }
 .mshell.panel-open .mmain { margin-right: 360px; }
 .mpanel { position: fixed; right: 0; top: 72px; bottom: 0; width: 360px; z-index: 14; background: #140D0E; border-left: 1px solid #2A1C1D; overflow-y: auto; padding: 18px 16px; animation: panelIn .32s var(--ease); }
-body.has-mbar .mpanel { bottom: var(--mbar); }
+body.has-mbar.tab-music .mpanel { bottom: var(--mbar); }
 @keyframes panelIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* Covers: a coloured tile with the name, swapped for the real art once it loads */
 .mcv { position: relative; overflow: hidden; border-radius: 10px; aspect-ratio: 1; flex: none; display: flex; align-items: flex-end; padding: 10px;
-  background: linear-gradient(135deg, hsl(var(--h) 55% 42%), hsl(calc(var(--h) + 40) 50% 16%)); box-shadow: 0 8px 18px rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.06); }
+  background: linear-gradient(135deg, hsl(var(--h) 55% 42%), hsl(calc(var(--h) + 40) 50% 16%)); box-shadow: 0 8px 18px rgba(0,0,0,.45); }
+/* Real art shows clean: no ring, no colour peeking at the rounded edge. */
+.mcv:has(img.in) { background: none; box-shadow: none; }
+.mcv:has(img.in) span { visibility: hidden; }
 .mcv span { font-family: var(--display); color: rgba(255,255,255,.9); line-height: 1.05; font-size: 15px; text-shadow: 0 2px 8px rgba(0,0,0,.55); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .mcv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .4s var(--ease); }
 .mcv img.in { opacity: 1; }
@@ -1335,6 +1339,8 @@ body.has-mbar .mpanel { bottom: var(--mbar); }
 #mbar { position: fixed; left: 0; right: 0; bottom: 0; height: var(--mbar); z-index: 30; background: rgba(30,20,21,.94); backdrop-filter: blur(18px); border-top: 1px solid var(--line);
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr); align-items: center; gap: 24px; padding: 0 28px; box-shadow: 0 -12px 30px rgba(0,0,0,.45); animation: barIn .4s var(--ease); }
 #mbar[hidden] { display: none; }
+#mbar { transition: transform .5s var(--ease), opacity .4s var(--ease); }
+body:not(.tab-music) #mbar { transform: translateY(110%); opacity: 0; pointer-events: none; animation: none; }
 @keyframes barIn { from { transform: translateY(100%); } to { transform: none; } }
 .mb-now { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .mb-cover { width: 60px; height: 60px; border-radius: 8px; overflow: hidden; flex: none; padding: 0; border: 0; cursor: pointer; background: linear-gradient(135deg, #7A1418, #2C1C1D); box-shadow: 0 6px 14px rgba(0,0,0,.45); transition: transform .28s var(--ease); }

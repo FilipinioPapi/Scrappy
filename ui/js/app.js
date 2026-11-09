@@ -95,6 +95,8 @@ async function route(opts = {}) {
   const notSigned = need && !session.servers?.[need]?.signedIn;
 
   topbar.hidden = name === 'login' || name === 'servers';
+  // The music player bar only lives on the Music tab; elsewhere it slides away.
+  document.body.classList.toggle('tab-music', name === 'music');
   document.querySelectorAll('.tabs a').forEach((a) =>
     a.classList.toggle('active', a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
