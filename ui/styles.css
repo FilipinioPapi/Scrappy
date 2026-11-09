@@ -1646,11 +1646,14 @@ button.mood { border: 0; padding: 0; margin: 0; font: inherit; color: inherit; t
 
 /* Top-bar player (approved board B): slides into the top bar when you leave Music */
 .tsearch { flex-basis: 400px; }
-body.has-tp .tsearch { flex-basis: 300px; min-width: 180px; }
-#tplayer { margin-left: auto; flex: none; display: flex; align-items: center; gap: 10px; height: 60px; padding: 0 10px 0 7px; border-radius: 14px;
-  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.04); transform-origin: right center;
-  transition: opacity .38s cubic-bezier(.2,.8,.2,1), transform .5s cubic-bezier(.2,.8,.2,1), filter .38s cubic-bezier(.2,.8,.2,1); }
-#tplayer.off { opacity: 0; transform: translateY(-16px) scale(.94); filter: blur(4px); pointer-events: none; position: absolute; right: calc(var(--gutter) + 60px); }
+body.has-tp .tsearch { min-width: 150px; }
+#tplayer { margin-left: auto; flex: none; display: flex; align-items: center; gap: 10px; height: 60px; padding: 0 10px 0 7px; border-radius: 14px; overflow: hidden;
+  max-width: 460px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.04); transform-origin: right center;
+  transition: opacity .38s cubic-bezier(.2,.8,.2,1), transform .5s cubic-bezier(.2,.8,.2,1), filter .38s cubic-bezier(.2,.8,.2,1),
+    max-width .5s cubic-bezier(.2,.8,.2,1), padding .5s cubic-bezier(.2,.8,.2,1), margin .5s cubic-bezier(.2,.8,.2,1), border-color .38s; }
+/* Slides up and shrinks away in place (no jump), so the search bar eases back to full width. */
+#tplayer.off { opacity: 0; transform: translateY(-16px) scale(.94); filter: blur(4px); pointer-events: none; max-width: 0; padding: 0; margin-right: -16px; border-color: transparent; }
+.tsearch { transition: border-color .28s var(--ease), background .28s var(--ease), flex-basis .5s cubic-bezier(.2,.8,.2,1), max-width .5s cubic-bezier(.2,.8,.2,1); }
 #tplayer + .actions, body.has-tp #topbar .actions { margin-left: 0; }
 .tp-cv { position: relative; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 8px; overflow: hidden; cursor: pointer; flex: none; background: rgba(255,255,255,.08); }
 .tp-cv img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .28s cubic-bezier(.2,.8,.2,1), transform .28s cubic-bezier(.2,.8,.2,1); }
@@ -1680,5 +1683,8 @@ body.has-tp .tsearch { flex-basis: 300px; min-width: 180px; }
 #topbar .brand, #topbar .tabs { flex: none; }
 #topbar .tabs a, #topbar .brand-sub { white-space: nowrap; }
 body.has-tp #topbar { gap: 16px; }
-body.has-tp .tsearch { flex: 1 1 300px; max-width: 360px; min-width: 150px; }
+body.has-tp .tsearch { flex: 0 1 300px; max-width: 360px; min-width: 150px; }
 @media (max-width: 1280px) { body.has-tp .brand-sub { display: none; } }
+#topbar { transition: gap .5s cubic-bezier(.2,.8,.2,1); }
+.tsearch { max-width: 460px; }
+#tplayer > * { flex: none; }
