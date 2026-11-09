@@ -3,7 +3,8 @@
 import { api } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
 import { IC } from './mplayer.js';
-import { MI, hue, genreHue } from './music.js';
+import { MI, hue } from './music.js';
+import { fanTile, fanBanner, learnColors } from './gtiles.js';
 import { book, playBook, toggleBook, seekBook, setFinished, onBook, absCover, absAuthorImg, hm, clock, chapterAt, BI } from './bplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -95,9 +96,7 @@ function authorCard(a) {
     <div class="t1">${esc(a.name)}</div><div class="t2">${plural(a.numBooks ?? a.libraryItems?.length ?? 0, 'book')}</div></a>`;
 }
 function genreTile(g, list) {
-  const fan = list.slice(0, 3).map((it) => `<span style="background-image:url('${absCover(it, 120)}')"></span>`).join('');
-  return `<a class="mood" href="${H('genre/' + encodeURIComponent(g))}" style="--h:${genreHue(g)}"><div class="shine"></div><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><path d="${BOOK_ICON}"/></svg><div class="fan">${fan}</div>
-    <div class="txt"><div class="nm">${esc(g)}</div><div class="ct">${plural(list.length, 'book')}</div></div></a>`;
+  return fanTile(g, list, H('genre/' + encodeURIComponent(g)), absCover, (it) => md(it).title);
 }
 const section = (title, sub, inner, extra = '', id = '') => `<section class="msec"${id ? ` id="${id}"` : ''}><div class="msec-h"><h2>${esc(title)}${sub ? ` <span class="t2 bk-sub">${esc(sub)}</span>` : ''}</h2>${extra}</div>${inner}</section>`;
 const crumbs = (trail) => `<div class="crumbs"><button type="button" class="gb sq" onclick="history.back()" aria-label="Back">${MI.back}</button>${trail.map(([l, h], i) => (i === trail.length - 1 ? `<b>${esc(l)}</b>` : `<a href="${h}">${esc(l)}</a><span>›</span>`)).join('')}</div>`;
@@ -194,6 +193,7 @@ async function homePage(v) {
     authors.length ? section('Authors', 'Click one to see all their books', `<div class="mrow">${authors.map(authorCard).join('')}</div>`, '', 'row-authors') : '',
     again.length ? section('Listen again', "Books you've finished", `<div class="mrow">${again.map((it) => bookCard(it)).join('')}</div>`) : '',
   ].join('');
+  learnColors(main);
   main.querySelector('#bkShuf')?.addEventListener('click', () => { main.querySelector('#bkDisc').innerHTML = pick().map((it) => bookCard(it)).join(''); });
   wirePlay(main);
   const row = params.get('row');
@@ -560,21 +560,20 @@ async function genrePage(v, g) {
   const gmap = new Map(); all.forEach((it) => (md(it).genres || []).forEach((x) => { if (x === g) return; if (!gmap.has(x)) gmap.set(x, []); gmap.get(x).push(it); }));
   const others = [...gmap.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 8);
   const st = { sort: LSORTS.some(([k]) => k === localStorage.getItem('bkGenreSort')) ? localStorage.getItem('bkGenreSort') : 'title' };
-  const hc = mine.slice(0, 3);
   main.innerHTML = `
     ${crumbs([['Genres', H('genres')], [g]])}
-    <div class="bg-hero" style="--h:${genreHue(g)}">
-      ${hc.map((it, i) => `<span class="bs-art bg-hc" style="--h:${hue(md(it).title || it.id)};right:${60 + i * 120}px;transform:rotate(${[6, -4, -10][i]}deg);z-index:${3 - i}"><span class="bs-ph"><b>${esc(md(it).title || '')}</b></span><img src="${absCover(it, 300)}" alt="" onload="this.parentNode.classList.add('ld')" onerror="this.remove()"></span>`).join('')}
+    ${fanBanner(g, mine, absCover, (it) => md(it).title, `
       <div class="bg-btns"><button type="button" class="btn" id="bkSurprise">${IC.play}<span>Surprise me</span></button></div>
       <h1 class="disp bg-t">${esc(g.toUpperCase())}</h1>
       <div class="bg-s">${[plural(mine.length, 'book'), plural(byAuthor.size, 'author'), hours >= 1 ? Math.round(hours).toLocaleString() + ' hours' : '', cont.length ? cont.length + ' in progress' : ''].filter(Boolean).join(' · ')}</div>
-    </div>
+    `)}
     ${cont.length ? section('Continue listening', `${g} you've started`, sideShelf(cont)) : ''}
     ${series.length ? section('Series', plural(series.length, 'series').replace(/seriess$/, 'series'), `<div class="row bs-tilerow">${series.map(seriesTile).join('')}</div>`) : ''}
     ${section('Recently added', '', sideShelf(recent))}
     <section class="msec"><div class="msec-h bk-allh"><h2>All ${esc(g)} <span class="t2 bk-sub">${plural(mine.length, 'book')}</span></h2>${segHtml('bkSortSeg', LSORTS, st.sort)}</div><div class="bs-wall" id="bkWall"></div></section>
     ${authors.length ? section('Authors', `Most books in ${g} first`, `<div class="mrow">${authors.map(authorCard).join('')}</div>`) : ''}
     ${others.length ? section('More genres', '', `<div class="bk-genres">${others.map(([x, l]) => genreTile(x, l)).join('')}</div>`) : ''}`;
+  learnColors(main);
   const wall = mountWall(main.querySelector('#bkWall'), null, alive, false);
   wall.set(sortBooks(mine, st.sort), false);
   wireSeg(main, 'bkSortSeg', (k) => { st.sort = k; save('bkGenreSort', k); wall.set(sortBooks(mine, k), false); });

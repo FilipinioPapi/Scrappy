@@ -2152,3 +2152,30 @@ body.bnow-open #bbar { display: none; }
 .tp .tb-skip svg { width: 20px; height: 20px; }
 .tp .tb-spd { height: 24px; min-width: 50px; padding: 0 8px; font-size: 11.5px; margin-bottom: 2px; }
 .bb-pop.down.off { transform: translateY(-12px) scale(.98); }
+
+/* ---------- Genre tiles + banner, design A "Fan" (gtiles.js) ---------- */
+.gfan { position: relative; display: block; height: 140px; border-radius: 16px; overflow: hidden; color: #fff; text-decoration: none; isolation: isolate;
+  background: linear-gradient(115deg, var(--c1) 0%, var(--c2) 55%, var(--c3) 100%); box-shadow: 0 10px 24px rgba(0,0,0,.4); transition: transform .32s var(--ease), box-shadow .32s var(--ease), background .6s ease; }
+.gfan:not(.big):hover { transform: translateY(-4px) scale(1.015); box-shadow: 0 18px 32px rgba(0,0,0,.5); }
+.gfan::after { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(circle at 12% 0%, rgba(255,255,255,.18), transparent 50%); }
+.gf-sym { position: absolute; z-index: 0; left: 38%; top: -18px; font-size: 110px; line-height: 1; color: #fff; opacity: .12; pointer-events: none; user-select: none; }
+.gf-nm { position: absolute; left: 18px; top: 14px; z-index: 3; max-width: 58%; font-family: var(--display); font-size: 24px; line-height: 1; text-shadow: 0 2px 10px rgba(0,0,0,.55); }
+.gf-ct { position: absolute; left: 18px; top: 46px; z-index: 3; font-size: 12.5px; font-weight: 700; color: rgba(255,255,255,.85); text-shadow: 0 1px 6px rgba(0,0,0,.4); }
+/* Covers: --i counts from the left, the last one sits furthest right and on top. */
+.gf-cv { --k: calc(var(--n) - 1 - var(--i)); position: absolute; z-index: calc(2 + var(--i)); width: 104px; height: 104px; right: calc(-14px + var(--k) * 48px); top: 26px;
+  border-radius: 6px; overflow: hidden; box-shadow: 0 12px 24px rgba(0,0,0,.55); background: linear-gradient(135deg, rgba(255,255,255,.18), rgba(0,0,0,.35)), var(--c2);
+  transform: rotate(var(--r, -8deg)); transition: transform .4s cubic-bezier(.34,1.56,.64,1); }
+.gf-cv:nth-of-type(2) { --r: 4deg; top: 34px; } .gf-cv:nth-of-type(3) { --r: -3deg; } .gf-cv:nth-of-type(4) { --r: 7deg; top: 44px; } .gf-cv:nth-of-type(5) { --r: -6deg; } .gf-cv:nth-of-type(6) { --r: 3deg; top: 44px; }
+.gf-cv b { position: absolute; inset: 8px; font-family: var(--display); font-weight: 400; font-size: 11px; line-height: 1.05; color: rgba(255,255,255,.85); overflow: hidden; }
+.gf-cv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s ease; }
+.gf-cv img.in { opacity: 1; }
+.gfan:not(.big):hover .gf-cv { transform: rotate(calc(var(--r, -8deg) * 1.6)) translateY(-4px); }
+/* The banner on a genre page */
+.gfan.big { height: 230px; padding: 30px 34px; margin-bottom: 30px; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 18px; box-shadow: 0 18px 40px rgba(0,0,0,.45); }
+.gfan.big .gf-sym { font-size: 220px; left: 42%; top: -30px; }
+.gfan.big .gf-cv { width: 175px; height: 175px; right: calc(-10px + var(--k) * 118px); top: 30px; }
+.gfan.big .gf-cv:nth-of-type(even) { top: 44px; }
+.gfan.big .gf-cv b { font-size: 16px; inset: 12px; }
+.gfan.big .bg-t, .gfan.big .bg-s, .gfan.big .bg-btns { z-index: 9; }
+.gfan.big .bg-t { text-shadow: 0 4px 18px rgba(0,0,0,.6); }
+@media (max-width: 1200px) { .gfan.big .gf-cv:nth-of-type(-n+2) { display: none; } }
