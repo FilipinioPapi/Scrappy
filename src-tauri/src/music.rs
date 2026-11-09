@@ -11,11 +11,28 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 const OBSERVED: &[&str] = &[
     "time-pos", "duration", "pause", "volume", "mute", "playlist-pos", "playlist-count",
-    "core-idle", "idle-active", "paused-for-cache",
+    "core-idle", "idle-active", "paused-for-cache", "af-metadata/viz",
 ];
 
-fn on_event(app: &AppHandle, id: usize, last_emit: &Mutex<std::time::Instant>, ev: mpv::Event) {
+/// Loudness from the visualizer's sound meter, in dB (about -60 quiet to 0 loud).
+fn level_of(v: &Value, key: &str) -> Option<f64> {
+    v.get(key)?.as_str()?.parse::<f64>().ok().filter(|x| x.is_finite())
+}
+
+fn on_event(app: &AppHandle, id: usize, last_emit: &Mutex<std::time::Instant>, last_level: &Mutex<std::time::Instant>, ev: mpv::Event) {
     match ev {
+        mpv::Event::Property(name, value) if name == "af-metadata/viz" => {
+            let mut last = last_level.lock().unwrap();
+            if last.elapsed().as_millis() < 30 {
+                return;
+            }
+            *last = std::time::Instant::now();
+            let rms = level_of(&value, "lavfi.astats.Overall.RMS_level").unwrap_or(-90.0);
+            let peak = level_of(&value, "lavfi.astats.Overall.Peak_level").unwrap_or(rms);
+            let l = level_of(&value, "lavfi.astats.1.RMS_level").unwrap_or(rms);
+            let r = level_of(&value, "lavfi.astats.2.RMS_level").unwrap_or(rms);
+            let _ = app.emit("music-level", json!({ "rms": rms, "peak": peak, "l": l, "r": r }));
+        }
         mpv::Event::Property(name, value) => {
             if name == "time-pos" {
                 let mut last = last_emit.lock().unwrap();
@@ -72,7 +89,8 @@ fn ensure(app: &AppHandle) -> Result<mpv::Player, String> {
     let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let app2 = app.clone();
     let last_emit = Mutex::new(std::time::Instant::now());
-    let player = mpv::Player::create(&state.mpv_dirs, &opts, OBSERVED, move |ev| on_event(&app2, id, &last_emit, ev))?;
+    let last_level = Mutex::new(std::time::Instant::now());
+    let player = mpv::Player::create(&state.mpv_dirs, &opts, OBSERVED, move |ev| on_event(&app2, id, &last_emit, &last_level, ev))?;
     *state.music.lock().unwrap() = Some((id, player.clone()));
     Ok(player)
 }
@@ -139,6 +157,20 @@ pub fn music_stop(state: State<'_, AppState>) {
     if let Some((_, p)) = state.music.lock().unwrap().as_ref() {
         let _ = p.command(&["stop"]);
     }
+}
+
+/// Turn the visualizer's sound meter on or off (it only runs while you can see it).
+#[tauri::command]
+pub fn music_viz(state: State<'_, AppState>, on: bool) -> Result<(), String> {
+    let p = match state.music.lock().unwrap().as_ref() {
+        Some((_, p)) => p.clone(),
+        None => return Ok(()),
+    };
+    let _ = p.command(&["af", "remove", "@viz"]);
+    if on {
+        p.command(&["af", "add", "@viz:lavfi=[astats=metadata=1:reset=1]"])?;
+    }
+    Ok(())
 }
 
 pub fn quit(app: &AppHandle) {

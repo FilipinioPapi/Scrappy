@@ -33,20 +33,20 @@ export const MI = {
 };
 
 // ---------- Small helpers ----------
-const hue = (s) => [...String(s || '')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 360;
+export const hue = (s) => [...String(s || '')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 360;
 export function coverHtml(id, title, w = 300, cls = '') {
   const h = hue(title || id);
   return `<div class="mcv ${cls}" style="--h:${h}"><span>${esc(title || '')}</span>${id ? `<img loading="lazy" src="${cover(id, w)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>`;
 }
 export const totalTime = (secs) => { const m = Math.round(secs / 60); return m >= 60 ? `${Math.floor(m / 60)} hr ${m % 60} min` : `${m} min`; };
-const plural = (n, w) => `${(n || 0).toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
-const dateStr = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '');
-const href = (type, id) => `#/music/${type}/${encodeURIComponent(id)}`;
+export const plural = (n, w) => `${(n || 0).toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
+export const dateStr = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+export const href = (type, id) => `#/music/${type}/${encodeURIComponent(id)}`;
 const q = (o) => Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
 export const nd = (endpoint, params = {}) => api.nd(endpoint, typeof params === 'string' ? params : q(params));
 
 // Show the saved copy first, then refresh. render(data, fromCache)
-async function ndLoad(endpoint, params, render, alive) {
+export async function ndLoad(endpoint, params, render, alive) {
   const query = typeof params === 'string' ? params : q(params);
   const cached = await api.ndCached(endpoint, query).catch(() => null);
   let shown = null;
@@ -60,11 +60,12 @@ async function ndLoad(endpoint, params, render, alive) {
 
 // ---------- Your Library (recents + pins), kept on this computer ----------
 const LIB_KEY = 'mlib';
-let lib = { rec: [], pins: [], fil: 'all', collapsed: false, width: 272 };
+export let lib = { rec: [], pins: [], hpins: [], fil: 'all', collapsed: false, width: 272 };
 try { Object.assign(lib, JSON.parse(localStorage.getItem(LIB_KEY) || '{}')); } catch {}
-const saveLib = () => { try { localStorage.setItem(LIB_KEY, JSON.stringify(lib)); } catch {} };
+export const saveLib = () => { try { localStorage.setItem(LIB_KEY, JSON.stringify(lib)); } catch {} };
 let playlistsCache = [];
 
+export const syncNow = () => syncRows();
 export function bump(entry) {
   lib.rec = [entry, ...lib.rec.filter((r) => r.k !== entry.k)].slice(0, 40);
   saveLib(); drawLib(true);
@@ -75,7 +76,7 @@ function libEntries() {
   return [...lib.rec, ...extra];
 }
 const plEntry = (p) => ({ k: 'pl:' + p.id, t: p.name, sub: `Playlist · ${plural(p.songCount, 'song')}`, cv: p.coverArt });
-const kindOf = (k) => ({ pl: 'playlist', al: 'album', ar: 'artist' }[k.slice(0, 2)]);
+export const kindOf = (k) => ({ pl: 'playlist', al: 'album', ar: 'artist' }[k.slice(0, 2)]);
 
 function libItem(e, pinned) {
   const kind = kindOf(e.k);
@@ -297,7 +298,7 @@ export function row(title, inner, more) {
   return `<section class="msec"><div class="msec-h"><h2>${esc(title)}</h2>${more ? `<a class="seeall" href="${more}">See all</a>` : ''}</div><div class="mrow">${inner}</div></section>`;
 }
 // Cover hover = play (albums anywhere on the page).
-function wireCards(el) {
+export function wireCards(el) {
   el.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-playalbum]'); if (!b) return;
     e.preventDefault(); e.stopPropagation();
@@ -337,7 +338,7 @@ export async function musicView(root, ctx) {
 }
 // More screens register here (Genres, Playlists, Search).
 export const EXTRA = {};
-const ready = () => window.dispatchEvent(new Event('scrappy:ready'));
+export const ready = () => window.dispatchEvent(new Event('scrappy:ready'));
 
 // ---------- Home ----------
 const MIXES = [

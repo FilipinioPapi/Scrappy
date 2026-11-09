@@ -22,6 +22,9 @@ export const IC = {
   muted: line('<path d="M4 9.5h3l4.5-4v13L7 14.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>'),
   queue: line('<path d="M4 6h12M4 11h12M4 16h7"/><path d="M15 14.5v5l4.5-2.5z"/>'),
   more: line('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'),
+  lyrics: line('<path d="M4 6h10M4 11h10M4 16h6"/><rect x="15.5" y="10" width="4" height="7" rx="2"/><path d="M17.5 17v3"/>'),
+  viz: line('<path d="M5 18v-4M9 18V9M13 18V5M17 18v-7M21 18v-2"/>'),
+  expand: line('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   note: line('<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>'),
 };
 
@@ -240,9 +243,12 @@ bar.innerHTML = `
     <div class="mb-seek"><span id="mbPos">0:00</span><div class="mseek" id="mbSeek"><div class="track"><i></i></div><b></b></div><span id="mbDur">0:00</span></div>
   </div>
   <div class="mb-right">
+    <button class="gb" id="mbLyr" title="Lyrics" aria-label="Lyrics">${IC.lyrics}</button>
+    <button class="gb" id="mbViz" title="Visualizer" aria-label="Visualizer">${IC.viz}</button>
     <button class="gb" id="mbQueue" title="Up next" aria-label="Up next">${IC.queue}</button>
     <button class="gb" id="mbMute" title="Mute" aria-label="Mute">${IC.vol}</button>
     <div class="mseek vol" id="mbVol"><div class="track"><i></i></div><b></b></div>
+    <button class="gb" id="mbExp" title="Now playing" aria-label="Now playing">${IC.expand}</button>
   </div>`;
 document.body.appendChild(bar);
 const $ = (id) => bar.querySelector('#' + id);
@@ -304,6 +310,9 @@ $('mbRep').onclick = cycleRepeat;
 $('mbMute').onclick = toggleMute;
 $('mbFav').onclick = () => { const c = current(); if (c) setFavorite(c, !c.starred); };
 $('mbCover').onclick = () => { const c = current(); if (c?.albumId) location.hash = `#/music/album/${encodeURIComponent(c.albumId)}?song=${encodeURIComponent(c.id)}`; };
+$('mbLyr').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: 'lyrics' }));
+$('mbViz').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: 'viz' }));
+$('mbExp').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: null }));
 $('mbQueue').onclick = () => window.dispatchEvent(new CustomEvent('music:panel', { detail: 'queue' }));
 // Soft bounce + faint red ripple on every bar button.
 bar.addEventListener('pointerdown', (e) => {

@@ -935,6 +935,7 @@ pub fn run() {
             music::music_set,
             music::music_get,
             music::music_stop,
+            music::music_viz,
             api_get,
             api_cached,
             api_send,

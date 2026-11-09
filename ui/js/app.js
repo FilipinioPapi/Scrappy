@@ -2,6 +2,9 @@ import { api, quiet } from './api.js';
 import './player.js';
 import './mplayer.js';
 import { musicView } from './music.js';
+import './music2.js';
+import './nowplaying.js';
+import { mountSearch, setSearchSession, searchPage } from './search.js';
 import './menu.js';
 import { toast } from './components.js';
 import { loginView, firstTab, homeView, libraryView, itemView, personView, searchView, comingSoonView } from './views.js';
@@ -32,6 +35,7 @@ let enterTimer;
 
 async function refreshSession() {
   session = await api.session();
+  setSearchSession(session);
   const sv = session.servers || {};
   const rows = [['emby', 'Emby'], ['navidrome', 'Navidrome'], ['audiobookshelf', 'Audiobookshelf']]
     .filter(([k]) => sv[k]?.signedIn)
@@ -116,7 +120,7 @@ async function route(opts = {}) {
     case 'library': return libraryView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'person': return personView(viewEl, ctx, id);
-    case 'search': return searchView(viewEl, ctx);
+    case 'search': return searchPage(viewEl, ctx);
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return comingSoonView(viewEl, 'Audiobooks from Audiobookshelf will live here.');
     default: return homeView(viewEl, ctx);
@@ -148,7 +152,6 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
 window.addEventListener('keydown', (e) => {
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
   if (e.key === 'Backspace' && !typing) { e.preventDefault(); history.back(); }
-  if (e.key === '/' && !typing && session?.loggedIn) { e.preventDefault(); location.hash = '#/search'; }
 });
 window.addEventListener('mouseup', (e) => { if (e.button === 3) history.back(); if (e.button === 4) history.forward(); });
 
@@ -170,4 +173,5 @@ window.addEventListener('scrappy:refresh', () => {
 });
 
 window.addEventListener('hashchange', () => route());
+mountSearch();
 route();
