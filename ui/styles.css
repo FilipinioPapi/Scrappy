@@ -1186,7 +1186,7 @@ body.has-mbar.tab-music .mpanel { bottom: var(--mbar); }
 .ab-cover { position: relative; display: block; }
 .ab-cover .mcv { width: 184px; }
 .ab-t { font-size: 26px; display: block; }
-.ab-body .t2 { margin-top: 8px; }
+.ab-body > .t2 { margin-top: 8px; }
 .ab-btns { display: flex; gap: 8px; margin: 14px 0 12px; }
 .ab-btns .btn { height: 36px; padding: 0 16px; font-size: 13px; }
 .ab-songs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; min-height: 40px; }
@@ -1196,7 +1196,7 @@ body.has-mbar.tab-music .mpanel { bottom: var(--mbar); }
 .stable { margin-top: 8px; }
 .srow { display: grid; grid-template-columns: 48px minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1fr) 40px 64px 40px; align-items: center; gap: 12px; min-height: 56px; padding: 0 12px; border-radius: 10px;
   transition: background .2s var(--ease); content-visibility: auto; contain-intrinsic-size: auto 56px; }
-.stable.album .srow, .stable.songs .srow { }
+.stable.album .srow:not(.shead) { min-height: 44px; contain-intrinsic-size: auto 44px; }
 .srow:not(.shead):hover { background: rgba(255,255,255,.05); }
 .srow.sel { background: rgba(255,255,255,.08); }
 .srow.hl { animation: hlPulse 2.4s var(--ease); }
@@ -1530,11 +1530,10 @@ body.mnow-open #mbar { display: none; }
 .mn-art { position: relative; width: min(300px, 32vh); aspect-ratio: 1; margin-bottom: 10px; }
 .mn-art .mn-cover { position: absolute; inset: 0; width: 100%; border-radius: 14px; padding: 18px; box-shadow: 0 24px 50px rgba(0,0,0,.6); z-index: 1; }
 .mn-art .mn-cover span { font-size: 30px; }
-.vinyl { position: absolute; top: 4%; left: 4%; width: 92%; height: 92%; border-radius: 50%; background: repeating-radial-gradient(circle, #111 0 2px, #191919 2px 4px); box-shadow: 0 10px 30px rgba(0,0,0,.6);
-  transition: transform .7s var(--ease); display: grid; place-items: center; }
-.vinyl .label { width: 36%; height: 36%; border-radius: 50%; background-size: cover; background-position: center; border: 4px solid #0b0b0b; }
-.mn-art.on .vinyl { transform: translateX(34%); }
-.mn-art.on .vinyl .label { animation: vinylRot 6s linear infinite; }
+/* Now playing: cover tilts and the record (album art on its label) peeks out and spins while playing */
+.mn-art .vin { position: absolute; top: 4%; left: 4%; width: 92%; height: 92%; transform: translateX(30%); transition: transform .8s cubic-bezier(.34,1.25,.64,1); filter: drop-shadow(0 14px 26px rgba(0,0,0,.6)); }
+.mn-art .mn-cover { transition: transform .8s cubic-bezier(.34,1.25,.64,1); transform: rotate(-3deg); }
+.mn-art.on .vdisc { animation-play-state: running; }
 @keyframes vinylRot { to { transform: rotate(360deg); } }
 .mn-title { display: flex; align-items: center; gap: 10px; }
 .mn-title .disp { font-size: 30px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1586,3 +1585,55 @@ body.mnow-open #mbar { display: none; }
   .tdrop { width: min(640px, 92vw); }
 }
 .mseek.wheel .track i { transition: width .18s cubic-bezier(.2,.8,.2,1); } .mseek.wheel > b { transition: left .18s cubic-bezier(.2,.8,.2,1); }
+
+/* ---------- Album page record (approved AlbumE) ---------- */
+.sleeve { position: relative; width: 220px; height: 220px; flex: none; transition: width .8s cubic-bezier(.34,1.25,.64,1); }
+.sleeve.out { width: 340px; }
+.sleeve .mcv.big { position: relative; z-index: 1; transition: transform .8s cubic-bezier(.34,1.25,.64,1); }
+.sleeve.out .mcv.big { transform: rotate(-2deg); }
+.sleeve .vin { position: absolute; left: 8px; top: 8px; width: 204px; height: 204px; transition: transform .8s cubic-bezier(.34,1.25,.64,1); filter: drop-shadow(0 14px 26px rgba(0,0,0,.6)); }
+.sleeve.out .vin { transform: translateX(124px); }
+.vdisc { position: relative; width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center;
+  background: repeating-radial-gradient(circle at center, #121212 0 2px, #1c1c1c 2px 4px); box-shadow: inset 0 0 0 2px #050505, inset 0 0 0 30px rgba(0,0,0,.12);
+  animation: vinylRot 1.9s linear infinite; animation-play-state: paused; }
+.sleeve.rec-on .vdisc { animation-play-state: running; }
+.vdisc .shine { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 40deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,.1) 28deg, rgba(255,255,255,0) 56deg, rgba(255,255,255,0) 180deg, rgba(255,255,255,.08) 208deg, rgba(255,255,255,0) 236deg); }
+.dlabel { position: relative; width: 34%; height: 34%; border-radius: 50%; overflow: hidden; background: linear-gradient(135deg, hsl(var(--h) 55% 42%), hsl(calc(var(--h) + 40) 50% 16%)); box-shadow: 0 0 0 2px rgba(0,0,0,.45), 0 0 0 4px rgba(255,255,255,.04); }
+.dlabel img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .4s; }
+.dlabel img.in { opacity: 1; }
+.dlabel .gloss { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.18), rgba(255,255,255,0) 55%); }
+.dlabel .hole { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: #0C0808; box-shadow: inset 0 1px 1px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.12); }
+/* Albums list: the playing album's cover tilts (no record there, by design) */
+.ab .ab-cover .mcv { transition: transform .5s cubic-bezier(.34,1.25,.64,1), box-shadow .5s; }
+.ab.on .ab-cover .mcv { transform: rotate(-3deg) scale(1.02); box-shadow: 0 14px 30px rgba(0,0,0,.6); }
+/* Playlist cover: hover to change the art (approved PlaylistB) */
+.plcv { position: relative; border: 0; padding: 0; background: none; border-radius: 14px; cursor: pointer; flex: none; transition: transform .35s var(--ease); }
+.plcv:hover { transform: scale(1.015); }
+.plcv .ov { position: absolute; inset: 0; z-index: 2; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: rgba(0,0,0,.5); color: #fff; font-weight: 700; font-size: 14px; opacity: 0; transition: opacity .25s var(--ease); }
+.plcv:hover .ov, .plwrap.editing .plcv .ov { opacity: 1; }
+.plwrap.editing .plcv .ov { background: rgba(0,0,0,.35); }
+.fld { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.fld input { padding: 11px 13px; border-radius: 10px; background: #160F0F; border: 1px solid var(--line); color: var(--text); outline: none; transition: border-color .2s, box-shadow .2s; }
+.fld input:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(236,40,46,.18); }
+.lyr-none .btn { align-self: flex-start; margin-top: 6px; }
+
+/* Home touches from the approved boards: mix art, mood art and cover fans, history badges */
+.mix-card .mix-art { position: absolute; right: -18px; top: -14px; width: 170px; height: 170px; fill: none; stroke: rgba(255,255,255,.14); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; transform: rotate(12deg); pointer-events: none; transition: transform .6s var(--ease); }
+.mix-card:hover .mix-art { transform: rotate(4deg) scale(1.04); }
+button.mood { border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; display: block; width: 100%; }
+.mood .art { position: absolute; right: -14px; top: -10px; width: 92px; height: 92px; fill: none; stroke: rgba(255,255,255,.2); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transform: rotate(14deg); transition: transform .45s cubic-bezier(.34,1.56,.64,1); pointer-events: none; }
+.mood:hover .art { transform: rotate(4deg) scale(1.08); }
+.mood .fan { position: absolute; right: 14px; bottom: 12px; width: 76px; height: 44px; pointer-events: none; }
+.mood .fan span { position: absolute; bottom: 0; width: 38px; height: 38px; border-radius: 6px; background: center / cover no-repeat; box-shadow: 0 6px 12px rgba(0,0,0,.45); opacity: 0; animation: fanIn .28s cubic-bezier(.2,.8,.2,1) forwards; transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+.mood .fan span:nth-child(1) { right: 34px; transform: rotate(-12deg); }
+.mood .fan span:nth-child(2) { right: 17px; transform: rotate(-2deg); z-index: 1; animation-delay: .05s; }
+.mood .fan span:nth-child(3) { right: 0; transform: rotate(10deg); z-index: 2; animation-delay: .1s; }
+.mood:hover .fan span:nth-child(1) { transform: rotate(-18deg) translate(-6px, -2px); }
+.mood:hover .fan span:nth-child(3) { transform: rotate(16deg) translate(6px, -2px); }
+@keyframes fanIn { to { opacity: 1; } }
+.mcard-art { position: relative; }
+.hbadge { position: absolute; right: 8px; bottom: 8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(14,10,10,.82); color: var(--text, #f6e9e9); box-shadow: 0 4px 10px rgba(0,0,0,.45); z-index: 2; }
+.hbadge svg { width: 13px; height: 13px; }
+.mcard-art.round .hbadge { right: 10%; bottom: 6%; }
+.hwhen { font-size: 12px; opacity: .75; }
+.hwhen.now { color: var(--red); opacity: 1; font-weight: 700; }

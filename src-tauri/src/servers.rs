@@ -63,7 +63,7 @@ pub async fn nd_find(http: &reqwest::Client, input: &str) -> Result<(String, Str
 }
 
 /// Navidrome's own login hands back a ready-made Subsonic salt and token.
-pub async fn nd_login(http: &reqwest::Client, server: &str, user: &str, pass: &str) -> Result<(String, String, String), String> {
+pub async fn nd_login(http: &reqwest::Client, server: &str, user: &str, pass: &str) -> Result<(String, String, String, String), String> {
     let r = http
         .post(format!("{server}/auth/login"))
         .json(&json!({ "username": user, "password": pass }))
@@ -83,7 +83,64 @@ pub async fn nd_login(http: &reqwest::Client, server: &str, user: &str, pass: &s
     if salt.is_empty() || token.is_empty() {
         return Err("Navidrome didn't return a login token.".into());
     }
-    Ok((name, salt, token))
+    let jwt = v["token"].as_str().unwrap_or_default().to_string();
+    Ok((name, salt, token, jwt))
+}
+
+/// Change or remove a playlist's cover with Navidrome's own API (Navidrome 0.61+).
+/// Returns a refreshed session token when Navidrome sends one.
+pub async fn nd_playlist_image(http: &reqwest::Client, cfg: &Config, id: &str, image: Option<(Vec<u8>, String)>) -> Result<Option<String>, String> {
+    if cfg.nd_jwt.is_empty() {
+        return Err("ND_NATIVE_EXPIRED".into());
+    }
+    let url = format!("{}/api/playlist/{}/image", cfg.nd_server, enc(id));
+    let req = match image {
+        Some((bytes, name)) => {
+            let mime = if name.ends_with(".png") { "image/png" } else if name.ends_with(".webp") { "image/webp" } else if name.ends_with(".gif") { "image/gif" } else { "image/jpeg" };
+            let part = reqwest::multipart::Part::bytes(bytes).file_name(name).mime_str(mime).map_err(|e| e.to_string())?;
+            http.post(url).multipart(reqwest::multipart::Form::new().part("image", part))
+        }
+        None => http.delete(url),
+    };
+    let r = req.header("X-ND-Authorization", format!("Bearer {}", cfg.nd_jwt)).send().await.map_err(friendly_error)?;
+    let fresh = r.headers().get("x-nd-authorization").and_then(|h| h.to_str().ok()).map(|s| s.trim_start_matches("Bearer ").to_string());
+    match r.status().as_u16() {
+        200..=299 => Ok(fresh),
+        401 => Err("ND_NATIVE_EXPIRED".into()),
+        403 => Err("Navidrome doesn't allow changing this playlist's art (only its owner can, and artwork upload must be on).".into()),
+        404 | 405 => Err("Your Navidrome is too old to change playlist art. It needs version 0.61 or newer.".into()),
+        s => Err(format!("Navidrome couldn't save the image ({}).", s)),
+    }
+}
+
+/// Look up lyrics on LRCLIB (free, no account). Prefers time-synced lyrics.
+pub async fn lyrics_find(http: &reqwest::Client, artist: &str, title: &str, album: &str, duration: u64) -> Result<Value, String> {
+    let ua = "Scrappy Media Center (personal music player)";
+    let get = format!(
+        "https://lrclib.net/api/get?artist_name={}&track_name={}&album_name={}&duration={}",
+        enc(artist), enc(title), enc(album), duration
+    );
+    if let Ok(r) = http.get(&get).header("User-Agent", ua).send().await {
+        if r.status().is_success() {
+            if let Ok(v) = r.json::<Value>().await {
+                if v["syncedLyrics"].is_string() || v["plainLyrics"].is_string() {
+                    return Ok(v);
+                }
+            }
+        }
+    }
+    let q = format!("https://lrclib.net/api/search?artist_name={}&track_name={}", enc(artist), enc(title));
+    let r = http.get(&q).header("User-Agent", ua).send().await.map_err(friendly_error)?;
+    let list: Value = r.json().await.map_err(|e| e.to_string())?;
+    let items = list.as_array().cloned().unwrap_or_default();
+    // Closest length wins; synced lyrics break ties.
+    let best = items.into_iter()
+        .filter(|v| v["syncedLyrics"].is_string() || v["plainLyrics"].is_string())
+        .min_by_key(|v| {
+            let d = (v["duration"].as_f64().unwrap_or(0.0) as i64 - duration as i64).abs();
+            d * 2 + if v["syncedLyrics"].is_string() { 0 } else { 1 }
+        });
+    best.ok_or_else(|| "No lyrics found online for this song.".to_string())
 }
 
 /// Full URL for a Subsonic call, e.g. ("getAlbumList2", "type=newest&size=20").

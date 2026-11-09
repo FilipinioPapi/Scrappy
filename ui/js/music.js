@@ -2,7 +2,7 @@
 // Screens follow the approved mock-ups on the Music design canvas.
 import { api, quiet } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
-import { music, onMusic, current, playSongs, playNext, addToQueue, playAt, removeAt, moveInQueue, clearUpNext, setFavorite, togglePlay, cover, fmt, IC } from './mplayer.js';
+import { history, music, onMusic, current, playSongs, playNext, addToQueue, playAt, removeAt, moveInQueue, clearUpNext, setFavorite, togglePlay, cover, fmt, IC } from './mplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const NAV = [
@@ -29,6 +29,9 @@ export const MI = {
   list: line('<path d="M4 6h12M4 11h12M4 16h7"/><path d="M19 8v8.5"/><circle cx="16.5" cy="17" r="2.5"/>', 18),
   check: line('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 14),
   grip: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><g fill="currentColor"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></g></svg>',
+  note: line('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>', 12),
+  playlist: line('<path d="M4 6h11M4 11h11M4 16h7"/><circle cx="17" cy="17" r="2.5"/><path d="M19.5 17V8l2-1"/>', 12),
+  genres: line('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>', 12),
   eq: '<span class="eq"><i></i><i></i><i></i></span>',
 };
 
@@ -209,8 +212,18 @@ export function wireSongs(el, getSongs, from) {
   });
 }
 // Keep "now playing" rows and hearts up to date everywhere.
+// Album page: the record behind the cover, with the album art as its label.
+export function sleeveHtml(album) {
+  const art = album.coverArt ? `<img src="${cover(album.coverArt, 300)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : '';
+  return `<div class="sleeve" data-sleeve="${esc(album.id)}"><div class="vin"><div class="vdisc"><div class="shine"></div><div class="dlabel" style="--h:${hue(album.name)}">${art}<i class="gloss"></i><i class="hole"></i></div></div></div>
+    ${coverHtml(album.coverArt, album.name, 600, 'big')}</div>`;
+}
 function syncRows() {
   const cur = current();
+  // The playing album's record slides out and spins; on the Albums list its cover tilts.
+  document.querySelectorAll('[data-sleeve]').forEach((el) => { const on = !!cur && cur.albumId === el.dataset.sleeve; el.classList.toggle('out', on); el.classList.toggle('rec-on', on && music.playing); });
+  document.querySelectorAll('.ab[data-album]').forEach((el) => el.classList.toggle('on', !!cur && cur.albumId === el.dataset.album));
+  document.querySelectorAll('.kicker[data-np]').forEach((el) => (el.textContent = cur && cur.albumId === el.dataset.np ? 'ALBUM · NOW PLAYING' : 'ALBUM'));
   document.querySelectorAll('.srow[data-id]').forEach((r) => {
     const now = !!cur && r.dataset.id === cur.id;
     r.classList.toggle('now', now); r.classList.toggle('playing', now && music.playing);
@@ -345,16 +358,42 @@ const MIXES = [
   { key: 'scrappy', name: 'Scrappy Mix', blurb: 'Songs you love and play most, plus a few you forgot about.' },
   { key: 'fresh', name: 'Fresh Finds', blurb: 'Straight from the albums you added most recently.' },
   { key: 'throwback', name: 'Throwback Mix', blurb: 'Older favorites from your library. Turn it up.' },
+  { key: 'random', name: 'Random 50', blurb: 'Fifty songs from anywhere in your library. Anything goes.' },
+  { key: 'forgotten', name: 'Forgotten Favorites', blurb: 'Songs in your Favorites you haven\'t played in a while.' },
+  { key: 'deep', name: 'Deep Cuts', blurb: 'Songs you have barely played, from artists you love.' },
 ];
-async function mixSongs(key) {
+const MIXART = {
+  scrappy: 'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z',
+  fresh: 'M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z',
+  throwback: 'M3 6h18v12H3zM8 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM16 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM10 12h4',
+  random: 'M4 4h16v16H4zM8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01',
+  forgotten: 'M12 7v5l3 2M21 12a9 9 0 1 1-3-6.7M21 4v5h-5',
+  deep: 'M3 12h3l3-8 4 16 3-8h5',
+};
+// Keeps mixes varied: at most `max` songs per artist, and the same artist never twice in a row.
+export function variety(songs, max = 3) {
+  const per = new Map(); const kept = [];
+  for (const s of songs) { const k = s.artistId || s.artist || '?'; const n = per.get(k) || 0; if (n < max) { per.set(k, n + 1); kept.push(s); } }
+  const out = []; const rest = kept.slice();
+  while (rest.length) {
+    const last = out[out.length - 1]; const lk = last && (last.artistId || last.artist);
+    let i = rest.findIndex((x) => (x.artistId || x.artist) !== lk); if (i < 0) i = 0;
+    out.push(rest.splice(i, 1)[0]);
+  }
+  return out;
+}
+async function mixSongs(key) { return variety(await mixSongsRaw(key), key === 'fresh' ? 4 : 2); }
+async function mixSongsRaw(key) {
   if (key === 'scrappy') {
     const [st, fr, rnd] = await Promise.all([nd('getStarred2').catch(() => ({})), nd('getAlbumList2', { type: 'frequent', size: 12 }).catch(() => ({})), nd('getRandomSongs', { size: 30 })]);
-    const fav = (st.starred2?.song || []).sort(() => Math.random() - 0.5).slice(0, 20);
+    const fav = (st.starred2?.song || []).sort(() => Math.random() - 0.5).slice(0, 60);
     const albums = fr.albumList2?.album || [];
     const freq = [];
     for (const a of albums.slice(0, 6)) { try { const r = await nd('getAlbum', { id: a.id }); freq.push(...(r.album.song || []).sort(() => Math.random() - 0.5).slice(0, 3)); } catch {} }
-    const all = [...fav, ...freq, ...(rnd.randomSongs?.song || []).slice(0, 10)];
-    const seen = new Set(); return all.filter((s) => !seen.has(s.id) && seen.add(s.id)).sort(() => Math.random() - 0.5).slice(0, 40);
+    // Roughly half favorites and most-played, half rediscoveries from across the library.
+    const pick = (arr, n) => variety(arr.sort(() => Math.random() - 0.5), 2).slice(0, n);
+    const all = [...pick(fav, 15), ...pick(freq, 10), ...pick(rnd.randomSongs?.song || [], 25)];
+    const seen = new Set(); return all.filter((s) => !seen.has(s.id) && seen.add(s.id)).sort(() => Math.random() - 0.5).slice(0, 50);
   }
   if (key === 'fresh') {
     const r = await nd('getAlbumList2', { type: 'newest', size: 8 });
@@ -362,7 +401,20 @@ async function mixSongs(key) {
     for (const a of r.albumList2?.album || []) { try { const x = await nd('getAlbum', { id: a.id }); out.push(...(x.album.song || []).slice(0, 5)); } catch {} }
     return out.sort(() => Math.random() - 0.5);
   }
-  const r = await nd('getRandomSongs', { size: 40, toYear: new Date().getFullYear() - 10 });
+  if (key === 'random') return (await nd('getRandomSongs', { size: 50 })).randomSongs?.song || [];
+  if (key === 'forgotten') {
+    const st = (await nd('getStarred2')).starred2?.song || [];
+    const old = Date.now() - 1000 * 60 * 60 * 24 * 45;
+    return st.filter((s) => !s.played || Date.parse(s.played) < old).sort(() => Math.random() - 0.5).slice(0, 80);
+  }
+  if (key === 'deep') {
+    const st = (await nd('getStarred2')).starred2?.song || [];
+    const fav = [...new Set(st.map((s) => s.artistId).filter(Boolean))].sort(() => Math.random() - 0.5).slice(0, 12);
+    const out = [];
+    for (const id of fav) { try { const r = await nd('getArtist', { id }); for (const a of (r.artist?.album || []).sort(() => Math.random() - 0.5).slice(0, 2)) { const x = await nd('getAlbum', { id: a.id }); out.push(...(x.album.song || []).filter((s) => (s.playCount || 0) <= 2)); } } catch {} }
+    return out.sort(() => Math.random() - 0.5);
+  }
+  const r = await nd('getRandomSongs', { size: 80, toYear: new Date().getFullYear() - 10 });
   return r.randomSongs?.song || [];
 }
 async function homePage(v) {
@@ -379,7 +431,7 @@ async function homePage(v) {
   const drawMix = (dir = 0) => {
     const m = MIXES[mi];
     const el = main.querySelector('#mix');
-    el.innerHTML = `<div class="mix-card${dir ? ' slide' + (dir > 0 ? 'R' : 'L') : ''}">
+    el.innerHTML = `<div class="mix-card${dir ? ' slide' + (dir > 0 ? 'R' : 'L') : ''}"><svg class="mix-art" viewBox="0 0 24 24" aria-hidden="true"><path d="${MIXART[m.key] || MIXART.scrappy}"/></svg>
       <div class="mix-k">MIX ${mi + 1} OF ${MIXES.length}</div><div class="mix-n">${esc(m.name)}</div><p>${esc(m.blurb)}</p>
       <div class="mix-foot"><button type="button" class="btn mix-play" data-playctx="mix:${m.key}">${IC.play}<span>Play</span></button>
       <div class="dots">${MIXES.map((_, i) => `<i class="${i === mi ? 'on' : ''}"></i>`).join('')}</div>
@@ -404,17 +456,78 @@ async function homePage(v) {
   refreshPlaylists().then(() => alive() && drawJump());
   await Promise.all([
     ndLoad('getAlbumList2', { type: 'newest', size: 20 }, (r) => { main.querySelector('#hRecent').innerHTML = row('Recently added', (r.albumList2?.album || []).map((a) => albumCard(a)).join(''), '#/music/albums?sort=newest'); ready(); }, alive),
-    ndLoad('getAlbumList2', { type: 'recent', size: 20 }, (r) => { const a = r.albumList2?.album || []; main.querySelector('#hHistory').innerHTML = a.length ? row('Listening history', a.map((x) => albumCard(x, x.artist)).join('')) : ''; }, alive),
+    ndLoad('getAlbumList2', { type: 'recent', size: 20 }, (r) => {
+      // Scrappy's own history first (any type), then albums Navidrome saw played elsewhere.
+      const mine = history();
+      const seen = new Set(mine.map((h) => h.t === 'album' ? 'album:' + h.id : h.k));
+      const nav = (r.albumList2?.album || []).filter((a) => !seen.has('album:' + a.id)).map((a) => ({ k: 'album:' + a.id, t: 'album', id: a.id, name: a.name, cv: a.coverArt, sub: `Album · ${a.artist || ''}`, at: a.played ? Date.parse(a.played) : 0 }));
+      const all = [...mine, ...nav].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 20);
+      main.querySelector('#hHistory').innerHTML = all.length ? row('Listening history', all.map(historyCard).join('')) : '';
+      syncHistory();
+    }, alive),
     ndLoad('getGenres', {}, (r) => {
-      const gs = (r.genres?.genre || []).filter((g) => g.songCount).sort((a, b) => b.songCount - a.songCount).slice(0, 8);
-      main.querySelector('#hMood').innerHTML = gs.length ? `<section class="msec"><div class="msec-h"><h2>What are you in the mood for?</h2><a class="seeall" href="#/music/genres">All genres</a></div><div class="moods">${gs.map(moodTile).join('')}</div></section>` : '';
+      const gs = (r.genres?.genre || []).filter((g) => g.songCount).sort((a, b) => b.songCount - a.songCount).slice(0, 6);
+      const special = `<button type="button" class="mood" style="--h:28" data-mixplay="throwback"><div class="shine"></div><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><path d="${MIXART.throwback}"/></svg><div class="fan" data-fan="__throw"></div><div class="txt"><div class="nm">Throwbacks</div><div class="ct">20+ years old</div></div><span class="hp">${IC.play}</span></button>
+        <button type="button" class="mood" style="--h:300" data-mixplay="random"><div class="shine"></div><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><path d="${MIXART.random}"/></svg><div class="fan" data-fan="__surprise"></div><div class="txt"><div class="nm">Surprise me</div><div class="ct">Anything goes</div></div><span class="hp">${IC.play}</span></button>`;
+      main.querySelector('#hMood').innerHTML = gs.length ? `<section class="msec"><div class="msec-h"><h2>What are you in the mood for?</h2><a class="seeall" href="#/music/genres">All genres</a></div><div class="moods">${gs.map(moodTile).join('')}${special}</div></section>` : '';
+      fillMoodFans(main.querySelector('#hMood'));
+      main.querySelectorAll('[data-mixplay]').forEach((b) => (b.onclick = async () => { const m = MIXES.find((x) => x.key === b.dataset.mixplay); try { const songs = await mixSongs(m.key); if (songs.length) playSongs(songs, 0, { from: { type: 'mix', id: m.key, name: m.name }, shuffle: false }); } catch (err) { toast(String(err), true); } }));
     }, alive),
   ]).catch((e) => { if (alive()) toast(String(e), true); });
   wireMoods(main);
 }
+// History cards: a little badge says what kind of thing it is, plus when you played it.
+const HB = { song: MI.note, album: MI.album, artist: MI.artist, playlist: MI.playlist, mix: IC.shuffle, genre: MI.genres };
+function ago(t) {
+  if (!t) return '';
+  const m = (Date.now() - t) / 60000;
+  if (m < 2) return 'Just now'; if (m < 60) return `${Math.round(m)} minutes ago`;
+  const h = m / 60; if (h < 24) return h < 2 ? '1 hour ago' : `${Math.round(h)} hours ago`;
+  const d = h / 24; if (d < 2) return 'Yesterday'; if (d < 7) return `${Math.round(d)} days ago`; if (d < 14) return 'Last week';
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function historyCard(e) {
+  const link = e.t === 'song' ? (e.albumId ? `${href('album', e.albumId)}?song=${encodeURIComponent(e.id)}` : '#/music') : e.t === 'mix' ? '#/music' : e.t === 'genre' ? `#/music/genre/${encodeURIComponent(e.id)}` : href(e.t, e.id);
+  return `<a class="mcard hcard${e.t === 'artist' ? ' art' : ''}" href="${link}" data-hk="${esc(e.k)}">
+    <div class="mcard-art${e.t === 'artist' ? ' round' : ''}">${coverHtml(e.cv, e.name, 300, e.t === 'artist' ? 'round' : '')}<span class="hbadge">${HB[e.t] || MI.note}</span></div>
+    <div class="t1">${esc(e.name)}</div><div class="t2">${esc(e.sub || '')}</div><div class="t2 hwhen" data-at="${e.at || 0}">${esc(ago(e.at))}</div></a>`;
+}
+function syncHistory() {
+  const cur = current();
+  document.querySelectorAll('.hcard').forEach((c) => {
+    const k = c.dataset.hk; const w = c.querySelector('.hwhen');
+    const now = cur && music.playing && (k === 'song:' + cur.id || (music.from && k === (music.from.type === 'artistfav' ? 'artist' : music.from.type) + ':' + music.from.id));
+    w.textContent = now ? 'Playing now' : ago(+w.dataset.at); w.classList.toggle('now', !!now);
+  });
+}
+onMusic(syncHistory);
+// Mood tiles: a faint icon that fits the genre, plus a few album covers fanned out.
+const GICON = [
+  [/hip|rap|trap|drill/i, 'M9 3h6v11a3 3 0 0 1-6 0zM5 11a7 7 0 0 0 14 0M12 18v3M8 21h8'],
+  [/rock|metal|punk|grunge/i, 'M13 2 4 14h7l-1 8 9-12h-7z'],
+  [/r&b|rnb|soul|love/i, 'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z'],
+  [/electr|house|techno|edm|dance|psych/i, 'M2 12h2l2-6 3 12 3-16 3 14 2-8 2 4h3'],
+  [/chill|ambient|lo-?fi|jazz|sleep/i, 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z'],
+  [/pop|indie/i, 'M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z'],
+  [/country|folk|acoustic|blues/i, 'M12 3v12M8 21a4 4 0 1 1 8 0M7 7l10 0'],
+  [/classic|orchestra|piano/i, 'M4 4h16v16H4zM8 4v10M12 4v10M16 4v10'],
+];
+const gIcon = (name) => (GICON.find(([re]) => re.test(name)) || [0, 'M9 18V6l10-2v12M9 18a3 3 0 1 1-3-3 3 3 0 0 1 3 3zM19 16a3 3 0 1 1-3-3 3 3 0 0 1 3 3z'])[1];
+export function fillMoodFans(root) {
+  const io = new IntersectionObserver((ents) => ents.forEach(async (en) => {
+    if (!en.isIntersecting) return; io.unobserve(en.target);
+    const g = en.target.dataset.fan;
+    try {
+      const r = g === '__surprise' ? await nd('getAlbumList2', { type: 'random', size: 3 }) : g === '__throw' ? await nd('getAlbumList2', { type: 'byYear', fromYear: 1950, toYear: new Date().getFullYear() - 20, size: 3 }) : await nd('getAlbumList2', { type: 'byGenre', genre: g, size: 12 });
+      const as = (r.albumList2?.album || []).sort(() => Math.random() - 0.5).slice(0, 3);
+      en.target.innerHTML = as.map((a) => `<span style="background-image:url('${cover(a.coverArt, 120)}')"></span>`).join('');
+    } catch {}
+  }), { rootMargin: '200px' });
+  root.querySelectorAll('[data-fan]').forEach((f) => io.observe(f));
+}
 export function moodTile(g) {
   const h = hue(g.value);
-  return `<a class="mood" href="#/music/genre/${encodeURIComponent(g.value)}" style="--h:${h}"><div class="shine"></div>
+  return `<a class="mood" href="#/music/genre/${encodeURIComponent(g.value)}" style="--h:${h}"><div class="shine"></div><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><path d="${gIcon(g.value)}"/></svg><div class="fan" data-fan="${esc(g.value)}"></div>
     <div class="txt"><div class="nm">${esc(g.value)}</div><div class="ct">${plural(g.songCount, 'song')}</div></div>
     <button type="button" class="hp" data-playgenre="${esc(g.value)}" aria-label="Play ${esc(g.value)}">${IC.play}</button></a>`;
 }
@@ -521,8 +634,8 @@ async function albumPage(v, id) {
     main.innerHTML = `
       <div class="mhero" style="--h:${hue(album.name)}"><div class="mhero-bg">${album.coverArt ? `<img src="${cover(album.coverArt, 600)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
         <div class="crumbs"><button type="button" class="gb sq" onclick="history.back()" aria-label="Back">${MI.back}</button><a href="#/music/albums">Albums</a><span>›</span><b>${esc(album.name)}</b></div>
-        <div class="mhero-in">${coverHtml(album.coverArt, album.name, 600, 'big')}
-          <div><div class="kicker">ALBUM</div><h1 class="disp mtitle">${esc(album.name)}</h1>
+        <div class="mhero-in">${sleeveHtml(album)}
+          <div style="min-width:0"><div class="kicker" data-np="${esc(album.id)}">ALBUM</div><h1 class="disp mtitle">${esc(album.name)}</h1>
             <div class="meta">${album.artistId ? `<a href="${href('artist', album.artistId)}">${esc(album.artist)}</a>` : esc(album.artist || '')}${[album.year, album.genre, plural(songs.length, 'song') + ', ' + totalTime(album.duration || 0)].filter(Boolean).map((x) => ' · ' + esc(x)).join('')}</div>
             <div class="mbtns"><button type="button" class="btn" id="alPlay" data-playctx="album:${esc(album.id)}">${IC.play}<span>Play</span></button><button type="button" class="btn secondary" id="alShuf">${IC.shuffle}<span>Shuffle</span></button>
             <button type="button" class="gb sq${album.starred ? ' on' : ''}" id="alFav" title="${album.starred ? 'Remove from Favorites' : 'Add to Favorites'}">${album.starred ? IC.heartOn : IC.heart}</button><button type="button" class="gb sq" id="alMore" aria-label="More">${IC.more}</button></div></div></div></div>
@@ -550,7 +663,8 @@ async function albumPage(v, id) {
     if (alive() && others.length) main.querySelector('#alMore1').innerHTML = row(`More by ${album.artist}`, others.map((a) => albumCard(a, a.year || '')).join(''), href('artist', album.artistId));
   }).catch(() => {});
   if (album.genre) nd('getAlbumList2', { type: 'byGenre', genre: album.genre, size: 24 }).then((r) => {
-    const like = (r.albumList2?.album || []).filter((a) => a.id !== album.id && a.artistId !== album.artistId).sort(() => Math.random() - 0.5).slice(0, 12);
+    const like = (r.albumList2?.album || []).filter((a) => a.id !== album.id && a.artistId !== album.artistId).sort(() => Math.random() - 0.5);
+    const seenAr = new Set(); like.splice(0, like.length, ...like.filter((a) => !seenAr.has(a.artistId) && seenAr.add(a.artistId)).slice(0, 12));
     if (alive() && like.length) main.querySelector('#alMore2').innerHTML = row('More like this', like.map((a) => albumCard(a)).join(''));
   }).catch(() => {});
 }

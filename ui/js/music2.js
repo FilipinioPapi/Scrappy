@@ -1,14 +1,61 @@
 // Music screens, part 2: Genres, a genre's page, Playlists and a playlist's page.
 import { esc, toast, loadingHtml } from './components.js';
+import { api } from './api.js';
 import { music, current, playSongs, setFavorite, cover, fmt, IC } from './mplayer.js';
 import {
   EXTRA, nd, ndLoad, coverHtml, songTable, songRow, wireSongs, albumCard, artistCard, row, wireCards, wireMoods, moodTile,
-  bump, listMenu, refreshPlaylists, totalTime, plural, hue, href, MI, ready, lib, saveLib, syncNow,
+  bump, listMenu, refreshPlaylists, totalTime, plural, hue, href, MI, ready, lib, saveLib, syncNow, variety,
 } from './music.js';
 
 const line = (d, n = 18) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const PEN = line('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>');
 const shuffleArr = (a) => a.slice().sort(() => Math.random() - 0.5);
+const IMG = line('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>', 24);
+
+// ---------- Playlist art ----------
+// Shrinks big pictures before sending. PNG stays PNG so see-through art keeps its transparency.
+async function prepImage(file) {
+  const png = /png|gif|webp/.test(file.type);
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej('That file is not a picture Scrappy can read.'); i.src = URL.createObjectURL(file); });
+  const max = 1200, k = Math.min(1, max / Math.max(img.width, img.height));
+  if (k === 1 && file.size < 4e6) return { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name || 'cover.png' };
+  const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  const blob = await new Promise((r) => c.toBlob(r, png ? 'image/png' : 'image/jpeg', 0.9));
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), name: png ? 'cover.png' : 'cover.jpg' };
+}
+// Navidrome's web session can run out; then we ask for the password once and try again.
+async function withNdSession(run) {
+  try { return await run(); } catch (e) {
+    if (String(e) !== 'ND_NATIVE_EXPIRED') throw e;
+    const { dialog } = await import('./menu.js');
+    const ok = await new Promise((resolve) => {
+      const d = dialog('Confirm your Navidrome password', 'Changing playlist art uses Navidrome\'s own sign-in. Scrappy doesn\'t keep your password.',
+        '<label class="fld"><span>Password</span><input type="password" id="ndpw" autocomplete="current-password"></label><div class="t2" id="ndpwErr"></div>',
+        '<button type="button" class="btn secondary" id="ndpwNo">Cancel</button><button type="button" class="btn" id="ndpwGo">Continue</button>');
+      const go = async () => { const b = d.$('#ndpwGo'); b.disabled = true; try { await api.ndReauth(d.$('#ndpw').value); d.close(); resolve(true); } catch (err) { d.$('#ndpwErr').textContent = String(err); b.disabled = false; } };
+      d.$('#ndpwGo').onclick = go; d.$('#ndpw').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+      d.$('#ndpwNo').onclick = () => { d.close(); resolve(false); };
+      setTimeout(() => d.$('#ndpw').focus(), 50);
+    });
+    if (!ok) throw new Error('cancelled');
+    return run();
+  }
+}
+async function changePlaylistArt(id, remove = false) {
+  let payload = null;
+  if (!remove) {
+    const file = await new Promise((res) => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp,image/gif'; inp.onchange = () => res(inp.files[0] || null); inp.click(); });
+    if (!file) return false;
+    payload = await prepImage(file);
+  }
+  try {
+    await withNdSession(() => api.ndPlaylistImage(id, payload ? Array.from(payload.bytes) : null, payload ? payload.name : null));
+    toast(remove ? 'Playlist art reset.' : 'Playlist art updated.');
+    await refreshPlaylists();
+    return true;
+  } catch (e) { if (String(e?.message || e) !== 'cancelled') toast(String(e?.message || e), true); return false; }
+}
 
 // ---------- Genres ----------
 EXTRA.genres = async (v) => {
@@ -57,9 +104,9 @@ EXTRA.genre = async (v, name) => {
   const fresh = songs.filter((s) => s.created && Date.parse(s.created) > recentCut);
   const essentials = songs.slice().sort((a, b) => (b.playCount || 0) - (a.playCount || 0)).slice(0, 9);
   const mixes = [
-    { k: 'all', n: `${name} Mix`, d: `Everything in ${name}, shuffled`, s: songs, cls: 'm1' },
-    { k: 'deep', n: 'Deep Cuts', d: 'The ones you rarely play', s: deep, cls: 'm2' },
-    { k: 'fresh', n: 'Fresh Finds', d: 'Added in the last few months', s: fresh, cls: 'm3' },
+    { k: 'all', n: `${name} Mix`, d: `A spread of ${name} from across your library`, s: variety(shuffleArr(songs), 3).slice(0, 80), cls: 'm1' },
+    { k: 'deep', n: 'Deep Cuts', d: 'The ones you rarely play', s: variety(shuffleArr(deep), 2).slice(0, 60), cls: 'm2' },
+    { k: 'fresh', n: 'Fresh Finds', d: 'Added in the last few months', s: variety(shuffleArr(fresh), 4).slice(0, 60), cls: 'm3' },
   ].filter((m) => m.s.length);
   const decades = {};
   albums.forEach((a) => { if (!a.year) return; const d = Math.floor(a.year / 10) * 10; (decades[d] = decades[d] || []).push(a); });
@@ -82,7 +129,7 @@ EXTRA.genre = async (v, name) => {
   wireCards(main);
   main.querySelector('#gPlay').onclick = () => playSongs(songs, 0, { from, shuffle: true });
   main.querySelector('#gShuf').onclick = () => playSongs(songs, 0, { from, shuffle: true });
-  main.querySelectorAll('[data-mix]').forEach((b) => (b.onclick = () => { const m = mixes.find((x) => x.k === b.dataset.mix); playSongs(m.s, 0, { from: { type: 'genremix', id: name + m.k, name: m.n }, shuffle: true }); }));
+  main.querySelectorAll('[data-mix]').forEach((b) => (b.onclick = () => { const m = mixes.find((x) => x.k === b.dataset.mix); playSongs(m.s, 0, { from: { type: 'genremix', id: name + m.k, name: m.n }, shuffle: false }); }));
   const ess = main.querySelector('#gEss');
   if (ess) { ess.addEventListener('click', (e) => { const r = e.target.closest('[data-i]'); if (r) playSongs(essentials, +r.dataset.i, { from, shuffle: false }); }); }
   // Related genres: others that share artists with this one.
@@ -180,7 +227,7 @@ EXTRA.playlist = async (v, id) => {
   main.innerHTML = `
     <div class="plwrap" id="plWrap"><div class="plpage">
     <div class="mhero" style="--h:${hue(meta.name)}"><div class="mhero-bg">${meta.coverArt ? `<img src="${cover(meta.coverArt, 600)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
-      <div class="mhero-in">${coverHtml(meta.coverArt, meta.name, 600, 'big')}
+      <div class="mhero-in">${canEdit ? `<button type="button" class="plcv" id="plCover" title="Change playlist art">${coverHtml(meta.coverArt, meta.name, 600, 'big')}<span class="ov">${IMG}<span>Change image</span></span></button>` : coverHtml(meta.coverArt, meta.name, 600, 'big')}
         <div style="min-width:0"><div class="kicker">${auto ? 'MADE AUTOMATICALLY' : 'PLAYLIST'}</div>
           <h1 class="disp mtitle" id="plName">${esc(meta.name)}</h1>
           <div class="pldesc" id="plDesc">${esc(meta.comment || '')}</div>
@@ -202,7 +249,9 @@ EXTRA.playlist = async (v, id) => {
   wireSongs(table, () => songs, from);
   main.querySelector('#plPlay').onclick = () => playSongs(songs, 0, { from, shuffle: false });
   main.querySelector('#plShuf').onclick = () => playSongs(songs, 0, { from, shuffle: true });
-  main.querySelector('#plMore').onclick = (e) => listMenu(songs, e.currentTarget, canEdit ? [{ label: 'Delete playlist', icon: MI.close, cls: 'danger', run: async () => { if (!confirm(`Delete "${meta.name}"? This can't be undone.`)) return; try { await nd('deletePlaylist', { id }); lib.rec = lib.rec.filter((r) => r.k !== 'pl:' + id); saveLib(); await refreshPlaylists(); location.hash = '#/music/playlists'; } catch (err) { toast(String(err), true); } } }] : []);
+  const reloadPage = () => { if (alive()) EXTRA.playlist(v, id); };
+  main.querySelector('#plCover')?.addEventListener('click', async () => { if (await changePlaylistArt(id)) reloadPage(); });
+  main.querySelector('#plMore').onclick = (e) => listMenu(songs, e.currentTarget, canEdit ? [{ label: 'Change playlist art', icon: IMG.replace('width="24" height="24"', 'width="18" height="18"'), run: async () => { if (await changePlaylistArt(id)) reloadPage(); } }, { label: 'Reset playlist art', icon: MI.close, run: async () => { if (await changePlaylistArt(id, true)) reloadPage(); } }, { label: 'Delete playlist', icon: MI.close, cls: 'danger', run: async () => { if (!confirm(`Delete "${meta.name}"? This can't be undone.`)) return; try { await nd('deletePlaylist', { id }); lib.rec = lib.rec.filter((r) => r.k !== 'pl:' + id); saveLib(); await refreshPlaylists(); location.hash = '#/music/playlists'; } catch (err) { toast(String(err), true); } } }] : []);
   if (!canEdit) { syncNow(); ready(); return; }
 
   // ----- Edit mode: rename, reorder, remove with Undo, Add songs drawer -----

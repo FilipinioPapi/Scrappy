@@ -85,8 +85,9 @@ async fn server_login(
         }
         "navidrome" => {
             let (base, name) = servers::nd_find(&state.http, &address).await?;
-            let (u, salt, token) = servers::nd_login(&state.http, &base, user, &password).await?;
+            let (u, salt, token, jwt) = servers::nd_login(&state.http, &base, user, &password).await?;
             let mut c = state.cfg.lock().unwrap();
+            c.nd_jwt = jwt;
             c.nd_server = base;
             c.nd_name = name;
             c.nd_user = u;
@@ -118,6 +119,7 @@ async fn server_logout(state: State<'_, AppState>, kind: String) -> Result<Value
             let mut c = state.cfg.lock().unwrap();
             c.nd_token.clear();
             c.nd_salt.clear();
+            c.nd_jwt.clear();
             c.save(&state.cfg_path)?;
         }
         "audiobookshelf" => {
@@ -282,6 +284,36 @@ async fn abs_get(state: State<'_, AppState>, path: String) -> Result<Value, Stri
     let v = servers::abs_get(&state.http, &cfg, &path).await?;
     save_cache(&cache_file(&state, &format!("abs|{}|{}|{}", cfg.abs_server, cfg.abs_user, path)), &v);
     Ok(v)
+}
+
+/// Change (bytes + file name) or remove (no bytes) a playlist's cover.
+#[tauri::command]
+async fn nd_playlist_image(state: State<'_, AppState>, id: String, bytes: Option<Vec<u8>>, name: Option<String>) -> Result<(), String> {
+    let cfg = state.cfg();
+    let img = bytes.map(|b| (b, name.unwrap_or_else(|| "cover.jpg".into())));
+    if let Some(fresh) = servers::nd_playlist_image(&state.http, &cfg, &id, img).await? {
+        let mut c = state.cfg.lock().unwrap();
+        c.nd_jwt = fresh;
+        c.save(&state.cfg_path)?;
+    }
+    Ok(())
+}
+
+/// Confirm the Navidrome password again (only needed when its web session ran out).
+#[tauri::command]
+async fn nd_reauth(state: State<'_, AppState>, password: String) -> Result<(), String> {
+    let cfg = state.cfg();
+    let (_, salt, token, jwt) = servers::nd_login(&state.http, &cfg.nd_server, &cfg.nd_user, &password).await?;
+    let mut c = state.cfg.lock().unwrap();
+    c.nd_salt = salt;
+    c.nd_token = token;
+    c.nd_jwt = jwt;
+    c.save(&state.cfg_path)
+}
+
+#[tauri::command]
+async fn lyrics_find(state: State<'_, AppState>, artist: String, title: String, album: String, duration: u64) -> Result<Value, String> {
+    servers::lyrics_find(&state.http, &artist, &title, &album, duration).await
 }
 
 #[tauri::command]
@@ -929,6 +961,9 @@ pub fn run() {
             nd_cached,
             abs_get,
             abs_cached,
+            nd_playlist_image,
+            nd_reauth,
+            lyrics_find,
             music::music_play,
             music::music_upnext,
             music::music_command,

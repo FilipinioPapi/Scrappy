@@ -26,6 +26,8 @@ pub struct Config {
     pub nd_user: String,
     pub nd_salt: String,
     pub nd_token: String,
+    /// Navidrome's own web session token, only needed for changing playlist art.
+    pub nd_jwt: String,
     // Audiobookshelf (audiobooks).
     pub abs_server: String,
     pub abs_name: String,

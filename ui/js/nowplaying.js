@@ -1,6 +1,6 @@
 // Now playing: big cover with the record sliding out, controls, and on the right
 // Up next, Lyrics or the Visualizer (Bars, Wave, Circle, Particles).
-import { listen } from './api.js';
+import { listen, api } from './api.js';
 import { esc, toast } from './components.js';
 import { music, onMusic, current, togglePlay, next, prev, seek, toggleShuffle, cycleRepeat, setVolume, toggleMute, setFavorite, playAt, removeAt, moveInQueue, clearUpNext, cover, fmt, IC } from './mplayer.js';
 import { nd, coverHtml, songMenu, MI, hue, href, refreshPlaylists } from './music.js';
@@ -29,12 +29,15 @@ const el = document.createElement('div');
 el.id = 'mnow'; el.hidden = true;
 document.body.appendChild(el);
 let mode = localStorage.getItem('mnowmode') || 'queue'; // queue | lyrics | viz
+// The visualizer can be switched off entirely, like lyrics.
+let vizShow = localStorage.getItem('mnowviz') !== 'off';
+const setVizShow = (on) => { vizShow = on; try { localStorage.setItem('mnowviz', on ? 'on' : 'off'); } catch {} };
 let open = false;
 let settingsOpen = false;
 
 export function openNow(m) {
   if (!current()) return;
-  if (m) { mode = m; localStorage.setItem('mnowmode', mode); }
+  if (m) { if (m === 'viz') setVizShow(true); mode = m; localStorage.setItem('mnowmode', mode); }
   open = true; el.hidden = false; document.body.classList.add('mnow-open');
   el.classList.remove('closing'); build();
 }
@@ -60,7 +63,7 @@ function build() {
       <button type="button" class="gb sq" id="mnMore" aria-label="More">${IC.more}</button></div>
     <div class="mn-body">
       <div class="mn-left">
-        <div class="mn-art${music.playing ? ' on' : ''}" id="mnArt"><div class="vinyl"><div class="label" style="background-image:url('${cover(s.coverArt, 200)}')"></div></div>${coverHtml(s.coverArt, s.album || s.title, 600, 'mn-cover')}</div>
+        <div class="mn-art${music.playing ? ' on' : ''}" id="mnArt"><div class="vin"><div class="vdisc"><div class="shine"></div><div class="dlabel" style="--h:${hue(s.album || s.title)}">${s.coverArt ? `<img src="${cover(s.coverArt, 300)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}<i class="gloss"></i><i class="hole"></i></div></div></div>${coverHtml(s.coverArt, s.album || s.title, 600, 'mn-cover')}</div>
         <div class="mn-title"><div class="disp" id="mnT">${esc(s.title)}</div><button type="button" class="gb lg${s.starred ? ' on' : ''}" id="mnFav" title="${s.starred ? 'Remove from Favorites' : 'Add to Favorites'}">${s.starred ? IC.heartOn : IC.heart}</button></div>
         <div class="meta mn-meta">${s.artistId ? `<a href="${href('artist', s.artistId)}">${esc(s.artist)}</a>` : esc(s.artist || '')}${s.album ? ` · <a class="plain" href="${href('album', s.albumId)}?song=${encodeURIComponent(s.id)}">${esc(s.album)}</a>` : ''}${s.year ? ' · ' + s.year : ''}</div>
         <div class="mb-seek mn-seek"><span id="mnPos">0:00</span><div class="mseek" id="mnSeek"><div class="track"><i></i></div><b></b></div><span id="mnDur">0:00</span></div>
@@ -81,7 +84,13 @@ function build() {
   $('#mnPlay').onclick = () => { togglePlay(); };
   $('#mnPrev').onclick = prev; $('#mnNext').onclick = next;
   $('#mnShuf').onclick = toggleShuffle; $('#mnRep').onclick = cycleRepeat; $('#mnMute').onclick = toggleMute;
-  el.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { mode = b.dataset.mode; localStorage.setItem('mnowmode', mode); settingsOpen = false; drawRight(); }));
+  el.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => {
+    const m = b.dataset.mode;
+    if (m === 'viz') { const on = !(vizShow && mode !== 'lyrics'); setVizShow(on); mode = 'queue'; }
+    else if (m === 'lyrics') mode = mode === 'lyrics' ? 'queue' : 'lyrics';
+    else mode = 'queue';
+    localStorage.setItem('mnowmode', mode); settingsOpen = false; drawRight();
+  }));
   el.querySelector('.mn-top').addEventListener('click', (e) => { if (e.target.closest('a')) closeNow(); });
   el.querySelector('.mn-meta').addEventListener('click', (e) => { if (e.target.closest('a')) closeNow(); });
   slider($('#mnSeek'), (f) => { dragging = true; setFill($('#mnSeek'), f); $('#mnPos').textContent = fmt(f * dur()); }, (f) => { dragging = false; seek(f * dur()); });
@@ -132,16 +141,19 @@ listen('music-prop', ({ payload }) => { if (payload.name === 'time-pos') progres
 // ---------- Right side ----------
 function drawRight() {
   const box = el.querySelector('#mnRight'); if (!box) return;
-  el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+  if (mode === 'viz' && !vizShow) mode = 'queue';
+  el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow && mode !== 'lyrics' : b.dataset.mode === mode));
   el.classList.toggle('dim', mode === 'viz' && vset().dim);
   if (mode === 'lyrics') { stopViz(); box.innerHTML = '<div class="lyr" id="lyr"><div class="t2">Looking for lyrics…</div></div>'; loadLyrics(); return; }
   const full = mode === 'viz';
+  if (!vizShow) { stopViz(); box.innerHTML = '<div id="mnQueue" class="noviz"></div>'; drawQueue(); return; }
   box.innerHTML = `<div class="vizcard${full ? ' full' : ''}"><canvas id="viz"></canvas>
-      <div class="viz-btns"><button type="button" class="gb vb${full ? '' : ' on'}" data-vmode="queue" title="Visualizer with Up next">${NI.split}</button><button type="button" class="gb vb${full ? ' on' : ''}" data-vmode="viz" title="Visualizer only">${NI.full}</button><button type="button" class="gb vb${settingsOpen ? ' on' : ''}" id="vGear" title="Visualizer settings">${NI.gear}</button></div>
+      <div class="viz-btns"><button type="button" class="gb vb${full ? '' : ' on'}" data-vmode="queue" title="Visualizer with Up next">${NI.split}</button><button type="button" class="gb vb${full ? ' on' : ''}" data-vmode="viz" title="Visualizer only">${NI.full}</button><button type="button" class="gb vb${settingsOpen ? ' on' : ''}" id="vGear" title="Visualizer settings">${NI.gear}</button><button type="button" class="gb vb" id="vOff" title="Turn off the visualizer" aria-label="Turn off the visualizer">${MI.close}</button></div>
       <div class="vset" id="vSet" ${settingsOpen ? '' : 'hidden'}></div></div>
     ${full ? '' : '<div id="mnQueue"></div>'}`;
   box.querySelectorAll('[data-vmode]').forEach((b) => (b.onclick = () => { mode = b.dataset.vmode; localStorage.setItem('mnowmode', mode); drawRight(); }));
   box.querySelector('#vGear').onclick = () => { settingsOpen = !settingsOpen; drawRight(); };
+  box.querySelector('#vOff').onclick = () => { setVizShow(false); mode = 'queue'; localStorage.setItem('mnowmode', mode); settingsOpen = false; drawRight(); };
   if (settingsOpen) drawSettings(box.querySelector('#vSet'));
   startViz(box.querySelector('#viz'));
   if (!full) drawQueue();
@@ -181,6 +193,7 @@ async function loadLyrics() {
       const best = list.find((x) => x.synced) || list[0];
       if (best) lyr = { id: s.id, synced: !!best.synced, lines: (best.line || []).map((l) => ({ t: (l.start || 0) / 1000 + (best.offset || 0) / 1000, v: l.value || '' })) };
     } catch {}
+    if (!lyr.lines.length) { const saved = savedLyrics(s.id); if (saved) lyr = { id: s.id, ...saved }; }
     if (!lyr.lines.length) {
       try { const r = await nd('getLyrics', { artist: s.artist, title: s.title }); const txt = r.lyrics?.value || ''; if (txt.trim()) lyr.lines = txt.split(/\r?\n/).map((v) => ({ t: null, v })); } catch {}
     }
@@ -189,9 +202,36 @@ async function loadLyrics() {
   const b2 = el.querySelector('#lyr'); if (!b2) return;
   b2.classList.toggle('synced', lyr.synced);
   b2.innerHTML = lyr.lines.length ? `<div class="lyr-in">${lyr.lines.map((l, i) => `<p data-li="${i}" class="${l.v.trim() ? '' : 'gap'}">${esc(l.v) || '♪'}</p>`).join('')}</div>`
-    : `<div class="lyr-none"><div class="disp">No lyrics for this one</div><div class="t2">Navidrome didn't find lyrics for “${esc(s.title)}”. Lyrics come from the song's file or a .lrc file next to it.</div></div>`;
+    : `<div class="lyr-none"><div class="disp">No lyrics for this one</div><div class="t2">Navidrome doesn't have lyrics for “${esc(s.title)}”. Scrappy can look them up online.</div><button type="button" class="btn" id="lyrFetch">${MI.search}<span>Find lyrics online</span></button><div class="t2" id="lyrMsg"></div></div>`;
+  b2.querySelector('#lyrFetch')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget; b.disabled = true; b.querySelector('span').textContent = 'Looking…';
+    try {
+      const r = await api.lyricsFind(s.artist || '', s.title || '', s.album || '', Math.round(s.duration || 0));
+      const got = parseFound(r);
+      if (!got.lines.length) throw new Error('No lyrics found online for this song.');
+      try { localStorage.setItem('lyrx:' + s.id, JSON.stringify(got)); } catch {}
+      if (current()?.id === s.id) { lyr = { id: s.id, ...got }; loadLyrics(); }
+    } catch (err) { b.disabled = false; b.querySelector('span').textContent = 'Try again'; const m = b2.querySelector('#lyrMsg'); if (m) m.textContent = String(err?.message || err); }
+  });
   b2.onclick = (e) => { const p = e.target.closest('[data-li]'); if (p && lyr.synced) seek(lyr.lines[+p.dataset.li].t); };
   lastLi = -1; lyricTick();
+}
+// Lyrics found online are kept on this PC, per song.
+function savedLyrics(id) { try { const v = JSON.parse(localStorage.getItem('lyrx:' + id) || 'null'); return v && v.lines?.length ? v : null; } catch { return null; } }
+function parseFound(r) {
+  const lrc = r?.syncedLyrics || '';
+  if (lrc.trim()) {
+    const lines = [];
+    for (const raw of lrc.split(/\r?\n/)) {
+      const tags = [...raw.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)]; if (!tags.length) continue;
+      const v = raw.replace(/\[[^\]]*\]/g, '').trim();
+      tags.forEach((m) => lines.push({ t: +m[1] * 60 + +m[2], v }));
+    }
+    lines.sort((a, b) => a.t - b.t);
+    if (lines.length) return { synced: true, lines };
+  }
+  const txt = r?.plainLyrics || '';
+  return { synced: false, lines: txt.trim() ? txt.split(/\r?\n/).map((v) => ({ t: null, v })) : [] };
 }
 let lastLi = -1;
 function lyricTick() {

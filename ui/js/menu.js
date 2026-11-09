@@ -593,4 +593,4 @@ function deleteDialog(it) {
   };
 }
 
-export { subtitlesDialog };
+export { subtitlesDialog, dialog };

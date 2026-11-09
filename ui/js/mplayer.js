@@ -76,9 +76,25 @@ function fail(e) {
 function shuffled(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
 /** Play a list of songs. `from` says where they came from ({ type, id, name }). */
+// Listening history kept by Scrappy (playlists, mixes and artists aren't tracked by Navidrome).
+export function history() { try { return JSON.parse(localStorage.getItem('mhist') || '[]'); } catch { return []; } }
+function remember(songs, start, from) {
+  const s0 = songs[start] || songs[0];
+  let e;
+  if (from && from.type && from.type !== 'genremix') {
+    const t = from.type === 'artistfav' ? 'artist' : from.type;
+    const cv = t === 'artist' ? 'ar-' + from.id : t === 'playlist' && !String(from.id).startsWith('auto:') ? 'pl-' + from.id : s0.coverArt;
+    const sub = { album: `Album · ${s0.artist || ''}`, artist: 'Artist', playlist: `Playlist · ${songs.length} songs`, mix: `Mix · ${songs.length} songs`, genre: 'Genre' }[t] || '';
+    e = { k: t + ':' + from.id, t, id: from.id, name: from.name || s0.album, cv, sub };
+  } else e = { k: 'song:' + s0.id, t: 'song', id: s0.id, albumId: s0.albumId, name: s0.title, cv: s0.coverArt, sub: `Song · ${s0.artist || ''}` };
+  e.at = Date.now();
+  const h = [e, ...history().filter((x) => x.k !== e.k)].slice(0, 40);
+  try { localStorage.setItem('mhist', JSON.stringify(h)); } catch {}
+}
 export function playSongs(songs, start = 0, opts = {}) {
   songs = (songs || []).filter(Boolean);
   if (!songs.length) return;
+  remember(songs, start, opts.from);
   const shuffle = opts.shuffle ?? S.shuffle;
   S.from = opts.from || null;
   S.shuffle = shuffle;
