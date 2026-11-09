@@ -293,7 +293,7 @@ tp.innerHTML = `
     <div class="tp-sk"><span id="tpPos">0:00</span><div class="mseek" id="tpSeek"><div class="track"><i></i></div><b></b></div><span id="tpDur">0:00</span></div>
   </div>
   <div class="tp-v">
-    <button type="button" class="gb" id="tpFav" title="Add to Favorites" aria-label="Add to Favorites"></button>
+    <div class="tp-r2"><button type="button" class="gb" id="tpShuf" title="Shuffle" aria-label="Shuffle">${IC.shuffle}</button><button type="button" class="gb" id="tpRep" title="Repeat" aria-label="Repeat">${IC.repeat}<i class="one">1</i></button><button type="button" class="gb" id="tpFav" title="Add to Favorites" aria-label="Add to Favorites"></button></div>
     <div class="tp-vol"><button type="button" class="gb" id="tpMute" title="Mute" aria-label="Mute">${IC.vol}</button><div class="mseek vol" id="tpVol"><div class="track"><i></i></div><b></b></div></div>
   </div>`;
 const T = (id) => tp.querySelector('#' + id);
@@ -321,6 +321,9 @@ function drawTop() {
   f.innerHTML = on ? IC.heartOn : IC.heart; f.classList.toggle('on', on); f.title = on ? 'Remove from Favorites' : 'Add to Favorites';
   const play = T('tpPlay'); const showPause = S.playing && S.started;
   if (play.dataset.st !== String(showPause)) { play.dataset.st = String(showPause); play.innerHTML = showPause ? IC.pause : IC.play; play.title = showPause ? 'Pause' : 'Play'; }
+  T('tpShuf').classList.toggle('on', S.shuffle);
+  const rp = T('tpRep'); rp.classList.toggle('on', S.repeat !== 'off'); rp.classList.toggle('is-one', S.repeat === 'one');
+  rp.title = { off: 'Repeat', all: 'Repeat all', one: 'Repeat this song' }[S.repeat];
   T('tpMute').innerHTML = S.muted || S.volume === 0 ? IC.muted : IC.vol;
   setFill(T('tpVol'), S.muted ? 0 : S.volume / 100);
   drawTopProgress();
@@ -398,7 +401,7 @@ $('mbExp').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { d
 slider(T('tpSeek'), (f) => { tpDrag = true; const d = S.dur || current()?.duration || 0; setFill(T('tpSeek'), f); T('tpPos').textContent = fmt(f * d); },
   (f) => { tpDrag = false; seek(f * (S.dur || current()?.duration || 0)); });
 slider(T('tpVol'), (f) => setVolume(f * 100));
-T('tpPlay').onclick = togglePlay; T('tpNext').onclick = next; T('tpPrev').onclick = prev; T('tpMute').onclick = toggleMute;
+T('tpPlay').onclick = togglePlay; T('tpShuf').onclick = toggleShuffle; T('tpRep').onclick = cycleRepeat; T('tpNext').onclick = next; T('tpPrev').onclick = prev; T('tpMute').onclick = toggleMute;
 T('tpFav').onclick = () => { const c = current(); if (c) setFavorite(c, !c.starred); };
 T('tpCover').onclick = () => { location.hash = '#/music'; };
 tp.addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap'); });

@@ -1359,8 +1359,8 @@ body:not(.tab-music) #mbar { transform: translateY(110%); opacity: 0; pointer-ev
 .mb-play:active { transform: scale(.94); }
 .mb-play.morph svg { animation: morph .32s var(--ease); }
 @keyframes morph { from { transform: scale(.6) rotate(-30deg); opacity: .3; } to { transform: none; opacity: 1; } }
-#mbRep .one, #mnRep .one { display: none; position: absolute; right: 3px; top: 3px; font-style: normal; font-size: 9px; font-weight: 800; color: #fff; background: var(--red); border-radius: 6px; padding: 0 3px; line-height: 13px; }
-#mbRep.is-one .one, #mnRep.is-one .one { display: block; }
+#mbRep .one, #mnRep .one, #tpRep .one { display: none; position: absolute; right: 3px; top: 3px; font-style: normal; font-size: 9px; font-weight: 800; color: #fff; background: var(--red); border-radius: 6px; padding: 0 3px; line-height: 13px; }
+#mbRep.is-one .one, #mnRep.is-one .one, #tpRep.is-one .one { display: block; }
 .mb-seek { display: flex; align-items: center; gap: 12px; width: 100%; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .mb-seek span { width: 40px; text-align: center; }
 .mseek { position: relative; flex: 1; height: 16px; cursor: pointer; display: flex; align-items: center; touch-action: none; }
@@ -1702,3 +1702,7 @@ body:not(.tab-music) #tplayer:not(.off) { transition-delay: .14s; }
 #mnQueue { padding: 22px 22px 8px; border-radius: 22px; background: rgba(20,12,14,.42); border: 1px solid rgba(255,255,255,.05); backdrop-filter: blur(10px); }
 #mnQueue .qlist { overflow-y: auto; min-height: 0; }
 .vizcard + .lyr { padding-top: 20px; }
+.tp-r2 { display: flex; align-items: center; gap: 2px; }
+#tpShuf.on, #tpRep.on { color: var(--red); }
+#tpRep { position: relative; }
+#tpRep .one { right: 1px; top: 0; }
