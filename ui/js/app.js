@@ -143,6 +143,7 @@ document.getElementById('userBtn').addEventListener('click', (e) => {
   e.stopPropagation();
   const m = document.getElementById('userMenu');
   m.hidden = !m.hidden;
+  document.getElementById('refMenu').hidden = true;
 });
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.user-menu')) document.getElementById('userMenu').hidden = true;
@@ -158,6 +159,108 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
   document.getElementById('userMenu').hidden = true;
   toast('Image and library cache cleared.');
 });
+
+// ---------- Refresh button: click = Quick Scan, right-click = Quick Scan / Deep Scan ----------
+const refreshBtn = document.getElementById('refreshBtn');
+const refMenu = document.getElementById('refMenu');
+const SECTIONS = {
+  home: { name: 'Movies & TV', server: 'Emby', what: 'posters', deep: 'Asks Emby to look through its folders for new or changed files, then refreshes. A few minutes.' },
+  music: { name: 'Music', server: 'Navidrome', what: 'album art', deep: 'Asks Navidrome to look through its music folder for new or changed files, then refreshes. About a minute.' },
+  audiobooks: { name: 'Audiobooks', server: 'Audiobookshelf', what: 'covers', deep: 'Asks Audiobookshelf to look through its folders for new or changed files, then refreshes. A few minutes.' },
+};
+const curSection = () => { const n = (location.hash || '#/home').split('/')[1]; return n === 'music' || n === 'audiobooks' ? n : 'home'; };
+const lastRefresh = {};
+const adminCache = {};
+async function isAdmin(sec) {
+  if (sec in adminCache) return adminCache[sec];
+  let ok = false;
+  try {
+    if (sec === 'audiobooks') ok = ['root', 'admin'].includes((await api.abs('/api/me')).type);
+    else if (sec === 'music') { const u = session?.servers?.navidrome?.user || ''; ok = !!(await api.nd('getUser', 'username=' + encodeURIComponent(u))).user?.adminRole; }
+    else ok = !!(await api.get('/Users/' + session.userId)).Policy?.IsAdministrator;
+  } catch {}
+  return (adminCache[sec] = ok);
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+let scanning = false;
+async function quickScan(sec = curSection(), quietToast = false) {
+  if (scanning) return;
+  scanning = true; refreshBtn.classList.add('spin'); refMenu.hidden = true;
+  try {
+    const [covers] = await Promise.all([
+      api.refreshCovers(sec).catch(() => 0),
+      sec === 'music' ? import('./music.js').then((m) => m.refreshPlaylists?.()).catch(() => {}) : null,
+    ]);
+    // Draw the page again straight from the server (pages always ask the server after showing saved copies).
+    window.dispatchEvent(new CustomEvent('scrappy:refresh', { detail: sec }));
+    await route({ keepScroll: true });
+    lastRefresh[sec] = Date.now();
+    if (!quietToast) toast(`${SECTIONS[sec].name} is up to date${covers ? ` · ${covers} new ${covers === 1 ? 'picture' : 'pictures'}` : ''}`);
+  } catch (e) { toast(String(e), true); }
+  finally { scanning = false; refreshBtn.classList.remove('spin'); }
+}
+async function deepScan(sec = curSection()) {
+  if (scanning) return;
+  const S = SECTIONS[sec];
+  scanning = true; refreshBtn.classList.add('spin'); refMenu.hidden = true;
+  toast(`Asking ${S.server} to scan for new files…`);
+  const started = Date.now(), until = started + 15 * 60 * 1000;
+  try {
+    if (sec === 'audiobooks') {
+      const libs = ((await api.abs('/api/libraries')).libraries || []).filter((l) => l.mediaType === 'book');
+      for (const l of libs) await api.absSend('POST', `/api/libraries/${l.id}/scan`);
+      await wait(3000);
+      while (Date.now() < until) {
+        const t = await api.abs('/api/tasks').catch(() => null);
+        const busy = (t?.tasks || []).some((x) => !x.isFinished && /scan/i.test(x.action || ''));
+        if (!busy) break; await wait(3000);
+      }
+    } else if (sec === 'music') {
+      await api.nd('startScan');
+      await wait(2000);
+      while (Date.now() < until) { const r = await api.nd('getScanStatus').catch(() => null); if (!r?.scanStatus?.scanning) break; await wait(2500); }
+    } else {
+      await api.post('/Library/Refresh');
+      await wait(4000);
+      while (Date.now() < until) {
+        const tasks = await api.get('/ScheduledTasks?IsHidden=false').catch(() => null);
+        if (!Array.isArray(tasks)) { await wait(20000); break; }
+        const t = tasks.find((x) => x.Key === 'RefreshLibrary');
+        if (!t || t.State !== 'Running') break; await wait(3000);
+      }
+    }
+    scanning = false;
+    await quickScan(sec, true);
+    toast(`${S.server} scan finished · ${S.name} is up to date`);
+  } catch (e) {
+    toast(`${S.server} scan didn't start: ${String(e).replace(/^Error:\s*/, '')}`, true);
+  } finally { scanning = false; refreshBtn.classList.remove('spin'); }
+}
+const ago = (t) => { if (!t) return 'not yet this session'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m === 1 ? '1 min ago' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
+async function openRefMenu() {
+  const sec = curSection(), S = SECTIONS[sec];
+  document.getElementById('userMenu').hidden = true;
+  const draw = (admin) => {
+    refMenu.innerHTML = `<div class="rm-h">${S.name}${lastRefresh[sec] ? ' · refreshed ' + ago(lastRefresh[sec]) : ''}</div>
+      <button type="button" class="rm-i" data-act="quick"><span class="ic">${refreshBtn.querySelector('svg').outerHTML}</span><span><span class="t">Quick Scan</span><span class="d">Reloads this tab from ${S.server} and grabs any changed ${S.what}. A few seconds.</span></span></button>
+      <button type="button" class="rm-i${admin === false ? ' off' : ''}" data-act="deep"${admin === false ? ' aria-disabled="true"' : ''}><span class="ic"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg></span>
+        <span><span class="t">Deep Scan${admin === false ? '<span class="lock"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg> Admin only</span>' : ''}</span>
+        <span class="d">${admin === false ? `Asks ${S.server} to look for new files on the server. Needs an admin account on ${S.server}.` : S.deep}</span></span></button>`;
+  };
+  draw(adminCache[sec]);
+  refMenu.hidden = false;
+  if (!(sec in adminCache)) draw(await isAdmin(sec));
+}
+refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); quickScan(); });
+refreshBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); if (!refMenu.hidden) { refMenu.hidden = true; return; } openRefMenu(); });
+refMenu.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const b = e.target.closest('[data-act]'); if (!b || b.classList.contains('off')) return;
+  if (b.dataset.act === 'quick') quickScan(); else deepScan();
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('.refresh-wrap')) refMenu.hidden = true; });
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') refMenu.hidden = true; });
+window.addEventListener('hashchange', () => { refMenu.hidden = true; });
 
 // Backspace / mouse "back" button go back, like a browser.
 window.addEventListener('keydown', (e) => {

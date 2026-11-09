@@ -23,6 +23,8 @@ export const api = {
   uploadImage: (path, base64, contentType) => invoke('api_upload_image', { path, base64, contentType }),
   play: (itemId, o = {}) => invoke('play', { itemId, fromStart: !!o.fromStart, embedded: o.embedded ?? true, startSecs: o.startSecs ?? null, maxBitrate: o.maxBitrate ?? null }),
   clearCache: () => invoke('clear_cache'),
+  refreshCovers: (kind) => invoke('refresh_covers', { kind }),
+  absSend: (method, path, body = null) => invoke('abs_send', { method, path, body }),
 };
 
 // Show the saved copy instantly (if any), then refresh from the server and

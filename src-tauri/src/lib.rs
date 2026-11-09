@@ -738,6 +738,21 @@ fn is_fullscreen(app: AppHandle) -> bool {
 // The UI asks for img://localhost/<itemId>/<ImageType>?tag=..&w=..
 // We serve from disk if we have it, otherwise download once from Emby.
 
+/// After saving a newer version of a picture, delete the older versions of it
+/// (same name start and end, different version stamp in the middle).
+fn prune_siblings(file: &std::path::Path, prefix: &str, suffix: &str) {
+    let (Some(dir), Some(keep)) = (file.parent(), file.file_name().and_then(|n| n.to_str())) else { return };
+    if prefix.is_empty() { return; }
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name != keep && name.starts_with(prefix) && name.ends_with(suffix) && name.len() > prefix.len() + suffix.len() {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+}
+
 fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
@@ -844,6 +859,9 @@ async fn serve_image(app: AppHandle, uri: String) -> Response<Vec<u8>> {
                     let _ = std::fs::create_dir_all(d);
                 }
                 let _ = std::fs::write(&file, &b);
+                if !tag.is_empty() {
+                    prune_siblings(&file, &format!("{}_{}_{}_", sanitize(item_id), sanitize(img_type), sanitize(index)), &format!("_{}", sanitize(&width)));
+                }
                 img_response(StatusCode::OK, sniff_mime(&b), b)
             }
             Err(_) => not_found(),
@@ -879,6 +897,9 @@ async fn serve_abs_image(state: &AppState, author: bool, id: &str, parsed: &reqw
                     let _ = std::fs::create_dir_all(d);
                 }
                 let _ = std::fs::write(&file, &b);
+                if !stamp.is_empty() {
+                    prune_siblings(&file, &format!("{kind}_{}_{}_", sanitize(id), sanitize(&size)), "");
+                }
                 img_response(StatusCode::OK, sniff_mime(&b), b)
             }
             Err(_) => not_found(),
@@ -907,12 +928,84 @@ async fn serve_nd_cover(state: &AppState, id: &str, parsed: &reqwest::Url) -> Re
                     let _ = std::fs::create_dir_all(d);
                 }
                 let _ = std::fs::write(&file, &b);
+                // Navidrome picture ids end in a version stamp ("al-123_65a1b2c3"): drop older versions.
+                if let Some((base, ver)) = id.rsplit_once('_') {
+                    if ver != "0" && !base.is_empty() {
+                        prune_siblings(&file, &format!("nd_{}_", sanitize(base)), &format!("_{}", sanitize(&size)));
+                    }
+                }
                 img_response(StatusCode::OK, sniff_mime(&b), b)
             }
             Err(_) => not_found(),
         },
         _ => not_found(),
     }
+}
+
+/// Quick Scan for Music: Navidrome pictures without a version stamp (mostly artist photos,
+/// ids ending in "_0") can change without their id changing. Ask Navidrome about each saved
+/// one ("changed since I saved it?") and only keep a new copy when the picture really changed.
+/// Returns how many pictures were updated.
+#[tauri::command]
+async fn refresh_covers(state: State<'_, AppState>, kind: String) -> Result<u32, String> {
+    if kind != "music" { return Ok(0); }
+    let cfg = state.cfg();
+    if !cfg.nd_logged_in() { return Ok(0); }
+    let dir = state.cache_dir.join("img");
+    let mut todo: Vec<(std::path::PathBuf, String, String, std::time::SystemTime)> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            let Some(rest) = name.strip_prefix("nd_") else { continue };
+            let Some((id, size)) = rest.rsplit_once('_') else { continue };
+            let stamped = id.rsplit_once('_').map(|(_, v)| v != "0" && v.chars().all(|c| c.is_ascii_hexdigit())).unwrap_or(false);
+            if stamped { continue; }
+            let mtime = e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            todo.push((e.path(), id.to_string(), size.to_string(), mtime));
+        }
+    }
+    todo.sort_by(|a, b| b.3.cmp(&a.3));
+    todo.truncate(600);
+    let mut changed = 0u32;
+    for (path, id, size, mtime) in todo {
+        let url = servers::nd_url(&cfg, "getCoverArt", &format!("id={}&size={}", servers::enc(&id), servers::enc(&size)));
+        let since = httpdate(mtime);
+        let Ok(r) = state.http.get(url).header("If-Modified-Since", since).timeout(std::time::Duration::from_secs(15)).send().await else { continue };
+        if r.status() == StatusCode::NOT_MODIFIED || !r.status().is_success() { continue; }
+        if !r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false) { continue; }
+        let Ok(b) = r.bytes().await else { continue };
+        let old = std::fs::read(&path).unwrap_or_default();
+        if old != b.as_ref() {
+            let _ = std::fs::write(&path, &b);
+            changed += 1;
+        } else {
+            // Same picture: touch it so the next check can be answered with "not changed".
+            let _ = std::fs::write(&path, &b);
+        }
+    }
+    Ok(changed)
+}
+
+/// A time as an HTTP date ("Sun, 09 Nov 2026 14:00:00 GMT").
+fn httpdate(t: std::time::SystemTime) -> String {
+    let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400);
+    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    // Civil date from days since 1970-01-01 (Howard Hinnant's method).
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    let wd = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"][days.rem_euclid(7) as usize];
+    let mn = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][(mo - 1) as usize];
+    format!("{wd}, {d:02} {mn} {y} {h:02}:{m:02}:{s:02} GMT")
 }
 
 #[tauri::command]
@@ -1015,6 +1108,7 @@ pub fn run() {
             abs_get,
             abs_cached,
             abs_send,
+            refresh_covers,
             music::book_play,
             nd_playlist_image,
             nd_reauth,
