@@ -37,6 +37,9 @@ export const MI = {
 
 // ---------- Small helpers ----------
 export const hue = (s) => [...String(s || '')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 360;
+// Genre colours picked to match the approved Genres board; anything else gets a spread-out hue.
+const GHUE = { psychedelic: 345, indie: 28, 'r&b': 268, rnb: 268, alternative: 168, 'hip-hop': 0, 'hip hop': 0, electronic: 222, electronica: 222, rock: 210, dance: 330, rap: 42, pop: 12, soul: 22, house: 198, funk: 46, jazz: 190, metal: 240, country: 34, folk: 90, classical: 50, blues: 230, punk: 300, reggae: 130, latin: 15, ambient: 180, 'k-pop': 315, techno: 250, disco: 290 };
+export const genreHue = (g) => { const k = String(g || '').toLowerCase().trim(); return (GHUE[k] ?? (hue(k) * 137) % 360) + (k === 'rock' || k === 'metal' ? ';--s:8%' : ''); };
 export function coverHtml(id, title, w = 300, cls = '') {
   const h = hue(title || id);
   return `<div class="mcv ${cls}" style="--h:${h}"><span>${esc(title || '')}</span>${id ? `<img loading="lazy" src="${cover(id, w)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>`;
@@ -182,7 +185,7 @@ export function songRow(s, i, { cols = ['album', 'added'], numbers = false } = {
   const now = cur && cur.id === s.id;
   return `<div class="srow${now ? ' now' : ''}${music.playing && now ? ' playing' : ''}" data-i="${i}" data-id="${esc(s.id)}">
     <span class="c-n"><b>${numbers ? (s.track || i + 1) : i + 1}</b>${MI.eq}<button type="button" class="rowplay" aria-label="Play">${IC.play}</button></span>
-    <span class="c-t">${cols.includes('cover') ? coverHtml(s.coverArt, '', 100, 'sm') : ''}<span class="tt"><span class="t1">${esc(s.title)}</span>${!cols.includes('noartist') ? `<a class="t2" href="${s.artistId ? href('artist', s.artistId) : '#/music/artists'}">${esc(s.artist || '')}</a>` : ''}</span></span>
+    <span class="c-t">${cols.includes('cover') ? coverHtml(s.coverArt, '', 100, 'sm') : ''}<span class="tt"><span class="t1">${esc(s.title)}</span>${!cols.includes('noartist') ? `<a class="t2" href="${s.artistId ? href('artist', s.artistId) : '#/music/artists'}">${esc(s.artist || '')}</a>` : cols.includes('subalbum') && s.album ? `<a class="t2" href="${href('album', s.albumId)}">${esc(s.album)}</a>` : ''}</span></span>
     ${cols.includes('album') ? `<a class="c-a t2" href="${href('album', s.albumId)}">${esc(s.album || '')}</a>` : ''}
     ${cols.includes('added') ? `<span class="c-d t2">${dateStr(s.created)}</span>` : ''}
     ${cols.includes('plays') ? `<span class="c-p t2">${s.playCount ? plural(s.playCount, 'play') : ''}</span>` : ''}
@@ -302,9 +305,10 @@ export function albumCard(a, sub) {
     <div class="mcard-art">${coverHtml(a.coverArt, a.name, 300)}<button type="button" class="hoverplay" data-playalbum="${esc(a.id)}" aria-label="Play">${IC.play}</button></div>
     <div class="t1">${esc(a.name)}</div><div class="t2">${esc(sub ?? a.artist ?? '')}</div></a>`;
 }
+const initials = (n) => { const w = String(n || '').replace(/^the\s+/i, '').split(/[\s,&]+/).filter(Boolean); return ((w[0]?.[0] || '') + (w[1]?.[0] || w[0]?.[1] || '')).toUpperCase(); };
 export function artistCard(a) {
   return `<a class="mcard art" href="${href('artist', a.id)}">
-    <div class="mcard-art round">${coverHtml(a.coverArt, a.name, 300, 'round')}</div>
+    <div class="mcard-art round">${coverHtml(a.coverArt, a.name, 300, 'round').replace(`<span>${esc(a.name)}</span>`, `<span>${esc(initials(a.name))}</span>`)}</div>
     <div class="t1">${esc(a.name)}</div><div class="t2">${a.albumCount != null ? plural(a.albumCount, 'album') : 'Artist'}</div></a>`;
 }
 export function row(title, inner, more) {
@@ -371,9 +375,14 @@ const MIXART = {
   deep: 'M3 12h3l3-8 4 16 3-8h5',
 };
 // Keeps mixes varied: at most `max` songs per artist, and the same artist never twice in a row.
-export function variety(songs, max = 3) {
-  const per = new Map(); const kept = [];
-  for (const s of songs) { const k = s.artistId || s.artist || '?'; const n = per.get(k) || 0; if (n < max) { per.set(k, n + 1); kept.push(s); } }
+export function variety(songs, max = 3, minKeep = 20) {
+  // Cap songs per artist, but loosen the cap when a list only has a few artists so it never shrinks to a handful.
+  const want = Math.min(songs.length, minKeep); let kept = [];
+  for (let cap = max; ; cap++) {
+    const per = new Map(); kept = [];
+    for (const s of songs) { const k = s.artistId || s.artist || '?'; const n = per.get(k) || 0; if (n < cap) { per.set(k, n + 1); kept.push(s); } }
+    if (kept.length >= want || kept.length === songs.length) break;
+  }
   const out = []; const rest = kept.slice();
   while (rest.length) {
     const last = out[out.length - 1]; const lk = last && (last.artistId || last.artist);
@@ -526,7 +535,7 @@ export function fillMoodFans(root) {
   root.querySelectorAll('[data-fan]').forEach((f) => io.observe(f));
 }
 export function moodTile(g) {
-  const h = hue(g.value);
+  const h = genreHue(g.value);
   return `<a class="mood" href="#/music/genre/${encodeURIComponent(g.value)}" style="--h:${h}"><div class="shine"></div><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><path d="${gIcon(g.value)}"/></svg><div class="fan" data-fan="${esc(g.value)}"></div>
     <div class="txt"><div class="nm">${esc(g.value)}</div><div class="ct">${plural(g.songCount, 'song')}</div></div>
     <button type="button" class="hp" data-playgenre="${esc(g.value)}" aria-label="Play ${esc(g.value)}">${IC.play}</button></a>`;
@@ -676,16 +685,26 @@ function discTables(songs) {
 
 // ---------- Artists ----------
 async function artistsPage(v) {
-  const { main, alive } = v;
-  await ndLoad('getArtists', {}, (r) => {
-    const groups = r.artists?.index || [];
-    const total = groups.reduce((n, g) => n + (g.artist?.length || 0), 0);
-    main.innerHTML = `<div class="mpage-h"><h1 class="disp">Artists</h1><span class="t2 cnt">${plural(total, 'artist')}</span>
-      <label class="msearch">${MI.search}<input type="search" id="arFind" placeholder="Search artists" spellcheck="false"></label>
-      <a class="btn secondary" href="#/music/albums">${MI.album}<span>Albums</span></a></div><div id="arList"></div>`;
+  const { main, alive, params } = v;
+  const sort = params.get('sort') || 'az';
+  await ndLoad('getArtists', {}, async (r) => {
+    let list = (r.artists?.index || []).flatMap((g) => g.artist || []);
+    // Most played and Recently added come from the album list, summed up per artist.
+    if (sort !== 'az') {
+      const albums = await allAlbums(sort === 'recent' ? 'newest' : 'alphabeticalByArtist').catch(() => []);
+      if (!alive()) return;
+      const score = new Map();
+      albums.forEach((a, i) => { if (!a.artistId) return; const v = sort === 'recent' ? -i : (a.playCount || 0); score.set(a.artistId, sort === 'recent' ? Math.max(score.get(a.artistId) ?? -Infinity, v) : (score.get(a.artistId) || 0) + v); });
+      list = [...list].sort((a, b) => (score.get(b.id) ?? -Infinity) - (score.get(a.id) ?? -Infinity) || a.name.localeCompare(b.name));
+    }
+    const chip = (k, t) => `<a href="#/music/artists${k === 'az' ? '' : '?sort=' + k}" class="${sort === k ? 'on' : ''}">${t}</a>`;
+    main.innerHTML = `<div class="mpage-h"><h1 class="disp">Artists</h1><span class="t2 cnt">${plural(list.length, 'artist')}</span>
+      <div class="seg">${chip('az', 'A-Z')}${chip('played', 'Most played')}${chip('recent', 'Recently added')}</div>
+      <label class="msearch">${MI.search}<input type="search" id="arFind" placeholder="Filter artists" spellcheck="false"></label></div><div class="mgrid argrid" id="arList"></div>`;
     const draw = (f = '') => {
       f = f.trim().toLowerCase();
-      main.querySelector('#arList').innerHTML = groups.map((g) => { const as = (g.artist || []).filter((a) => !f || a.name.toLowerCase().includes(f)); return as.length ? `<section class="msec"><div class="letter">${esc(g.name)}</div><div class="mgrid">${as.map(artistCard).join('')}</div></section>` : ''; }).join('') || '<div class="empty">No artists match.</div>';
+      const as = list.filter((a) => !f || a.name.toLowerCase().includes(f));
+      main.querySelector('#arList').innerHTML = as.map(artistCard).join('') || '<div class="empty">No artists match.</div>';
     };
     draw();
     main.querySelector('#arFind').addEventListener('input', (e) => draw(e.target.value));
@@ -738,7 +757,7 @@ async function artistPage(v, id) {
     if (!top.length) { const all = await getAll(); top = all.slice().sort((a, b) => (b.playCount || 0) - (a.playCount || 0)).slice(0, 10); }
     if (!alive()) return;
     const box = main.querySelector('#arTop'); let shown = 5;
-    const drawTop = () => { box.innerHTML = songTable(top.slice(0, shown), { cols: ['cover', 'plays', 'noartist'] }).replace(/<div class="srow shead">[\s\S]*?<\/div>/, ''); const m = main.querySelector('#arTopMore'); m.hidden = top.length <= 5; m.textContent = shown > 5 ? 'Show less' : 'Show more'; syncRows(); };
+    const drawTop = () => { box.innerHTML = songTable(top.slice(0, shown), { cols: ['cover', 'plays', 'noartist', 'subalbum'] }).replace(/<div class="srow shead">[\s\S]*?<\/div>/, ''); const m = main.querySelector('#arTopMore'); m.hidden = top.length <= 5; m.textContent = shown > 5 ? 'Show less' : 'Show more'; syncRows(); };
     main.querySelector('#arTopMore').onclick = () => { shown = shown > 5 ? 5 : 10; drawTop(); };
     wireSongs(box, () => top, from); drawTop();
   }).catch(() => { main.querySelector('#arTop').innerHTML = ''; });
@@ -801,6 +820,7 @@ async function songsPage(v) {
     });
     table.innerHTML = html + (view.length ? '' : '<div class="empty">No songs match.</div>');
     rail.hidden = !byLetter;
+    table.classList.toggle('lettered', byLetter);
     if (byLetter) { const have = new Set(view.map(letter)); rail.innerHTML = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((L) => `<button type="button" class="${have.has(L) ? '' : 'off'}" data-L="${L}">${L}</button>`).join(''); }
     syncRows();
   };

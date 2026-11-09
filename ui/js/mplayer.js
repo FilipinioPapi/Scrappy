@@ -187,7 +187,7 @@ export function setVolume(v) {
 }
 // Scrolling over a volume bar or mute button nudges the volume, 5% per notch.
 document.addEventListener('wheel', (e) => {
-  const el = e.target.closest?.('.mseek.vol, #mbMute, #mnMute');
+  const el = e.target.closest?.('.mseek.vol, #mbMute, #mnMute, #tpMute');
   if (!el) return;
   e.preventDefault();
   const bar = el.matches('.mseek') ? el : el.nextElementSibling;
@@ -278,9 +278,63 @@ bar.innerHTML = `
   </div>`;
 document.body.appendChild(bar);
 const $ = (id) => bar.querySelector('#' + id);
+
+// ---------- Top-bar player (board B): shows in the top bar when you leave Music ----------
+const tp = document.createElement('div');
+tp.id = 'tplayer'; tp.className = 'tp off';
+tp.innerHTML = `
+  <button type="button" class="tp-cv" id="tpCover" title="Back to Music" aria-label="Back to Music"><img alt=""><span class="go">${IC.expand}</span></button>
+  <div class="tp-mid">
+    <div class="tp-r1"><div class="tp-txt"><div class="tp-t" id="tpTitle"></div><div class="tp-s" id="tpSub"></div></div>
+      <button type="button" class="gb" id="tpPrev" title="Previous" aria-label="Previous">${IC.prev}</button>
+      <button type="button" class="tp-play" id="tpPlay" title="Play" aria-label="Play">${IC.play}</button>
+      <button type="button" class="gb" id="tpNext" title="Next" aria-label="Next">${IC.next}</button></div>
+    <div class="tp-sk"><span id="tpPos">0:00</span><div class="mseek" id="tpSeek"><div class="track"><i></i></div><b></b></div><span id="tpDur">0:00</span></div>
+  </div>
+  <div class="tp-v">
+    <button type="button" class="gb" id="tpFav" title="Add to Favorites" aria-label="Add to Favorites"></button>
+    <div class="tp-vol"><button type="button" class="gb" id="tpMute" title="Mute" aria-label="Mute">${IC.vol}</button><div class="mseek vol" id="tpVol"><div class="track"><i></i></div><b></b></div></div>
+  </div>`;
+const T = (id) => tp.querySelector('#' + id);
+function mountTop() {
+  const top = document.getElementById('topbar'); if (!top || tp.isConnected) return;
+  top.insertBefore(tp, top.querySelector('.actions'));
+}
+mountTop();
+let tpCoverId = null;
+function drawTop() {
+  mountTop();
+  const cur = current();
+  const show = !!cur && !document.body.classList.contains('tab-music');
+  tp.classList.toggle('off', !show);
+  document.body.classList.toggle('has-tp', show);
+  if (!cur) return;
+  if (cur.coverArt !== tpCoverId) {
+    tpCoverId = cur.coverArt;
+    const im = T('tpCover').querySelector('img');
+    im.classList.remove('in'); im.onload = () => im.classList.add('in');
+    im.src = cover(cur.coverArt, 120);
+  }
+  T('tpTitle').textContent = cur.title || ''; T('tpSub').textContent = cur.artist || '';
+  const on = !!cur.starred; const f = T('tpFav');
+  f.innerHTML = on ? IC.heartOn : IC.heart; f.classList.toggle('on', on); f.title = on ? 'Remove from Favorites' : 'Add to Favorites';
+  const play = T('tpPlay'); const showPause = S.playing && S.started;
+  if (play.dataset.st !== String(showPause)) { play.dataset.st = String(showPause); play.innerHTML = showPause ? IC.pause : IC.play; play.title = showPause ? 'Pause' : 'Play'; }
+  T('tpMute').innerHTML = S.muted || S.volume === 0 ? IC.muted : IC.vol;
+  setFill(T('tpVol'), S.muted ? 0 : S.volume / 100);
+  drawTopProgress();
+}
+let tpDrag = false;
+function drawTopProgress() {
+  if (tp.classList.contains('off') || tpDrag) return;
+  const d = S.dur || current()?.duration || 0;
+  T('tpPos').textContent = fmt(S.pos); T('tpDur').textContent = fmt(d);
+  setFill(T('tpSeek'), d ? S.pos / d : 0);
+}
 let lastCoverId = null;
 
 function drawBar() {
+  drawTop();
   const cur = current();
   bar.hidden = !cur;
   document.body.classList.toggle('has-mbar', !!cur);
@@ -308,6 +362,7 @@ function drawBar() {
 function setFill(el, f) { f = Math.max(0, Math.min(1, f || 0)); el.querySelector('i').style.width = f * 100 + '%'; el.querySelector('b').style.left = f * 100 + '%'; }
 let dragging = false;
 function drawProgress() {
+  drawTopProgress();
   if (bar.hidden || dragging) return;
   const d = S.dur || current()?.duration || 0;
   $('mbPos').textContent = fmt(S.pos); $('mbDur').textContent = fmt(d);
@@ -339,6 +394,15 @@ $('mbCover').onclick = () => window.dispatchEvent(new CustomEvent('music:now', {
 $('mbLyr').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: 'lyrics' }));
 $('mbViz').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: 'viz' }));
 $('mbExp').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: null }));
+slider(T('tpSeek'), (f) => { tpDrag = true; const d = S.dur || current()?.duration || 0; setFill(T('tpSeek'), f); T('tpPos').textContent = fmt(f * d); },
+  (f) => { tpDrag = false; seek(f * (S.dur || current()?.duration || 0)); });
+slider(T('tpVol'), (f) => setVolume(f * 100));
+T('tpPlay').onclick = togglePlay; T('tpNext').onclick = next; T('tpPrev').onclick = prev; T('tpMute').onclick = toggleMute;
+T('tpFav').onclick = () => { const c = current(); if (c) setFavorite(c, !c.starred); };
+T('tpCover').onclick = () => { location.hash = '#/music'; };
+tp.addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap'); });
+// Tabs change the body class; redraw so the top player slides in or out.
+new MutationObserver(() => drawTop()).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 $('mbQueue').onclick = () => window.dispatchEvent(new CustomEvent('music:panel', { detail: 'queue' }));
 // Soft bounce + faint red ripple on every bar button.
 bar.addEventListener('pointerdown', (e) => {

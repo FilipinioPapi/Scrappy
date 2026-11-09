@@ -4,7 +4,7 @@ import { api } from './api.js';
 import { music, current, playSongs, setFavorite, cover, fmt, IC } from './mplayer.js';
 import {
   EXTRA, nd, ndLoad, coverHtml, songTable, songRow, wireSongs, albumCard, artistCard, row, wireCards, wireMoods, moodTile,
-  bump, listMenu, refreshPlaylists, totalTime, plural, hue, href, MI, ready, lib, saveLib, syncNow, variety,
+  bump, listMenu, refreshPlaylists, totalTime, plural, hue, genreHue, href, MI, ready, lib, saveLib, syncNow, variety,
 } from './music.js';
 
 const line = (d, n = 18) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -68,7 +68,7 @@ EXTRA.genres = async (v) => {
     const box = main.querySelector('#gTiles');
     const draw = (f = '') => {
       f = f.trim().toLowerCase();
-      box.innerHTML = gs.filter((g) => !f || g.value.toLowerCase().includes(f)).map((g) => `<a class="gtile" href="#/music/genre/${encodeURIComponent(g.value)}" style="--h:${hue(g.value)}" data-g="${esc(g.value)}">
+      box.innerHTML = gs.filter((g) => !f || g.value.toLowerCase().includes(f)).map((g) => `<a class="gtile" href="#/music/genre/${encodeURIComponent(g.value)}" style="--h:${genreHue(g.value)}" data-g="${esc(g.value)}">
         <div class="shine"></div><div class="nm">${esc(g.value)}</div><div class="ct">${plural(g.songCount, 'song')} · ${plural(g.albumCount, 'album')}</div><div class="fan"></div></a>`).join('') || '<div class="empty">No genres match.</div>';
       box.querySelectorAll('.gtile').forEach((t) => io.observe(t));
     };
@@ -104,21 +104,21 @@ EXTRA.genre = async (v, name) => {
   const fresh = songs.filter((s) => s.created && Date.parse(s.created) > recentCut);
   const essentials = songs.slice().sort((a, b) => (b.playCount || 0) - (a.playCount || 0)).slice(0, 9);
   const mixes = [
-    { k: 'all', n: `${name} Mix`, d: `A spread of ${name} from across your library`, s: variety(shuffleArr(songs), 3).slice(0, 80), cls: 'm1' },
+    { k: 'all', n: `${name} Mix`, d: `A spread of ${name} from across your library`, s: variety(shuffleArr(songs), 3, 40).slice(0, 80), cls: 'm1' },
     { k: 'deep', n: 'Deep Cuts', d: 'The ones you rarely play', s: variety(shuffleArr(deep), 2).slice(0, 60), cls: 'm2' },
     { k: 'fresh', n: 'Fresh Finds', d: 'Added in the last few months', s: variety(shuffleArr(fresh), 4).slice(0, 60), cls: 'm3' },
   ].filter((m) => m.s.length);
   const decades = {};
   albums.forEach((a) => { if (!a.year) return; const d = Math.floor(a.year / 10) * 10; (decades[d] = decades[d] || []).push(a); });
   main.innerHTML = `
-    <div class="ghero" style="--h:${hue(name)}">
+    <div class="ghero" style="--h:${genreHue(name)}">
       <div class="ghero-in"><a class="back-pill" href="#/music/genres">${MI.back}<span>All genres</span></a>
         <div class="kicker">GENRE</div><h1 class="disp mtitle">${esc(name)}</h1>
         <div class="meta">${[plural(songs.length, 'song'), plural(albums.length, 'album'), plural(artists.length, 'artist'), totalTime(total), years.length ? `${Math.min(...years)}–${Math.max(...years)}` : ''].filter(Boolean).join(' · ')}</div>
         <div class="mbtns"><button type="button" class="arplay" id="gPlay" aria-label="Play" data-playctx="genre:${esc(name)}">${IC.play}</button><button type="button" class="gb sq" id="gShuf" aria-label="Shuffle">${IC.shuffle}</button></div></div>
       <div class="mosaic">${albums.slice(0, 4).map((a, i) => `<a href="${href('album', a.id)}" class="mo mo${i}">${coverHtml(a.coverArt, a.name, 300)}</a>`).join('')}</div>
     </div>
-    ${mixes.length ? `<section class="msec"><h2>Made for you from your library</h2><div class="gmixes">${mixes.map((m) => `<button type="button" class="gmix ${m.cls}" data-mix="${m.k}" style="--h:${hue(name)}">
+    ${mixes.length ? `<section class="msec"><h2>Made for you from your library</h2><div class="gmixes">${mixes.map((m) => `<button type="button" class="gmix ${m.cls}" data-mix="${m.k}" style="--h:${genreHue(name)}">
       <span class="stack">${shuffleArr(m.s).slice(0, 3).map((s) => coverHtml(s.coverArt, '', 160)).join('')}</span>
       <span class="gm-txt"><span class="disp">${esc(m.n)}</span><span class="d">${esc(m.d)}</span><b>${plural(m.s.length, 'song')}</b></span></button>`).join('')}</div></section>` : ''}
     ${essentials.length ? `<section class="msec"><h2>Essentials</h2><div class="ess" id="gEss">${essentials.map((s, i) => `<div class="srow ess-it" data-i="${i}" data-id="${esc(s.id)}">${coverHtml(s.coverArt, '', 100, 'sm')}<span class="c-n" style="display:none"></span><span class="tt"><span class="t1">${esc(s.title)}</span><span class="t2">${esc(s.artist || '')}</span></span><span class="t2 c-l">${fmt(s.duration)}</span></div>`).join('')}</div></section>` : ''}
