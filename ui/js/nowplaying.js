@@ -28,7 +28,10 @@ const saveVz = () => { try { localStorage.setItem('mviz', JSON.stringify(vz)); }
 const el = document.createElement('div');
 el.id = 'mnow'; el.hidden = true;
 document.body.appendChild(el);
-let mode = localStorage.getItem('mnowmode') || 'queue'; // queue | lyrics | viz
+let mode = localStorage.getItem('mnowmode') || 'queue'; // queue | lyrics | viz (full-screen visualizer)
+// What sits under the visualizer (or alone when it's off): Up next or Lyrics.
+let under = localStorage.getItem('mnowunder') || (mode === 'lyrics' ? 'lyrics' : 'queue');
+const setMode = (m) => { mode = m; if (m !== 'viz') under = m; try { localStorage.setItem('mnowmode', mode); localStorage.setItem('mnowunder', under); } catch {} };
 // The visualizer can be switched off entirely, like lyrics.
 let vizShow = localStorage.getItem('mnowviz') !== 'off';
 const setVizShow = (on) => { vizShow = on; try { localStorage.setItem('mnowviz', on ? 'on' : 'off'); } catch {} };
@@ -37,7 +40,7 @@ let settingsOpen = false;
 
 export function openNow(m) {
   if (!current()) return;
-  if (m) { if (m === 'viz') setVizShow(true); mode = m; localStorage.setItem('mnowmode', mode); }
+  if (m) { if (m === 'viz') setVizShow(true); setMode(m); }
   open = true; el.hidden = false; document.body.classList.add('mnow-open');
   el.classList.remove('closing'); build();
 }
@@ -86,10 +89,11 @@ function build() {
   $('#mnShuf').onclick = toggleShuffle; $('#mnRep').onclick = cycleRepeat; $('#mnMute').onclick = toggleMute;
   el.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => {
     const m = b.dataset.mode;
-    if (m === 'viz') { const on = !(vizShow && mode !== 'lyrics'); setVizShow(on); mode = 'queue'; }
-    else if (m === 'lyrics') mode = mode === 'lyrics' ? 'queue' : 'lyrics';
-    else mode = 'queue';
-    localStorage.setItem('mnowmode', mode); settingsOpen = false; drawRight();
+    // Visualizer button turns it on or off; lyrics and Up next swap what sits under it.
+    if (m === 'viz') { setVizShow(!vizShow); if (!vizShow && mode === 'viz') setMode(under); }
+    else if (m === 'lyrics') setMode(mode === 'lyrics' ? 'queue' : 'lyrics');
+    else setMode('queue');
+    settingsOpen = false; drawRight();
   }));
   el.querySelector('.mn-top').addEventListener('click', (e) => { if (e.target.closest('a')) closeNow(); });
   el.querySelector('.mn-meta').addEventListener('click', (e) => { if (e.target.closest('a')) closeNow(); });
@@ -143,9 +147,9 @@ listen('music-prop', ({ payload }) => { if (payload.name === 'time-pos') progres
 let rightKey = null; let rightBusy = null;
 function drawRight() {
   const box = el.querySelector('#mnRight'); if (!box) return;
-  if (mode === 'viz' && !vizShow) mode = 'queue';
-  el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow && mode !== 'lyrics' : b.dataset.mode === mode));
-  const key = mode === 'lyrics' ? 'lyrics' : !vizShow ? 'queue' : mode === 'viz' ? 'vizfull' : 'vizsplit';
+  if (mode === 'viz' && !vizShow) setMode(under);
+  el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow : b.dataset.mode === (mode === 'viz' ? '' : mode)));
+  const key = (vizShow ? (mode === 'viz' ? 'F' : 'V') : 'N') + mode;
   if (rightKey === null || key === rightKey || !box.firstElementChild || matchMedia('(prefers-reduced-motion: reduce)').matches) { rightKey = key; renderRight(box); return; }
   rightKey = key;
   rightBusy?.cancel();
@@ -161,21 +165,21 @@ function drawRight() {
   };
 }
 function renderRight(box) {
-  el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow && mode !== 'lyrics' : b.dataset.mode === mode));
+  el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow : b.dataset.mode === (mode === 'viz' ? '' : mode)));
   el.classList.toggle('dim', mode === 'viz' && vset().dim);
-  if (mode === 'lyrics') { stopViz(); box.innerHTML = '<div class="lyr" id="lyr"><div class="t2">Looking for lyrics…</div></div>'; loadLyrics(); return; }
   const full = mode === 'viz';
-  if (!vizShow) { stopViz(); box.innerHTML = '<div id="mnQueue" class="noviz"></div>'; drawQueue(); return; }
+  const lower = mode === 'lyrics' ? '<div class="lyr" id="lyr"><div class="t2">Looking for lyrics…</div></div>' : `<div id="mnQueue"${vizShow ? '' : ' class="noviz"'}></div>`;
+  if (!vizShow) { stopViz(); box.innerHTML = lower; if (mode === 'lyrics') loadLyrics(); else drawQueue(); return; }
   box.innerHTML = `<div class="vizcard${full ? ' full' : ''}"><canvas id="viz"></canvas>
-      <div class="viz-btns"><button type="button" class="gb vb${full ? '' : ' on'}" data-vmode="queue" title="Visualizer with Up next">${NI.split}</button><button type="button" class="gb vb${full ? ' on' : ''}" data-vmode="viz" title="Visualizer only">${NI.full}</button><button type="button" class="gb vb${settingsOpen ? ' on' : ''}" id="vGear" title="Visualizer settings">${NI.gear}</button><button type="button" class="gb vb" id="vOff" title="Turn off the visualizer" aria-label="Turn off the visualizer">${MI.close}</button></div>
+      <div class="viz-btns"><button type="button" class="gb vb${full ? '' : ' on'}" data-vmode="queue" title="Visualizer with Up next or lyrics">${NI.split}</button><button type="button" class="gb vb${full ? ' on' : ''}" data-vmode="viz" title="Visualizer only">${NI.full}</button><button type="button" class="gb vb${settingsOpen ? ' on' : ''}" id="vGear" title="Visualizer settings">${NI.gear}</button><button type="button" class="gb vb" id="vOff" title="Turn off the visualizer" aria-label="Turn off the visualizer">${MI.close}</button></div>
       <div class="vset" id="vSet" ${settingsOpen ? '' : 'hidden'}></div></div>
-    ${full ? '' : '<div id="mnQueue"></div>'}`;
-  box.querySelectorAll('[data-vmode]').forEach((b) => (b.onclick = () => { mode = b.dataset.vmode; localStorage.setItem('mnowmode', mode); drawRight(); }));
+    ${full ? '' : lower}`;
+  box.querySelectorAll('[data-vmode]').forEach((b) => (b.onclick = () => { setMode(b.dataset.vmode === 'viz' ? 'viz' : under); drawRight(); }));
   box.querySelector('#vGear').onclick = () => { settingsOpen = !settingsOpen; drawRight(); };
-  box.querySelector('#vOff').onclick = () => { setVizShow(false); mode = 'queue'; localStorage.setItem('mnowmode', mode); settingsOpen = false; drawRight(); };
+  box.querySelector('#vOff').onclick = () => { setVizShow(false); if (mode === 'viz') setMode(under); settingsOpen = false; drawRight(); };
   if (settingsOpen) drawSettings(box.querySelector('#vSet'));
   startViz(box.querySelector('#viz'));
-  if (!full) drawQueue();
+  if (!full) { if (mode === 'lyrics') loadLyrics(); else drawQueue(); }
 }
 function drawQueue() {
   const q = el.querySelector('#mnQueue'); if (!q) return;
