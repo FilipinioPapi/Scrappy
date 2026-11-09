@@ -1835,7 +1835,7 @@ body:not(.tab-music) #mbar { transition: transform .4s cubic-bezier(.4,0,.2,1), 
 .hero:not(.hero-wait) { background: var(--bg); }
 
 /* ---------- Narrow windows / zoomed in (Ctrl +): nothing squeezes or gets cut off ---------- */
-html, body { overflow-x: hidden; }
+html, body { overflow-x: clip; }
 #topbar { min-width: 0; }
 #topbar .tsearch { min-width: 0; }
 @media (max-width: 1240px) {
@@ -1869,3 +1869,6 @@ html, body { overflow-x: hidden; }
   .mn-art { width: min(220px, 26vh); }
   .hero { height: 62vh; min-height: 300px; }
 }
+/* Home banner: a solid strip along the very bottom so no row of the picture can peek through
+   below the fade (it showed as a thin line on scaled Windows displays). */
+.hero::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: var(--bg); z-index: 1; pointer-events: none; }

@@ -172,6 +172,11 @@ function trackLabel(t) {
 
 const prefsKey = () => (S.item ? 'show:' + (S.item.SeriesId || S.item.Id) : null);
 const loadPrefs = () => (prefsKey() && ls.json(prefsKey())) || {};
+// Audio/subtitle picks are kept apart from older saved settings, which could hold a subtitle the
+// app chose by itself (not you). Only a pick you make yourself is stored here.
+const trackKey = () => (S.item ? 'tracks:' + (S.item.SeriesId || S.item.Id) : null);
+const loadTrackPrefs = () => (trackKey() && ls.json(trackKey())) || {};
+function saveTrackPrefs(patch) { const k = trackKey(); if (k) ls.set(k, JSON.stringify({ ...loadTrackPrefs(), ...patch })); }
 function savePrefs(patch) {
   const k = prefsKey();
   if (!k) return;
@@ -181,9 +186,10 @@ const trackRef = (t) => (t ? { lang: t.lang || '', title: t.title || '', forced:
 function findTrack(type, ref) {
   if (!ref) return null;
   const list = S.tracks.filter((t) => t.type === type);
-  return list.find((t) => (t.lang || '') === ref.lang && (t.title || '') === ref.title && !!t.forced === ref.forced)
-    || list.find((t) => (t.lang || '') === ref.lang && !!t.forced === ref.forced)
-    || list.find((t) => (t.lang || '') === ref.lang)
+  const L = langOf(ref.lang);
+  return list.find((t) => langOf(t.lang) === L && (t.title || '') === ref.title && !!t.forced === !!ref.forced)
+    || list.find((t) => langOf(t.lang) === L && !!t.forced === !!ref.forced)
+    || list.find((t) => langOf(t.lang) === L)
     || null;
 }
 
@@ -193,27 +199,33 @@ function findTrack(type, ref) {
 // Tracks can show up late (subtitle files on the server are added after the video opens),
 // so this keeps trying for a few seconds until the wanted track appears.
 function wanted() {
-  const p = loadPrefs(), d = S.defaults || {};
+  const p = loadTrackPrefs(), d = S.defaults || {};
   return {
     audio: p.audio || d.audio || null,
     sub: p.sub || (d.subKnown ? (d.sub || 'off') : null),
   };
 }
+// Languages come as 'en', 'eng' or 'English' depending on where they're from.
+const LANGS = { en: 'en', eng: 'en', english: 'en', de: 'de', ger: 'de', deu: 'de', german: 'de', fr: 'fr', fre: 'fr', fra: 'fr', french: 'fr', es: 'es', spa: 'es', spanish: 'es', it: 'it', ita: 'it', ja: 'ja', jpn: 'ja', japanese: 'ja' };
+const langOf = (l) => { const k = String(l || '').toLowerCase().trim(); return LANGS[k] || k; };
+const sameLang = (a, b) => !a || !b || langOf(a) === langOf(b);
 function matchTrack(type, ref) {
   const list = S.tracks.filter((t) => t.type === type);
   if (ref.index != null) {
     // Emby's stream number is the same as the file's, so it's exact unless Emby is converting the video.
     if (ref.external) {
       const ext = list.filter((t) => t.external);
-      return ext.find((t) => (t.title || '') === ref.displayTitle) || ext.find((t) => (t.lang || '') === ref.lang) || null;
+      return ext.find((t) => (t.title || '') === ref.displayTitle) || ext.find((t) => sameLang(t.lang, ref.lang) && t.lang) || null;
     }
-    if (S.playMethod !== 'Transcode') { const t = list.find((x) => !x.external && x['ff-index'] === ref.index); if (t) return t; }
+    if (S.playMethod !== 'Transcode') { const t = list.find((x) => !x.external && x['ff-index'] === ref.index); if (t && sameLang(t.lang, ref.lang)) return t; }
   }
   return findTrack(type, ref);
 }
 function pickTracks() {
   if (!S.pick || S.defaults === undefined || !S.tracks.length) return;
   const w = wanted();
+  const tp = loadTrackPrefs();
+  S.subWhy = tp.sub ? 'your last pick for this show' : (S.defaults?.subKnown ? 'Emby\'s default for you' : 'the video\'s default');
   if (S.pick.audio) {
     if (!w.audio) S.pick.audio = false;
     else { const t = matchTrack('audio', w.audio); if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.pick.audio = false; } }
@@ -308,7 +320,7 @@ function drawSettings() {
   $('[data-set=skipFwd]').value = String(skipFwd());
   const name = S.item?.SeriesName || S.item?.Name || 'this title';
   $('.p-set-scope').textContent = S.item?.SeriesName ? 'for this show' : 'for this title';
-  $('.p-set-note').textContent = `Audio, subtitles and speed are remembered for ${name}. Skip lengths and quality apply everywhere.`;
+  $('.p-set-note').textContent = `Audio, subtitles and speed are remembered for ${name}. Skip lengths and quality apply everywhere.${S.subWhy ? ` Subtitles started from ${S.subWhy}.` : ''}`;
 }
 
 // ---------- Skip Intro / credits ----------
@@ -650,16 +662,19 @@ function toggleSubs() {
   if (S.pick) S.pick.sub = false;
   if (S.sid != null) {
     setProp('sid', 'no');
-    savePrefs({ sub: 'off' });
+    saveTrackPrefs({ sub: 'off' });
     return;
   }
   const subs = S.tracks.filter((t) => t.type === 'sub');
   if (!subs.length) { toast('This video has no subtitles.'); return; }
-  const pref = loadPrefs().sub;
-  const t = subs.find((x) => x.id === S.lastSid) || (pref && pref !== 'off' && findTrack('sub', pref))
-    || subs.find((x) => x.default) || subs[0];
+  // Turning subtitles on: your own last pick, then Emby's pick, then the language you're listening in, then English.
+  const pref = loadTrackPrefs().sub, d = S.defaults || {};
+  const audio = S.tracks.find((t) => t.type === 'audio' && t.selected);
+  const full = subs.filter((t) => !t.forced);
+  const t = (pref && pref !== 'off' && matchTrack('sub', pref)) || (d.sub && matchTrack('sub', d.sub))
+    || (audio?.lang && full.find((x) => x.lang === audio.lang)) || full.find((x) => /^(en|eng)$/i.test(x.lang || '')) || full[0] || subs[0];
   setProp('sid', t.id);
-  savePrefs({ sub: trackRef(t) });
+  saveTrackPrefs({ sub: trackRef(t) });
 }
 
 function applyAspect() {
@@ -678,13 +693,13 @@ el.querySelector('.p-settings').addEventListener('change', (e) => {
     case 'audio': {
       if (S.pick) S.pick.audio = false;
       setProp('aid', v);
-      savePrefs({ audio: trackRef(S.tracks.find((t) => String(t.id) === v)) });
+      saveTrackPrefs({ audio: trackRef(S.tracks.find((t) => String(t.id) === v)) });
       break;
     }
     case 'sub': {
       if (S.pick) S.pick.sub = false;
       setProp('sid', v);
-      savePrefs({ sub: v === 'no' ? 'off' : trackRef(S.tracks.find((t) => String(t.id) === v)) });
+      saveTrackPrefs({ sub: v === 'no' ? 'off' : trackRef(S.tracks.find((t) => String(t.id) === v)) });
       break;
     }
     case 'subScale': S.subScale = v; ls.set('subScale', v); setProp('sub-scale', v); break;
