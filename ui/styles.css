@@ -1178,7 +1178,7 @@ body.has-mbar.tab-music .mpanel { bottom: var(--mbar); }
 
 /* Albums page */
 .ag { margin-bottom: 40px; }
-.ag-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.ag-h { display: flex; align-items: center; justify-content: flex-start; gap: 22px; margin-bottom: 18px; }
 .ag-a { display: flex; align-items: center; gap: 14px; }
 .ag-a .mcv { width: 46px; height: 46px; box-shadow: none; }
 .ag-a .disp { font-size: 26px; }

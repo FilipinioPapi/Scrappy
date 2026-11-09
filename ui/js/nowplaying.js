@@ -139,9 +139,28 @@ onMusic(sync);
 listen('music-prop', ({ payload }) => { if (payload.name === 'time-pos') progress(); });
 
 // ---------- Right side ----------
+// Switching between lyrics, up next and the visualizer cross-fades instead of popping.
+let rightKey = null; let rightBusy = null;
 function drawRight() {
   const box = el.querySelector('#mnRight'); if (!box) return;
   if (mode === 'viz' && !vizShow) mode = 'queue';
+  el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow && mode !== 'lyrics' : b.dataset.mode === mode));
+  const key = mode === 'lyrics' ? 'lyrics' : !vizShow ? 'queue' : mode === 'viz' ? 'vizfull' : 'vizsplit';
+  if (rightKey === null || key === rightKey || !box.firstElementChild || matchMedia('(prefers-reduced-motion: reduce)').matches) { rightKey = key; renderRight(box); return; }
+  rightKey = key;
+  rightBusy?.cancel();
+  const out = box.animate([{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(-10px) scale(.985)', filter: 'blur(3px)' }], { duration: 160, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+  rightBusy = out;
+  out.onfinish = () => {
+    if (rightBusy !== out) return;
+    renderRight(box);
+    out.cancel();
+    rightBusy = box.animate([{ opacity: 0, transform: 'translateY(14px) scale(.985)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }], { duration: 280, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    // Rows and lines settle in one after another.
+    box.querySelectorAll('.qnow, .qi, .lyr > *').forEach((r, i) => { if (i < 14) r.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 280, delay: 60 + i * 22, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }); });
+  };
+}
+function renderRight(box) {
   el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow && mode !== 'lyrics' : b.dataset.mode === mode));
   el.classList.toggle('dim', mode === 'viz' && vset().dim);
   if (mode === 'lyrics') { stopViz(); box.innerHTML = '<div class="lyr" id="lyr"><div class="t2">Looking for lyrics…</div></div>'; loadLyrics(); return; }

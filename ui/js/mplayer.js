@@ -90,6 +90,7 @@ function remember(songs, start, from) {
   e.at = Date.now();
   const h = [e, ...history().filter((x) => x.k !== e.k)].slice(0, 40);
   try { localStorage.setItem('mhist', JSON.stringify(h)); } catch {}
+  window.dispatchEvent(new CustomEvent('music:played', { detail: { from, song: s0, count: songs.length } }));
 }
 export function playSongs(songs, start = 0, opts = {}) {
   songs = (songs || []).filter(Boolean);

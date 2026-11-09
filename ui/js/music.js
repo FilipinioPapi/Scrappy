@@ -69,7 +69,7 @@ const LIB_KEY = 'mlib';
 export let lib = { rec: [], pins: [], hpins: [], fil: 'all', collapsed: false, width: 272 };
 try { Object.assign(lib, JSON.parse(localStorage.getItem(LIB_KEY) || '{}')); } catch {}
 export const saveLib = () => { try { localStorage.setItem(LIB_KEY, JSON.stringify(lib)); } catch {} };
-let playlistsCache = [];
+let playlistsCache = []; let playlistsLoaded = false;
 
 export const syncNow = () => syncRows();
 export function bump(entry) {
@@ -77,11 +77,24 @@ export function bump(entry) {
   saveLib(); drawLib(true);
 }
 function libEntries() {
-  const seen = new Set(lib.rec.map((r) => r.k));
+  // Drop playlists that were deleted on the server (only once the list has loaded).
+  const known = new Set(playlistsCache.map((p) => 'pl:' + p.id));
+  const rec = lib.rec.filter((r) => !r.k.startsWith('pl:') || r.k.startsWith('pl:auto:') || !playlistsLoaded || known.has(r.k))
+    .map((r) => { if (!r.k.startsWith('pl:')) return r; const p = playlistsCache.find((x) => 'pl:' + x.id === r.k); return p ? { ...r, ...plEntry(p) } : r; });
+  const seen = new Set(rec.map((r) => r.k));
+  // Playlists not played recently are still reachable when pinned.
   const extra = playlistsCache.filter((p) => !seen.has('pl:' + p.id)).map(plEntry);
-  return [...lib.rec, ...extra];
+  return { rec, all: [...rec, ...extra] };
 }
 const plEntry = (p) => ({ k: 'pl:' + p.id, t: p.name, sub: `Playlist · ${plural(p.songCount, 'song')}`, cv: p.coverArt });
+// Anything you play lands in Recents too: the album, playlist or artist it came from, or the song's album.
+window.addEventListener('music:played', (ev) => {
+  const { from, song: s0, count } = ev.detail || {}; if (!s0) return;
+  const t = from?.type === 'artistfav' ? 'artist' : from?.type;
+  if (t === 'playlist' && from.id) bump({ k: 'pl:' + from.id, t: from.name || 'Playlist', sub: `Playlist · ${plural(count, 'song')}`, cv: String(from.id).startsWith('auto:') ? s0.coverArt : 'pl-' + from.id });
+  else if (t === 'artist' && from.id) bump({ k: 'ar:' + from.id, t: from.name || s0.artist, sub: 'Artist', cv: 'ar-' + from.id });
+  else if (s0.albumId) bump({ k: 'al:' + s0.albumId, t: s0.album || from?.name || 'Album', sub: `Album · ${s0.artist || ''}`, cv: s0.coverArt });
+});
 export const kindOf = (k) => ({ pl: 'playlist', al: 'album', ar: 'artist' }[k.slice(0, 2)]);
 
 function libItem(e, pinned) {
@@ -94,10 +107,11 @@ function libItem(e, pinned) {
 }
 function drawLib(animate) {
   const box = document.getElementById('mlib'); if (!box) return;
-  const all = libEntries();
+  const { rec, all } = libEntries();
   const ok = (e) => lib.fil === 'all' || kindOf(e.k) === lib.fil;
   const pins = lib.pins.map((k) => all.find((e) => e.k === k)).filter(Boolean).filter(ok);
-  const rest = all.filter((e) => !lib.pins.includes(e.k)).filter(ok);
+  // Recents: the ten most recent things you played or opened (pins sit above and don't count).
+  const rest = rec.filter((e) => !lib.pins.includes(e.k)).filter(ok).slice(0, 10);
   const before = animate ? flipFirst(box) : null;
   box.innerHTML = (pins.length ? `<div class="mlsec">PINNED</div>${pins.map((e) => libItem(e, true)).join('')}<div class="mlsec">RECENTS</div>` : '')
     + rest.map((e) => libItem(e, false)).join('')
@@ -167,7 +181,7 @@ function wireShell(root) {
     const up = () => { g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); shell.classList.remove('resizing'); saveLib(); };
     g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up);
   });
-  nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; drawLib(false); }).catch(() => {});
+  nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; playlistsLoaded = true; drawLib(false); }).catch(() => {});
   drawLib(false);
 }
 
@@ -297,7 +311,7 @@ export async function addToPlaylist(songs) {
     try { await nd('updatePlaylist', `playlistId=${encodeURIComponent(b.dataset.id)}&${ids.map((id) => 'songIdToAdd=' + encodeURIComponent(id)).join('&')}`); toast(`Added to "${b.querySelector('b').textContent}".`); close(); refreshPlaylists(); } catch (err) { toast(String(err), true); }
   });
 }
-export function refreshPlaylists() { return nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; drawLib(false); return playlistsCache; }).catch(() => playlistsCache); }
+export function refreshPlaylists() { return nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; playlistsLoaded = true; drawLib(false); return playlistsCache; }).catch(() => playlistsCache); }
 
 // ---------- Cards ----------
 export function albumCard(a, sub) {
@@ -457,7 +471,7 @@ async function homePage(v) {
   drawMix();
   // Jump back in: the first six from Your Library.
   const drawJump = () => {
-    const items = libEntries().slice(0, 6);
+    const items = libEntries().rec.slice(0, 6);
     main.querySelector('#jump').innerHTML = items.length ? items.map((e) => `<a class="quick" href="${href(kindOf(e.k), e.k.slice(3))}">${coverHtml(e.cv, '', 120, kindOf(e.k) === 'artist' ? 'round' : '')}<div><div class="t1">${esc(e.t)}</div><div class="t2">${esc(e.sub)}</div></div></a>`).join('')
       : '<div class="t2">Albums, artists and playlists you open show up here.</div>';
   };
