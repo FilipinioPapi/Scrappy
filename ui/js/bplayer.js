@@ -245,6 +245,7 @@ const $ = (id) => bar.querySelector('#' + id);
 
 let lastCover = null;
 function draw() {
+  drawTop();
   const show = mode.book && !!B.item;
   bar.hidden = !show;
   if (show) document.body.classList.add('has-mbar');
@@ -287,6 +288,7 @@ function span() {
   return { start: c.start, end: c.end || B.duration };
 }
 function drawProgress() {
+  drawTopProgress();
   if (bar.hidden) return;
   const c = curChapter();
   $('bbCh').textContent = c?.title || '';
@@ -324,6 +326,73 @@ $('bbChap').onclick = (e) => togglePop('chapters', e.currentTarget);
 onMusic(() => { if (mode.book) draw(); });
 bar.addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap'); });
 
+// ---------- Top-bar player: on Movies & TV the book moves up into the top bar, like music ----------
+const tb = document.createElement('div');
+tb.id = 'tbook'; tb.className = 'tp off';
+tb.innerHTML = `
+  <button type="button" class="tp-cv" id="tbCover" title="Back to Audiobooks" aria-label="Back to Audiobooks"><img alt=""><span class="go">${IC.expand}</span></button>
+  <div class="tp-mid">
+    <div class="tp-r1"><div class="tp-txt"><div class="tp-t" id="tbTitle"></div><div class="tp-s tb-ch" id="tbCh"></div></div>
+      <button type="button" class="gb tb-skip" id="tbBack" title="Back 10 seconds" aria-label="Back 10 seconds">${BI.back10}</button>
+      <button type="button" class="tp-play" id="tbPlay" title="Play" aria-label="Play">${IC.play}</button>
+      <button type="button" class="gb tb-skip" id="tbFwd" title="Forward 10 seconds" aria-label="Forward 10 seconds">${BI.fwd10}</button></div>
+    <div class="tp-sk"><span id="tbPos">0:00</span><div class="mseek" id="tbSeek"><div class="track"><i></i></div><b></b></div><span id="tbRem">0:00</span></div>
+  </div>
+  <div class="tp-v">
+    <div class="tp-r2"><button type="button" class="bb-spd tb-spd" id="tbSpd" title="Speed" aria-label="Speed">1.00×</button></div>
+    <div class="tp-vol"><button type="button" class="gb" id="tbMute" title="Mute" aria-label="Mute">${IC.vol}</button><div class="mseek vol" id="tbVol"><div class="track"><i></i></div><b></b></div></div>
+  </div>`;
+const TB = (id) => tb.querySelector('#' + id);
+function mountTop() {
+  const top = document.getElementById('topbar'); if (!top || tb.isConnected) return;
+  top.insertBefore(tb, top.querySelector('.actions'));
+}
+let tbCover = null, tbDrag = false;
+function drawTop() {
+  mountTop();
+  const show = mode.book && !!B.item && !document.body.classList.contains('tab-music');
+  tb.classList.toggle('off', !show);
+  if (mode.book) document.body.classList.toggle('has-tp', show);
+  if (!show) return;
+  const it = B.item;
+  if (it.id !== tbCover) {
+    tbCover = it.id;
+    const im = TB('tbCover').querySelector('img');
+    im.classList.remove('in'); im.onload = () => im.classList.add('in'); im.onerror = () => im.classList.remove('in');
+    im.src = absCover(it, 120);
+  }
+  TB('tbTitle').textContent = it.media?.metadata?.title || '';
+  const play = TB('tbPlay'); const showPause = B.playing && B.started;
+  if (play.dataset.st !== String(showPause)) { play.dataset.st = String(showPause); play.innerHTML = showPause ? IC.pause : IC.play; play.title = showPause ? 'Pause' : 'Play'; }
+  const sp = TB('tbSpd'); sp.textContent = B.speed.toFixed(2) + '×'; sp.classList.toggle('on', B.speed !== 1);
+  TB('tbMute').innerHTML = M.muted || M.volume === 0 ? IC.muted : IC.vol;
+  setFill(TB('tbVol'), M.muted ? 0 : M.volume / 100);
+  drawTopProgress();
+}
+function drawTopProgress() {
+  if (tb.classList.contains('off')) return;
+  const c = curChapter();
+  TB('tbCh').textContent = c?.title || (B.item?.media?.metadata?.authorName || '');
+  if (tbDrag) return;
+  const { start, end } = span();
+  TB('tbPos').textContent = clock(B.pos - start); TB('tbRem').textContent = '-' + clock(end - B.pos);
+  setFill(TB('tbSeek'), (B.pos - start) / Math.max(1, end - start));
+}
+slider(TB('tbSeek'), (f) => { tbDrag = true; const { start, end } = span(); setFill(TB('tbSeek'), f); TB('tbPos').textContent = clock(f * (end - start)); TB('tbRem').textContent = '-' + clock((1 - f) * (end - start)); },
+  (f) => { tbDrag = false; const { start, end } = span(); seekBook(start + f * (end - start)); });
+slider(TB('tbVol'), (f) => { setVolume(f * 100); draw(); });
+TB('tbPlay').onclick = toggleBook;
+TB('tbBack').onclick = () => skip(-10);
+TB('tbFwd').onclick = () => skip(10);
+TB('tbMute').onclick = () => { toggleMute(); draw(); };
+TB('tbSpd').onclick = (e) => togglePop('speed', e.currentTarget);
+TB('tbCover').onclick = () => { location.hash = B.item ? `#/audiobooks/book/${encodeURIComponent(B.item.id)}` : '#/audiobooks'; };
+tb.addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap'); });
+// Tabs change the body class: slide the top player in or out.
+new MutationObserver(() => { if (mode.book) drawTop(); }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+// Starting a movie or episode pauses the book.
+window.addEventListener('video:start', () => { if (mode.book) pauseBook(); });
+
 // ---------- Pop-ups: speed, sleep timer, chapters ----------
 function togglePop(kind, anchor) {
   if (pop.dataset.kind === kind && !pop.classList.contains('off')) return closePop();
@@ -332,13 +401,14 @@ function togglePop(kind, anchor) {
   fillPop(kind);
   const r = anchor.getBoundingClientRect(), w = pop.offsetWidth;
   pop.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width / 2 - w / 2)) + 'px';
-  pop.style.bottom = (window.innerHeight - (bar.contains(anchor) ? bar.getBoundingClientRect().top : r.top) + 10) + 'px';
+  if (r.top < window.innerHeight / 2) { pop.style.top = (r.bottom + 10) + 'px'; pop.style.bottom = 'auto'; pop.classList.add('down'); }
+  else { pop.style.top = 'auto'; pop.style.bottom = (window.innerHeight - (bar.contains(anchor) ? bar.getBoundingClientRect().top : r.top) + 10) + 'px'; }
   document.querySelectorAll('.pop-on').forEach((b) => b.classList.remove('pop-on'));
   anchor.classList.add('pop-on');
   if (kind === 'chapters') pop.querySelector('.cur')?.scrollIntoView({ block: 'center' });
 }
 function closePop() { pop.classList.add('off'); document.querySelectorAll('.pop-on').forEach((b) => b.classList.remove('pop-on')); }
-document.addEventListener('pointerdown', (e) => { if (!pop.classList.contains('off') && !pop.contains(e.target) && !e.target.closest('#bbSpd,#bbSleep,#bbChap,#bnSpd,#bnSleep')) closePop(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.classList.contains('off') && !pop.contains(e.target) && !e.target.closest('#bbSpd,#bbSleep,#bbChap,#bnSpd,#bnSleep,#tbSpd')) closePop(); });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 
 const STOPS = Array.from({ length: Math.round((SPEED_MAX - SPEED_MIN) / SPEED_STEP) + 1 }, (_, i) => Math.round((SPEED_MIN + i * SPEED_STEP) * 100) / 100);

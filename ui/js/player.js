@@ -459,6 +459,7 @@ async function hideOverlay() {
 export async function startPlayback(id, opts = {}) {
   if (S.starting) return;
   S.starting = true;
+  window.dispatchEvent(new CustomEvent('video:start'));
   S.embedded = ls.get('playerMode', 'embedded') !== 'window';
   hideUpNext();
   showSkip(null);

@@ -315,7 +315,9 @@ mountTop();
 let tpCoverId = null;
 function drawTop() {
   mountTop();
-  const cur = mode.book ? null : current();
+  // While a book plays, bplayer.js shows its own top-bar player instead.
+  if (mode.book) { tp.classList.add('off'); return; }
+  const cur = current();
   const show = !!cur && !document.body.classList.contains('tab-music');
   tp.classList.toggle('off', !show);
   document.body.classList.toggle('has-tp', show);
