@@ -1821,3 +1821,15 @@ body:not(.tab-music) #tplayer:not(.off) { transition-delay: .14s; }
 .plrec-add:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.35); transform: scale(1.04); }
 .plrec-add:active { transform: scale(.95); }
 @media (max-width: 1100px) { .plrec-it { grid-template-columns: 44px minmax(0,1fr) 56px 86px; } .plrec-al { display: none; } }
+
+/* ---------- Switching between the audio tabs and Movies & TV ---------- */
+/* The bottom bar fades out quickly as it drops, so its edge never sweeps across the screen as a line. */
+body:not(.tab-music) #mbar { transition: transform .4s cubic-bezier(.4,0,.2,1), opacity .18s ease, border-color .1s; border-top-color: transparent; box-shadow: none; }
+/* The new screen cross-fades in just after the bar starts to leave, instead of popping in under it. */
+@keyframes tabIn { from { opacity: 0; transform: translateY(10px) scale(.995); } to { opacity: 1; transform: none; } }
+#view.entering.tabswap > * { animation: tabIn .46s cubic-bezier(.2,.8,.2,1) .08s both; }
+#view.entering.tabswap > .mshell { animation: tabIn .46s cubic-bezier(.2,.8,.2,1) .08s both; }
+#view.entering.tabswap .mmain > * { animation: none; }
+/* Home banner: the fade at the bottom reaches the page colour fully, with no seam underneath. */
+.hero-bg::after { inset: -1px 0 -3px; background: linear-gradient(90deg, var(--bg) 0%, rgba(18,12,12,.8) 32%, rgba(18,12,12,.15) 65%, rgba(18,12,12,0) 100%), linear-gradient(rgba(18,12,12,0) 50%, var(--bg) 94%); }
+.hero:not(.hero-wait) { background: var(--bg); }

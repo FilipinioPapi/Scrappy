@@ -83,6 +83,7 @@ function moveTabPill() {
 }
 window.addEventListener('resize', moveTabPill);
 
+let lastRouteName = '';
 async function route(opts = {}) {
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
@@ -95,8 +96,12 @@ async function route(opts = {}) {
   const notSigned = need && !session.servers?.[need]?.signedIn;
 
   topbar.hidden = name === 'login' || name === 'servers';
-  // The music player bar only lives on the Music tab; elsewhere it slides away.
-  document.body.classList.toggle('tab-music', name === 'music');
+  // The bottom player bar stays on the audio tabs (Music, Audiobooks); on Movies & TV it slides away
+  // and the small player shows in the top bar instead.
+  const audioTab = name === 'music' || name === 'audiobooks';
+  const swapped = document.body.classList.contains('tab-music') !== audioTab && !!lastRouteName;
+  lastRouteName = name;
+  document.body.classList.toggle('tab-music', audioTab);
   document.querySelectorAll('.tabs a').forEach((a) =>
     a.classList.toggle('active', a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
@@ -109,11 +114,12 @@ async function route(opts = {}) {
     window.scrollTo(0, 0);
     viewEl.classList.remove('quiet');
     // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
-    viewEl.classList.remove('entering');
+    viewEl.classList.remove('entering', 'tabswap');
     void viewEl.offsetWidth;
-    viewEl.classList.add('entering');
+    // Moving between the audio tabs and Movies & TV gets a softer, slightly longer cross-fade.
+    viewEl.classList.add('entering'); viewEl.classList.toggle('tabswap', swapped);
     clearTimeout(enterTimer);
-    enterTimer = setTimeout(() => viewEl.classList.remove('entering'), 700);
+    enterTimer = setTimeout(() => viewEl.classList.remove('entering', 'tabswap'), 900);
   }
   // Home says when its banner is ready; every other page is ready once drawn.
   if (!['home', undefined, ''].includes(name)) setTimeout(hideIntro, 0);
@@ -179,3 +185,11 @@ window.addEventListener('scrappy:refresh', () => {
 window.addEventListener('hashchange', () => route());
 mountSearch();
 route();
+
+// The Scrappy logo goes to the home screen of whichever tab you're on.
+document.querySelector('#topbar .brand')?.addEventListener('click', (e) => {
+  const tab = (location.hash.split('/')[1] || 'home');
+  const home = tab === 'music' ? '#/music' : tab === 'audiobooks' ? '#/audiobooks' : '#/home';
+  e.preventDefault();
+  if (location.hash === home) window.scrollTo({ top: 0, behavior: 'smooth' }); else location.hash = home;
+});
