@@ -868,7 +868,7 @@ select.pick:hover { border-color: var(--red-border); }
 #intro { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 45%, #2a0f11 0%, var(--bg) 60%); transition: opacity .42s ease, transform .5s var(--ease-out); }
 #intro.out { opacity: 0; transform: scale(1.05); pointer-events: none; }
 .intro-mid { text-align: center; }
-.intro-dog { display: block; width: 128px; height: 128px; margin: 0 auto; border-radius: 28px; box-shadow: 0 18px 40px rgba(0,0,0,.6); animation: introDog .55s cubic-bezier(.34,1.56,.64,1) both; }
+.intro-dog { display: block; width: 128px; height: 128px; margin: 0 auto; object-fit: contain; filter: drop-shadow(0 16px 22px rgba(0,0,0,.6)); animation: introDog .55s cubic-bezier(.34,1.56,.64,1) both; }
 @keyframes introDog { 0% { opacity: 0; transform: scale(.4) rotate(-12deg); } 60% { opacity: 1; transform: scale(1.1) rotate(4deg); } 80% { transform: scale(.96) rotate(-2deg); } 100% { transform: none; } }
 .intro-name { font-family: var(--display); color: var(--red); font-size: 58px; line-height: 1; margin-top: 20px; text-shadow: 0 3px 0 #000; animation: introUp .45s cubic-bezier(.34,1.56,.64,1) .18s both; }
 .intro-sub { font-size: 12px; font-weight: 800; letter-spacing: 3.8px; color: var(--muted); margin-top: 6px; animation: introUp .4s ease .28s both; }
