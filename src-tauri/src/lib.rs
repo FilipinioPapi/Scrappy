@@ -607,6 +607,7 @@ async fn play(
         "title": title,
         "playMethod": target.play_method,
         "embedded": embedded,
+        "defaults": target.defaults,
     }))
 }
 

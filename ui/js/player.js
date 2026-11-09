@@ -187,20 +187,44 @@ function findTrack(type, ref) {
     || null;
 }
 
-// Re-apply what was chosen last time for this show.
-function applyPrefs() {
-  const p = loadPrefs();
-  if (p.audio) {
-    const t = findTrack('audio', p.audio);
-    if (t && t.id !== S.aid) setProp('aid', t.id);
-  }
-  if (p.sub === 'off') setProp('sid', 'no');
-  else if (p.sub) {
-    const t = findTrack('sub', p.sub);
-    if (t && t.id !== S.sid) setProp('sid', t.id);
-  }
-  if (p.speed) setProp('speed', p.speed);
+// Pick the audio and subtitle tracks when a video starts:
+// 1. what you picked last time for this show, otherwise
+// 2. what Emby would pick for you (your Emby language settings and the file's defaults).
+// Tracks can show up late (subtitle files on the server are added after the video opens),
+// so this keeps trying for a few seconds until the wanted track appears.
+function wanted() {
+  const p = loadPrefs(), d = S.defaults || {};
+  return {
+    audio: p.audio || d.audio || null,
+    sub: p.sub || (d.subKnown ? (d.sub || 'off') : null),
+  };
 }
+function matchTrack(type, ref) {
+  const list = S.tracks.filter((t) => t.type === type);
+  if (ref.index != null) {
+    // Emby's stream number is the same as the file's, so it's exact unless Emby is converting the video.
+    if (ref.external) {
+      const ext = list.filter((t) => t.external);
+      return ext.find((t) => (t.title || '') === ref.displayTitle) || ext.find((t) => (t.lang || '') === ref.lang) || null;
+    }
+    if (S.playMethod !== 'Transcode') { const t = list.find((x) => !x.external && x['ff-index'] === ref.index); if (t) return t; }
+  }
+  return findTrack(type, ref);
+}
+function pickTracks() {
+  if (!S.pick || S.defaults === undefined || !S.tracks.length) return;
+  const w = wanted();
+  if (S.pick.audio) {
+    if (!w.audio) S.pick.audio = false;
+    else { const t = matchTrack('audio', w.audio); if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.pick.audio = false; } }
+  }
+  if (S.pick.sub) {
+    if (!w.sub) S.pick.sub = false;
+    else if (w.sub === 'off') { if (S.sid != null) setProp('sid', 'no'); }
+    else { const t = matchTrack('sub', w.sub); if (t) { if (t.id !== S.sid) setProp('sid', t.id); S.lastSid = t.id; S.pick.sub = false; } }
+  }
+}
+function stopPicking() { S.pick = null; }
 
 // ---------- Drawing ----------
 
@@ -410,6 +434,8 @@ export async function startPlayback(id, opts = {}) {
   }
   S.pos = opts.startSecs || 0; S.duration = 0; S.cache = 0; S.buffering = true;
   S.tracks = []; S.aid = null; S.sid = null; S.prefsApplied = false;
+  S.defaults = undefined; S.playMethod = ''; S.pick = { audio: true, sub: true };
+  clearTimeout(S.pickTimer);
   S.creditsHandled = false; S.introDismissed = false; S.previews = null;
   toggleEps(false);
   hideStill();
@@ -424,6 +450,8 @@ export async function startPlayback(id, opts = {}) {
       maxBitrate: S.quality ? Number(S.quality) : null,
     });
     S.item = res.item;
+    S.defaults = res.defaults || null; S.playMethod = res.playMethod || '';
+    pickTracks();
     readMarkers(res.item);
     drawTitle();
     if (!opts.keepItem) findNext(res.item);
@@ -545,6 +573,7 @@ listen('mpv-prop', ({ payload: { name, value } }) => {
       S.aid = a ? a.id : null;
       S.sid = s ? s.id : null;
       if (S.sid != null) S.lastSid = S.sid;
+      pickTracks();
       if (S.settingsOpen) drawSettings();
       drawButtons();
       break;
@@ -562,7 +591,10 @@ listen('player-loaded', ({ payload }) => {
   setProp('sub-scale', S.subScale);
   applyAspect();
   // External subtitles are added just after loading; give them a moment.
-  setTimeout(() => { if (!S.prefsApplied) { S.prefsApplied = true; applyPrefs(); } }, 700);
+  if (!S.prefsApplied) { S.prefsApplied = true; const sp = loadPrefs().speed; if (sp) setProp('speed', sp); }
+  pickTracks();
+  // Keep a lookout for late subtitle tracks, then stop. Subtitles set to "off" are held off the whole time.
+  clearTimeout(S.pickTimer); S.pickTimer = setTimeout(() => { pickTracks(); stopPicking(); }, 10000);
 });
 
 listen('player-ended', ({ payload }) => {
@@ -615,6 +647,7 @@ function cycleSpeed() {
 }
 
 function toggleSubs() {
+  if (S.pick) S.pick.sub = false;
   if (S.sid != null) {
     setProp('sid', 'no');
     savePrefs({ sub: 'off' });
@@ -643,11 +676,13 @@ el.querySelector('.p-settings').addEventListener('change', (e) => {
   const v = sel.value;
   switch (sel.dataset.set) {
     case 'audio': {
+      if (S.pick) S.pick.audio = false;
       setProp('aid', v);
       savePrefs({ audio: trackRef(S.tracks.find((t) => String(t.id) === v)) });
       break;
     }
     case 'sub': {
+      if (S.pick) S.pick.sub = false;
       setProp('sid', v);
       savePrefs({ sub: v === 'no' ? 'off' : trackRef(S.tracks.find((t) => String(t.id) === v)) });
       break;

@@ -315,6 +315,9 @@ pub struct PlayTarget {
     pub play_method: String,
     pub media_source_id: String,
     pub play_session_id: String,
+    /// The audio and subtitle tracks Emby would pick for this user (their language
+    /// settings, the file's default flags). Subtitle is null when Emby picks "off".
+    pub defaults: Value,
 }
 
 /// Ask Emby how to play an item and build the stream URL for mpv.
@@ -374,6 +377,26 @@ pub async fn playback_target(
         });
     }
 
+    // What Emby itself would pick for this user.
+    let streams = source["MediaStreams"].as_array().cloned().unwrap_or_default();
+    let describe = |idx: Option<i64>, kind: &str| -> Value {
+        let Some(i) = idx.filter(|i| *i >= 0) else { return Value::Null };
+        let Some(st) = streams.iter().find(|st| st["Index"].as_i64() == Some(i) && st["Type"].as_str() == Some(kind)) else { return Value::Null };
+        json!({
+            "index": i,
+            "lang": st["Language"].as_str().unwrap_or(""),
+            "title": st["Title"].as_str().unwrap_or(""),
+            "displayTitle": st["DisplayTitle"].as_str().unwrap_or(""),
+            "forced": st["IsForced"].as_bool().unwrap_or(false),
+            "external": st["IsExternal"].as_bool().unwrap_or(false),
+        })
+    };
+    let defaults = json!({
+        "audio": describe(source["DefaultAudioStreamIndex"].as_i64(), "Audio"),
+        "sub": describe(source["DefaultSubtitleStreamIndex"].as_i64(), "Subtitle"),
+        "subKnown": source.get("DefaultSubtitleStreamIndex").is_some(),
+    });
+
     let direct = !capped
         && (source["SupportsDirectPlay"].as_bool().unwrap_or(false)
             || source["SupportsDirectStream"].as_bool().unwrap_or(false));
@@ -390,6 +413,7 @@ pub async fn playback_target(
                 play_method: "DirectPlay".into(),
                 media_source_id,
                 play_session_id,
+                defaults: defaults.clone(),
             });
         }
     }
@@ -409,6 +433,7 @@ pub async fn playback_target(
             play_method: "DirectStream".into(),
             media_source_id,
             play_session_id,
+            defaults: defaults.clone(),
         });
     }
 
@@ -423,6 +448,7 @@ pub async fn playback_target(
             play_method: "Transcode".into(),
             media_source_id,
             play_session_id,
+            defaults: defaults.clone(),
         });
     }
 
