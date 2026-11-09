@@ -238,7 +238,7 @@ bar.id = 'mbar';
 bar.hidden = true;
 bar.innerHTML = `
   <div class="mb-now">
-    <button class="mb-cover" id="mbCover" title="Go to album"><img alt=""></button>
+    <button class="mb-cover" id="mbCover" title="Now playing"><img alt=""></button>
     <div class="mb-txt"><a class="mb-title" id="mbTitle"></a><div class="mb-sub" id="mbSub"></div></div>
     <button class="gb mb-fav" id="mbFav" title="Add to Favorites" aria-label="Add to Favorites"></button>
   </div>
@@ -319,7 +319,7 @@ $('mbShuf').onclick = toggleShuffle;
 $('mbRep').onclick = cycleRepeat;
 $('mbMute').onclick = toggleMute;
 $('mbFav').onclick = () => { const c = current(); if (c) setFavorite(c, !c.starred); };
-$('mbCover').onclick = () => { const c = current(); if (c?.albumId) location.hash = `#/music/album/${encodeURIComponent(c.albumId)}?song=${encodeURIComponent(c.id)}`; };
+$('mbCover').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: null }));
 $('mbLyr').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: 'lyrics' }));
 $('mbViz').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: 'viz' }));
 $('mbExp').onclick = () => window.dispatchEvent(new CustomEvent('music:now', { detail: null }));
