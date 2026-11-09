@@ -73,33 +73,43 @@ let playlistsCache = []; let playlistsLoaded = false;
 
 export const syncNow = () => syncRows();
 export function bump(entry) {
-  lib.rec = [entry, ...lib.rec.filter((r) => r.k !== entry.k)].slice(0, 40);
+  const rest = lib.rec.filter((r) => r.k !== entry.k);
+  lib.rec = [entry, ...rest.filter((r) => !lib.pins.includes(r.k)).slice(0, 39), ...rest.filter((r) => lib.pins.includes(r.k))];
   saveLib(); drawLib(true);
+}
+// Recents in the side menu = your listening history (the same list as Home's Listening history), newest first.
+const HK = { playlist: 'pl', album: 'al', artist: 'ar', song: 'sg', mix: 'mx', genre: 'gn' };
+function histEntry(h) {
+  const pre = HK[h.t]; if (!pre) return null;
+  return { k: pre + ':' + h.id, t: h.name, sub: h.sub || '', cv: h.cv, albumId: h.albumId, at: h.at };
 }
 function libEntries() {
   // Drop playlists that were deleted on the server (only once the list has loaded).
   const known = new Set(playlistsCache.map((p) => 'pl:' + p.id));
-  const rec = lib.rec.filter((r) => !r.k.startsWith('pl:') || r.k.startsWith('pl:auto:') || !playlistsLoaded || known.has(r.k))
-    .map((r) => { if (!r.k.startsWith('pl:')) return r; const p = playlistsCache.find((x) => 'pl:' + x.id === r.k); return p ? { ...r, ...plEntry(p) } : r; });
-  const seen = new Set(rec.map((r) => r.k));
-  // Playlists not played recently are still reachable when pinned.
+  const live = (r) => !r.k.startsWith('pl:') || r.k.startsWith('pl:auto:') || !playlistsLoaded || known.has(r.k);
+  const fresh = (r) => { if (!r.k.startsWith('pl:')) return r; const p = playlistsCache.find((x) => 'pl:' + x.id === r.k); return p ? { ...r, ...plEntry(p) } : r; };
+  const seenH = new Set();
+  const rec = history().map(histEntry).filter((r) => r && !seenH.has(r.k) && seenH.add(r.k)).filter(live).map(fresh);
+  // Pinned things stay reachable even after they fall out of history.
+  const kept = lib.rec.filter(live).map(fresh).filter((r) => !seenH.has(r.k));
+  const seen = new Set([...rec, ...kept].map((r) => r.k));
   const extra = playlistsCache.filter((p) => !seen.has('pl:' + p.id)).map(plEntry);
-  return { rec, all: [...rec, ...extra] };
+  return { rec, all: [...rec, ...kept, ...extra] };
 }
 const plEntry = (p) => ({ k: 'pl:' + p.id, t: p.name, sub: `Playlist · ${plural(p.songCount, 'song')}`, cv: p.coverArt });
-// Anything you play lands in Recents too: the album, playlist or artist it came from, or the song's album.
-window.addEventListener('music:played', (ev) => {
-  const { from, song: s0, count } = ev.detail || {}; if (!s0) return;
-  const t = from?.type === 'artistfav' ? 'artist' : from?.type;
-  if (t === 'playlist' && from.id) bump({ k: 'pl:' + from.id, t: from.name || 'Playlist', sub: `Playlist · ${plural(count, 'song')}`, cv: String(from.id).startsWith('auto:') ? s0.coverArt : 'pl-' + from.id });
-  else if (t === 'artist' && from.id) bump({ k: 'ar:' + from.id, t: from.name || s0.artist, sub: 'Artist', cv: 'ar-' + from.id });
-  else if (s0.albumId) bump({ k: 'al:' + s0.albumId, t: s0.album || from?.name || 'Album', sub: `Album · ${s0.artist || ''}`, cv: s0.coverArt });
-});
-export const kindOf = (k) => ({ pl: 'playlist', al: 'album', ar: 'artist' }[k.slice(0, 2)]);
+window.addEventListener('music:played', () => drawLib(true));
+export const kindOf = (k) => ({ pl: 'playlist', al: 'album', ar: 'artist', sg: 'song', mx: 'mix', gn: 'genre' }[k.slice(0, 2)]);
+const libHref = (e) => {
+  const kind = kindOf(e.k), id = e.k.slice(3);
+  if (kind === 'song') return e.albumId ? `${href('album', e.albumId)}?song=${encodeURIComponent(id)}` : '#/music/songs';
+  if (kind === 'mix') return '#/music';
+  if (kind === 'genre') return `#/music/genre/${encodeURIComponent(id)}`;
+  return href(kind, id);
+};
 
 function libItem(e, pinned) {
   const kind = kindOf(e.k);
-  return `<a class="mli${pinned ? ' pinned' : ''}" href="${href(kind, e.k.slice(3))}" data-k="${esc(e.k)}" title="${esc(e.t)}">
+  return `<a class="mli${pinned ? ' pinned' : ''}" href="${libHref(e)}" data-k="${esc(e.k)}" title="${esc(e.t)}">
     ${coverHtml(e.cv, '', 100, kind === 'artist' ? 'round' : '')}
     <div class="mli-txt"><div class="t1">${esc(e.t)}</div><div class="t2">${pinned ? `<span class="pinmark">${MI.pinOn}</span>` : ''}${esc(e.sub)}</div></div>
     <button type="button" class="mli-pin" data-pin="${esc(e.k)}" title="${pinned ? 'Unpin' : 'Pin to side menu'}" aria-label="${pinned ? 'Unpin' : 'Pin to side menu'}">${pinned ? MI.pinOn : MI.pin}</button>
@@ -170,6 +180,7 @@ function wireShell(root) {
     const p = e.target.closest('[data-pin]'); if (!p) return;
     e.preventDefault(); e.stopPropagation();
     const k = p.dataset.pin;
+    if (!lib.pins.includes(k)) { const e = libEntries().all.find((x) => x.k === k); if (e && !lib.rec.some((r) => r.k === k)) lib.rec = [e, ...lib.rec].slice(0, 60); }
     lib.pins = lib.pins.includes(k) ? lib.pins.filter((x) => x !== k) : [k, ...lib.pins];
     saveLib(); drawLib(true);
   });

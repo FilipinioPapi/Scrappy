@@ -81,7 +81,7 @@ export function history() { try { return JSON.parse(localStorage.getItem('mhist'
 function remember(songs, start, from) {
   const s0 = songs[start] || songs[0];
   let e;
-  if (from && from.type && from.type !== 'genremix') {
+  if (from && ['album', 'artist', 'artistfav', 'playlist', 'mix', 'genre'].includes(from.type) && from.id) {
     const t = from.type === 'artistfav' ? 'artist' : from.type;
     const cv = t === 'artist' ? 'ar-' + from.id : t === 'playlist' && !String(from.id).startsWith('auto:') ? 'pl-' + from.id : s0.coverArt;
     const sub = { album: `Album · ${s0.artist || ''}`, artist: 'Artist', playlist: `Playlist · ${songs.length} songs`, mix: `Mix · ${songs.length} songs`, genre: 'Genre' }[t] || '';
