@@ -25,12 +25,12 @@ async function prepImage(file) {
   return { bytes: new Uint8Array(await blob.arrayBuffer()), name: png ? 'cover.png' : 'cover.jpg' };
 }
 // Navidrome's web session can run out; then we ask for the password once and try again.
-async function withNdSession(run) {
+export async function withNdSession(run, why = 'Changing playlist art uses Navidrome\'s own sign-in. Scrappy doesn\'t keep your password.') {
   try { return await run(); } catch (e) {
     if (String(e) !== 'ND_NATIVE_EXPIRED') throw e;
     const { dialog } = await import('./menu.js');
     const ok = await new Promise((resolve) => {
-      const d = dialog('Confirm your Navidrome password', 'Changing playlist art uses Navidrome\'s own sign-in. Scrappy doesn\'t keep your password.',
+      const d = dialog('Confirm your Navidrome password', why,
         '<label class="fld"><span>Password</span><input type="password" id="ndpw" autocomplete="current-password"></label><div class="t2" id="ndpwErr"></div>',
         '<button type="button" class="btn secondary" id="ndpwNo">Cancel</button><button type="button" class="btn" id="ndpwGo">Continue</button>');
       const go = async () => { const b = d.$('#ndpwGo'); b.disabled = true; try { await api.ndReauth(d.$('#ndpw').value); d.close(); resolve(true); } catch (err) { d.$('#ndpwErr').textContent = String(err); b.disabled = false; } };

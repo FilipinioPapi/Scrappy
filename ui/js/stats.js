@@ -94,12 +94,6 @@ export async function statsPage(main, kind, alive) {
       const m = SOURCES[kind].build(raw, per);
       main.querySelector('#stxSub').textContent = m.sub || '';
       body.innerHTML = html(m);
-      const f = body.querySelector('#stxLb');
-      if (f) {
-        const setU = (u) => { try { u ? localStorage.setItem('lbUser', u) : localStorage.removeItem('lbUser'); } catch {} raw = null; draw(); };
-        f.onsubmit = (e) => { e.preventDefault(); setU(f.querySelector('input').value.trim()); };
-        f.querySelector('[data-lbclear]')?.addEventListener('click', () => setU(''));
-      }
     } catch (e) {
       if (!alive()) return;
       body.innerHTML = `<div class="empty">Couldn't load your stats: ${esc(e.message || String(e))}</div>`;
@@ -129,7 +123,6 @@ function html(m) {
     m.wk ? box('When you watch', m.wk.sub, `<div class="stx-wk"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hl">${h % 3 ? '' : (h % 12 || 12) + (h < 12 ? 'a' : 'p')}</span>`).join('')}${m.wk.rows.map((r) => `<span class="dl">${r.d}</span>${r.c.map((v) => `<i style="${v > 0.04 ? `background:rgba(236,40,46,${(0.15 + v * 0.85).toFixed(2)})` : ''}"></i>`).join('')}`).join('')}</div>`) : '',
     `<div class="stx-g2">${box(m.top.title, m.top.by, m.top.items.length ? list(m.top, true) : empty(m.top.none || 'Nothing yet.'))}${box(m.top2.title, '', m.top2.items.length ? list(m.top2, false) : empty(m.top2.none || 'Nothing yet.'))}</div>`,
     `<div class="stx-g2">${box('Top genres', m.genres.sub, m.genres.items.length ? `<div class="stx-gen">${m.genres.items.map((g) => `<div class="gr"><span class="nm">${esc(g.n)}</span><div class="tr"><i style="width:${Math.max(14, g.w * 100).toFixed(1)}%;${gStyle(g.n)}">${esc(g.v)}</i></div></div>`).join('')}</div>` : empty('No genres to show yet.'))}${box('Fun facts', '', `<div class="stx-fun">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Play a bit more and these fill in.')}</div>`)}</div>`,
-    m.lb ? box('ListenBrainz', 'optional: week, month and year charts with plays from every app', `<form class="stx-lb" id="stxLb"><input type="text" placeholder="Your ListenBrainz username" value="${esc(m.lb.user)}" spellcheck="false" autocomplete="off"><button type="submit" class="btn small">${m.lb.user ? 'Update' : 'Connect'}</button>${m.lb.user ? '<button type="button" class="btn secondary small" data-lbclear>Disconnect</button>' : ''}</form><div class="t2 stx-lbh">Turn on "Scrobble to ListenBrainz" in Navidrome (your user › Personal) and paste your token there. Only your username goes here.</div>`) : '',
     m.shelf ? box(m.shelf.title, m.shelf.sub, m.shelf.items.length ? `<div class="row stx-shelf">${m.shelf.items.map((x) => `<a class="stx-mini${x.wide ? ' wide' : ''}" href="${x.href || '#'}"><span class="art" style="--h:${x.hue || 0}"><b>${esc(x.t)}</b>${x.img ? `<img loading="lazy" src="${x.img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span><span class="m">${esc(x.m || '')}</span></a>`).join('')}</div>` : empty(m.shelf.none || 'Nothing yet.')) : '',
   ].join('');
 }
@@ -213,68 +206,51 @@ function absModel() {}
 absModel.load = absModel_load; absModel.build = absModel_build;
 
 // ---------- Music (Navidrome + Scrappy's own play log) ----------
-const LOG = 'playLog';
-/** mplayer.js calls this when a song counts as played (same rule as the scrobble). */
-export function logPlay(s) {
-  try {
-    const a = JSON.parse(localStorage.getItem(LOG) || '[]');
-    a.push({ t: Date.now(), id: s.id, ti: s.title, ar: s.artist, arId: s.artistId, al: s.album, alId: s.albumId, cv: s.coverArt, d: s.duration || 0, g: s.genre || '' });
-    if (a.length > 50000) a.splice(0, a.length - 50000);
-    localStorage.setItem(LOG, JSON.stringify(a));
-  } catch {}
-}
 const ndImg = (id, w = 120) => (id ? `${IMG_BASE}/nd/${encodeURIComponent(id)}?w=${w}` : '');
-async function musicModel_load() {
-  const { allSongs } = await import('./music.js');
-  const songs = await allSongs();
-  let log = []; try { log = JSON.parse(localStorage.getItem(LOG) || '[]'); } catch {}
-  const lbUser = localStorage.getItem('lbUser') || '';
-  let lbErr = '';
-  if (lbUser) {
-    try { log = lbToLog(await lbListens(lbUser), songs); } catch (e) { lbErr = String(e); }
-  }
-  return { songs, log, lbUser, lbErr };
-}
-// ListenBrainz: every play from every app (Navidrome forwards them). Kept on disk; only newer listens are fetched.
 const { invoke } = window.__TAURI__.core;
-async function lbListens(user) {
-  let c = null; try { c = JSON.parse(localStorage.getItem('lbCache') || 'null'); } catch {}
-  if (!c || c.user !== user) c = { user, l: [] };
-  const newest = c.l[0]?.[0] || 0, fresh = [];
-  let max = 0;
-  for (let page = 0; page < 30; page++) {
-    const r = await invoke('lb_listens', { user, maxTs: max });
-    const ls = r?.payload?.listens || [];
-    let done = false;
-    for (const x of ls) {
-      if (x.listened_at <= newest) { done = true; break; }
-      const m = x.track_metadata || {};
-      fresh.push([x.listened_at, m.track_name || '', m.artist_name || '', m.release_name || '', Math.round((m.additional_info?.duration_ms || 0) / 1000)]);
-    }
-    if (done || ls.length < 1000) break;
-    max = ls[ls.length - 1].listened_at;
+// Navidrome (0.59+) keeps a dated history of every play, from every app, for each user.
+// We keep a copy on disk and only ask for plays newer than the last one we have.
+async function ndHistory() {
+  const me = (await api.session())?.servers?.navidrome?.user || '';
+  let c = null; try { c = JSON.parse(localStorage.getItem('ndHist') || 'null'); } catch {}
+  if (!c || c.u !== me) c = { u: me, l: [] };
+  const newest = c.l.length ? c.l[c.l.length - 1][0] : 0;
+  const fresh = [];
+  for (let start = 0; start < 500000; start += 5000) {
+    const q = `/api/scrobble?_sort=submission_time&_order=ASC&_start=${start}&_end=${start + 5000}${newest ? `&from=${newest + 1}` : ''}`;
+    const r = await invoke('nd_native_get', { path: q });
+    const rows = Array.isArray(r?.data) ? r.data : [];
+    rows.forEach((x) => fresh.push([x.submissionTime, x.mediaFileId]));
+    if (rows.length < 5000) break;
   }
-  c.l = fresh.concat(c.l).slice(0, 60000);
-  try { localStorage.setItem('lbCache', JSON.stringify(c)); } catch {}
+  c.l = c.l.concat(fresh);
+  try { localStorage.setItem('ndHist', JSON.stringify(c)); } catch {}
   return c.l;
 }
-/** Turn listens into play-log entries, matched to songs in your library for covers, links and genres. */
-function lbToLog(listens, songs) {
-  const key = (t, a) => (String(t).toLowerCase().replace(/[^a-z0-9]/g, '') + '|' + String(a).toLowerCase().replace(/[^a-z0-9]/g, ''));
-  const by = new Map(songs.map((s) => [key(s.title, s.artist), s]));
-  return listens.map(([t, ti, ar, al, d]) => {
-    const s = by.get(key(ti, ar));
-    return s ? { t: t * 1000, id: s.id, ti: s.title, ar: s.artist, arId: s.artistId, al: s.album, alId: s.albumId, cv: s.coverArt, d: s.duration || d, g: s.genre || '' }
-      : { t: t * 1000, id: 'lb:' + key(ti, ar), ti, ar, al, alId: al ? 'lb:' + al : '', d: d || 210, g: '' };
-  }).reverse();
+async function musicModel_load() {
+  const m = await import('./music.js');
+  const songs = await m.allSongs();
+  let hist = [], histErr = '';
+  try { hist = await ndHistory(); }
+  catch (e) {
+    const err = String(e);
+    if (err === 'ND_NATIVE_EXPIRED') {
+      // Navidrome's web session ran out: ask for the password once, then try again.
+      try { const { withNdSession } = await import('./music2.js'); hist = await withNdSession(ndHistory, 'Your weekly, monthly and yearly music stats use Navidrome\'s own sign-in. Scrappy doesn\'t keep your password.'); }
+      catch { histErr = 'expired'; }
+    } else histErr = err === 'ND_TOO_OLD' ? 'old' : err;
+  }
+  const by = new Map(songs.map((s) => [s.id, s]));
+  const log = hist.map(([t, id]) => { const s = by.get(id); return s ? { t: t * 1000, id, ti: s.title, ar: s.artist, arId: s.artistId, al: s.album, alId: s.albumId, cv: s.coverArt, d: s.duration || 0, g: s.genre || '' } : { t: t * 1000, id, ti: 'Removed song', ar: '', al: '', alId: '', d: 0, g: '' }; });
+  return { songs, log, histErr };
 }
-function musicModel_build({ songs, log, lbUser, lbErr }, p) {
+function musicModel_build({ songs, log, histErr }, p) {
   const all = p === 'all';
   const s0 = startOf(p), [ps, pe] = prevRange(p);
   // One list of "plays" either way: Navidrome's lifetime counts, or dated plays from the log.
   let plays;
   if (all) plays = songs.filter((s) => s.playCount > 0).map((s) => ({ n: s.playCount, id: s.id, ti: s.title, ar: s.artist, arId: s.artistId, al: s.album, alId: s.albumId, cv: s.coverArt, d: s.duration || 0, g: s.genre || '' }));
-  else { const m = new Map(); log.filter((x) => x.t >= s0).forEach((x) => { const o = m.get(x.id) || { ...x, n: 0 }; o.n++; m.set(x.id, o); }); plays = [...m.values()]; }
+  else { const m = new Map(); log.filter((x) => x.t >= s0 && x.alId).forEach((x) => { const o = m.get(x.id) || { ...x, n: 0 }; o.n++; m.set(x.id, o); }); plays = [...m.values()]; }
   const count = plays.reduce((a, x) => a + x.n, 0);
   const secs = plays.reduce((a, x) => a + x.n * x.d, 0);
   const prevCount = all ? 0 : log.filter((x) => x.t >= ps && x.t < pe).length;
@@ -291,18 +267,17 @@ function musicModel_build({ songs, log, lbUser, lbErr }, p) {
   const repSong = rep && log.find((x) => x.id === rep[0].split('|')[1]);
   const fav = songs.filter((s) => s.starred).length, never = songs.filter((s) => !s.playCount).length;
   return {
-    sub: all ? 'From Navidrome, plays from every app' : lbUser && !lbErr ? 'From ListenBrainz' : 'Counted by Scrappy',
-    chip: all ? '' : lbUser && !lbErr ? `From ListenBrainz (${lbUser}): plays from every app${firstLog ? ` since ${new Date(firstLog).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}.` : `${lbErr ? `Couldn't reach ListenBrainz (${lbErr}). ` : ''}Navidrome only keeps all-time counts, so these are the plays Scrappy has counted itself${firstLog ? ` since ${new Date(firstLog).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : ' (starting now)'}. Plays from your phone show up under All time, or here too once ListenBrainz is set up below.`,
-    lb: all ? null : { user: lbUser },
+    sub: 'From Navidrome, plays from every app',
+    chip: all || !histErr ? '' : histErr === 'old' ? 'Week, month and year need Navidrome 0.59 or newer, which keeps a dated play history. Update Navidrome and these fill in from then on.' : histErr === 'expired' ? "Couldn't read your play history because Navidrome's sign-in ran out. Open this page again to sign in." : `Couldn't read your play history from Navidrome (${histErr}).`,
     cards: [
       { hot: true, k: 'PLAYS', v: n0(count), d: all ? { t: 'from every app', c: 'n' } : vs(count, prevCount, p), g: '▶' },
-      { k: 'LISTENING TIME', v: n0(secs / 3600), u: ' hours', d: { t: `about ${plural(secs / 86400, 'day')}`, c: 'n' }, g: '⏱' },
+      { k: 'LISTENING TIME', v: n0(secs / 3600), u: ' hours', d: { t: secs < 86400 ? `${n0(secs / 60)} minutes in all` : `about ${plural(secs / 86400, 'day')}`, c: 'n' }, g: '⏱' },
       { k: 'ARTISTS', v: n0(artists.length), d: { t: all ? 'played at least once' : 'played ' + perWord(p), c: 'n' }, g: '🎤' },
       { k: 'SONGS', v: n0(plays.length), d: { t: all ? `of ${n0(songs.length)} in your library` : 'different songs', c: 'n' }, g: '♪' },
     ],
     bars: all ? null : { title: 'Listening time', sub: chartSub(p), list: buckets(pts, p, hm) },
-    top: { title: 'Top artists', by: 'by plays', none: all ? 'No plays yet.' : `Nothing played in Scrappy ${perWord(p)}.`, items: artists.slice(0, 6).map((a) => ({ a: a.k, b: '', shape: 'rd', img: a.id ? ndImg(a.id) : ndImg(a.cv), hue: hue(a.k), w: a.n / (artists[0]?.n || 1), v: plural(a.n, 'play'), href: a.id ? `#/music/artist/${encodeURIComponent(a.id)}` : '' })) },
-    top2: { title: 'Top songs', items: top.slice(0, 6).map((s) => ({ a: s.ti, b: s.ar, img: ndImg(s.cv), hue: hue(s.ti), v: plural(s.n, 'play'), href: s.alId && !String(s.alId).startsWith('lb:') ? `#/music/album/${encodeURIComponent(s.alId)}?song=${encodeURIComponent(s.id)}` : '' })) },
+    top: { title: 'Top artists', by: 'by plays', none: `Nothing played ${perWord(p)}.`, items: artists.slice(0, 6).map((a) => ({ a: a.k, b: '', shape: 'rd', img: a.id ? ndImg(a.id) : ndImg(a.cv), hue: hue(a.k), w: a.n / (artists[0]?.n || 1), v: plural(a.n, 'play'), href: a.id ? `#/music/artist/${encodeURIComponent(a.id)}` : '' })) },
+    top2: { title: 'Top songs', items: top.slice(0, 6).map((s) => ({ a: s.ti, b: s.ar, img: ndImg(s.cv), hue: hue(s.ti), v: plural(s.n, 'play'), href: s.alId ? `#/music/album/${encodeURIComponent(s.alId)}?song=${encodeURIComponent(s.id)}` : '' })) },
     genres: { sub: 'share of your plays', items: gen.slice(0, 6).map((g) => ({ n: g.k, w: g.n / (gen[0]?.n || 1), v: Math.round((g.n / gTot) * 100) + '%' })) },
     facts: [
       { k: 'Most played album', v: albums[0]?.name || '', s: albums[0] ? plural(albums[0].n, 'play') : '' },
@@ -310,7 +285,7 @@ function musicModel_build({ songs, log, lbUser, lbErr }, p) {
       { k: 'Favourites', v: fav ? plural(fav, 'song') : '', s: 'hearted songs' },
       { k: 'Never played', v: never ? plural(never, 'song') : '', s: 'try "is:unplayed" in search' },
     ],
-    shelf: { title: 'Top albums', sub: (all ? 'all time' : perWord(p)) + ', by plays', none: 'No albums played yet.', items: albums.slice(0, 20).map((a) => ({ t: a.name, img: ndImg(a.cv, 200), hue: hue(a.name), m: plural(a.n, 'play'), href: String(a.k).startsWith('lb:') ? '' : `#/music/album/${encodeURIComponent(a.k)}` })) },
+    shelf: { title: 'Top albums', sub: (all ? 'all time' : perWord(p)) + ', by plays', none: 'No albums played yet.', items: albums.slice(0, 20).map((a) => ({ t: a.name, img: ndImg(a.cv, 200), hue: hue(a.name), m: plural(a.n, 'play'), href: `#/music/album/${encodeURIComponent(a.k)}` })) },
   };
 }
 function musicModel() {}

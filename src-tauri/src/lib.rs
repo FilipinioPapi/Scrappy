@@ -305,6 +305,21 @@ async fn nd_playlist_image(state: State<'_, AppState>, id: String, bytes: Option
     Ok(())
 }
 
+/// Read from Navidrome's own API; keeps its session fresh.
+#[tauri::command]
+async fn nd_native_get(state: State<'_, AppState>, path: String) -> Result<Value, String> {
+    let cfg = state.cfg();
+    let (body, total, fresh) = servers::nd_native_get(&state.http, &cfg, &path).await?;
+    if let Some(f) = fresh {
+        if !f.is_empty() && f != cfg.nd_jwt {
+            let mut c = state.cfg.lock().unwrap();
+            c.nd_jwt = f;
+            let _ = c.save(&state.cfg_path);
+        }
+    }
+    Ok(serde_json::json!({ "data": body, "total": total }))
+}
+
 /// Confirm the Navidrome password again (only needed when its web session ran out).
 #[tauri::command]
 async fn nd_reauth(state: State<'_, AppState>, password: String) -> Result<(), String> {
@@ -315,11 +330,6 @@ async fn nd_reauth(state: State<'_, AppState>, password: String) -> Result<(), S
     c.nd_token = token;
     c.nd_jwt = jwt;
     c.save(&state.cfg_path)
-}
-
-#[tauri::command]
-async fn lb_listens(state: State<'_, AppState>, user: String, max_ts: i64) -> Result<Value, String> {
-    servers::lb_listens(&state.http, &user, max_ts).await
 }
 
 #[tauri::command]
@@ -1118,7 +1128,7 @@ pub fn run() {
             nd_playlist_image,
             nd_reauth,
             lyrics_find,
-            lb_listens,
+            nd_native_get,
             music::music_play,
             music::music_upnext,
             music::music_command,

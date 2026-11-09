@@ -113,17 +113,25 @@ pub async fn nd_playlist_image(http: &reqwest::Client, cfg: &Config, id: &str, i
     }
 }
 
-/// Look up lyrics on LRCLIB (free, no account). Prefers time-synced lyrics.
-/// One page (up to 1000) of a user's ListenBrainz listens, newest first, older than `max_ts` (0 = now).
-pub async fn lb_listens(http: &reqwest::Client, user: &str, max_ts: i64) -> Result<Value, String> {
-    let mut url = format!("https://api.listenbrainz.org/1/user/{}/listens?count=1000", enc(user));
-    if max_ts > 0 { url.push_str(&format!("&max_ts={max_ts}")); }
-    let r = http.get(&url).header("User-Agent", "Scrappy Media Center (personal music player)").send().await.map_err(friendly_error)?;
-    if r.status().as_u16() == 404 { return Err("That ListenBrainz user wasn't found.".into()); }
-    if !r.status().is_success() { return Err(format!("ListenBrainz said {}", r.status())); }
-    r.json::<Value>().await.map_err(|e| e.to_string())
+/// GET from Navidrome's own API (e.g. /api/scrobble). Returns (body, total from X-Total-Count, refreshed session token).
+pub async fn nd_native_get(http: &reqwest::Client, cfg: &Config, path: &str) -> Result<(Value, i64, Option<String>), String> {
+    if cfg.nd_jwt.is_empty() {
+        return Err("ND_NATIVE_EXPIRED".into());
+    }
+    let r = http.get(format!("{}{}", cfg.nd_server, path))
+        .header("X-ND-Authorization", format!("Bearer {}", cfg.nd_jwt))
+        .send().await.map_err(friendly_error)?;
+    let fresh = r.headers().get("x-nd-authorization").and_then(|h| h.to_str().ok()).map(|s| s.trim_start_matches("Bearer ").to_string());
+    let total = r.headers().get("x-total-count").and_then(|h| h.to_str().ok()).and_then(|s| s.parse().ok()).unwrap_or(-1);
+    match r.status().as_u16() {
+        200..=299 => Ok((r.json().await.map_err(|e| e.to_string())?, total, fresh)),
+        401 => Err("ND_NATIVE_EXPIRED".into()),
+        404 | 405 => Err("ND_TOO_OLD".into()),
+        s => Err(format!("Navidrome said {s}")),
+    }
 }
 
+/// Look up lyrics on LRCLIB (free, no account). Prefers time-synced lyrics.
 pub async fn lyrics_find(http: &reqwest::Client, artist: &str, title: &str, album: &str, duration: u64) -> Result<Value, String> {
     let ua = "Scrappy Media Center (personal music player)";
     let get = format!(
