@@ -1706,3 +1706,6 @@ body:not(.tab-music) #tplayer:not(.off) { transition-delay: .14s; }
 #tpShuf.on, #tpRep.on { color: var(--red); }
 #tpRep { position: relative; }
 #tpRep .one { right: 1px; top: 0; }
+/* Now playing record slides fully out to the right, like the album page */
+.mn-art { width: min(280px, 30vh); }
+.mn-art .vin { transform: translateX(56%); }
