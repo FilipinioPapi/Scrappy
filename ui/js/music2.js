@@ -234,7 +234,7 @@ EXTRA.playlist = async (v, id) => {
           <div class="meta" id="plMeta"></div></div></div></div>
     <div class="mbtns plbtns"><button type="button" class="arplay" id="plPlay" aria-label="Play" data-playctx="playlist:${esc(id)}">${IC.play}</button><button type="button" class="gb sq" id="plShuf" aria-label="Shuffle">${IC.shuffle}</button>
       ${canEdit ? `<button type="button" class="btn secondary sm" id="plEdit">${PEN}<span>Edit</span></button>` : ''}<button type="button" class="gb sq" id="plMore" aria-label="More">${IC.more}</button></div>
-    <div class="stable pltable" id="plSongs"></div></div>
+    <div class="stable pltable" id="plSongs"></div><div id="plRec"></div></div>
     <aside class="pldrawer" id="plDrawer" hidden></aside></div>`;
   const table = main.querySelector('#plSongs');
   const drawMeta = () => { const t = songs.reduce((n, s) => n + (s.duration || 0), 0); main.querySelector('#plMeta').innerHTML = [plural(songs.length, 'song'), totalTime(t), pl ? ago(pl.changed) : ''].filter(Boolean).map((x) => `<b>${esc(x)}</b>`).join('<i class="dot">•</i>'); };
@@ -331,6 +331,45 @@ EXTRA.playlist = async (v, id) => {
       drawTable(); save();
     };
   }
+  // ----- Recommended songs: similar-vibe songs to add, 10 at a time -----
+  const recBox = main.querySelector('#plRec');
+  const REFRESH = line('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>', 15);
+  let recPool = [], recOff = 0;
+  const recShown = () => { const have = new Set(songs.map((x) => x.id)); return recPool.filter((x) => !have.has(x.id)); };
+  const drawRec = (anim) => {
+    const left = recShown();
+    if (!left.length) { recBox.innerHTML = ''; return; }
+    if (recOff >= left.length) recOff = 0;
+    const pick = left.slice(recOff, recOff + 10);
+    recBox.innerHTML = `<section class="plrec"><div class="plrec-h"><div><h2>Recommended songs</h2><div class="t2">${songs.length ? 'Based on what is in this playlist' : 'Your most played songs, to get you started'}</div></div>
+      <button type="button" class="plrefresh" id="plRecRefresh">${REFRESH}<span>Refresh</span></button></div>
+      <div class="plrec-l${anim ? ' swap' : ''}">${pick.map((x) => `<div class="plrec-it" data-id="${esc(x.id)}"><button type="button" class="plrec-cv" aria-label="Play">${coverHtml(x.coverArt, '', 100, 'sm')}<span class="pp">${IC.play}</span></button>
+        <div class="qt"><div class="t1">${esc(x.title)}</div><div class="t2">${esc(x.artist || '')}</div></div><span class="t2 plrec-al">${esc(x.album || '')}</span><span class="t2 plrec-d">${fmt(x.duration || 0)}</span>
+        <button type="button" class="plrec-add" title="Add to this playlist">${MI.plus}<span>Add</span></button></div>`).join('')}</div></section>`;
+    recBox.querySelector('#plRecRefresh').onclick = () => { recOff += 10; if (recOff >= recShown().length) { recOff = 0; recPool = shuffleArr(recPool); } drawRec(true); };
+  };
+  recBox.addEventListener('click', (e) => {
+    const it = e.target.closest('.plrec-it'); if (!it) return;
+    const x = recPool.find((y) => y.id === it.dataset.id); if (!x) return;
+    if (e.target.closest('.plrec-cv')) { playSongs([x], 0, { shuffle: false }); return; }
+    if (!e.target.closest('.plrec-add')) return;
+    it.classList.add('gone');
+    setTimeout(() => { songs.push(x); drawTable(); save(); drawRec(false); toast(`Added "${x.title}".`); }, 260);
+  });
+  (async () => {
+    const have = new Set(songs.map((x) => x.id)), score = new Map();
+    const put = (arr, w) => (arr || []).forEach((x) => { if (x && x.id && !have.has(x.id)) score.set(x.id, { x, s: (score.get(x.id)?.s || 0) + w + Math.random() * 0.5 }); });
+    const seeds = shuffleArr(songs).slice(0, 4);
+    await Promise.all(seeds.map((x) => nd('getSimilarSongs2', { id: x.id, count: 15 }).then((r) => put(r.similarSongs2?.song, 3)).catch(() => {})));
+    const artists = [...new Set(songs.map((x) => x.artist).filter(Boolean))].slice(0, 5);
+    await Promise.all(artists.map((a) => nd('getTopSongs', { artist: a, count: 10 }).then((r) => put(r.topSongs?.song, 2)).catch(() => {})));
+    const genres = Object.entries(songs.reduce((m, x) => (x.genre ? ((m[x.genre] = (m[x.genre] || 0) + 1), m) : m), {})).sort((a, b) => b[1] - a[1]).slice(0, 2).map((g) => g[0]);
+    await Promise.all(genres.map((g) => nd('getSongsByGenre', { genre: g, count: 40 }).then((r) => put(shuffleArr(r.songsByGenre?.song || []).slice(0, 15), 1)).catch(() => {})));
+    if (score.size < 10) await nd('getRandomSongs', { size: 30 }).then((r) => put(r.randomSongs?.song, 0)).catch(() => {});
+    if (!alive()) return;
+    recPool = variety([...score.values()].sort((a, b) => b.s - a.s).map((o) => o.x), 3, 30).slice(0, 50);
+    drawRec(false);
+  })();
   if (params.get('edit') === '1') setEditing(true);
   syncNow(); ready();
 };

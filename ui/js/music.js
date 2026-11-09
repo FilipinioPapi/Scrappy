@@ -28,6 +28,7 @@ export const MI = {
   addq: line('<path d="M4 6h12M4 11h12M4 16h7"/><path d="M17 14v6M14 17h6"/>', 18),
   list: line('<path d="M4 6h12M4 11h12M4 16h7"/><path d="M19 8v8.5"/><circle cx="16.5" cy="17" r="2.5"/>', 18),
   check: line('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 14),
+  chev: line('<path d="M9 6l6 6-6 6"/>', 14),
   grip: '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><g fill="currentColor"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></g></svg>',
   note: line('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>', 12),
   playlist: line('<path d="M4 6h11M4 11h11M4 16h7"/><circle cx="17" cy="17" r="2.5"/><path d="M19.5 17V8l2-1"/>', 12),
@@ -269,57 +270,225 @@ menuEl.className = 'ctx-menu mmenu'; menuEl.hidden = true;
 document.body.appendChild(menuEl);
 document.addEventListener('pointerdown', (e) => { if (!menuEl.hidden && !menuEl.contains(e.target)) menuEl.hidden = true; }, true);
 window.addEventListener('hashchange', () => (menuEl.hidden = true));
-function openMenu(items, anchor, x, y) {
-  menuEl.innerHTML = items.map((it, i) => it === '-' ? '<div class="ctx-sep"></div>' : `<button type="button" class="ctx-item${it.cls ? ' ' + it.cls : ''}" data-i="${i}">${it.icon || ''}<span>${esc(it.label)}</span></button>`).join('');
+// Right-click menus, as drawn on the approved boards: a header, four quick buttons, then a list.
+// Items can open a flyout (used for Add to playlist).
+function openMenu(spec, anchor, x, y) {
+  if (Array.isArray(spec)) spec = { items: spec };
+  const { title, sub, quick = [], items = [] } = spec;
+  const flat = [...quick, ...items];
+  const idx = (it) => flat.indexOf(it);
+  menuEl.innerHTML = (title ? `<div class="cmt"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>` : '')
+    + (quick.length ? `<div class="cmq">${quick.map((q, i) => `<button type="button" class="cqb${i === 0 ? ' pri' : ''}" data-i="${idx(q)}"><span class="icw">${q.icon || ''}</span><span>${esc(q.label)}</span></button>`).join('')}</div>` : '')
+    + items.map((it) => it === '-' ? '<div class="ctx-sep"></div>'
+      : it.flyout ? `<div role="button" tabindex="0" class="ctx-item has-fly" data-i="${idx(it)}">${it.icon || ''}<span>${esc(it.label)}</span><i class="cmh">${MI.chev}</i><div class="cms"></div></div>`
+      : `<button type="button" class="ctx-item${it.cls ? ' ' + it.cls : ''}" data-i="${idx(it)}">${it.icon || ''}<span>${esc(it.label)}</span></button>`).join('');
   menuEl.hidden = false;
+  menuEl.classList.toggle('rich', !!(title || quick.length));
   const r = anchor ? anchor.getBoundingClientRect() : { left: x, right: x, bottom: y, top: y };
   const w = menuEl.offsetWidth, h = menuEl.offsetHeight;
-  menuEl.style.left = Math.max(8, Math.min(innerWidth - w - 8, (anchor ? r.right - w : x))) + 'px';
+  const left = Math.max(8, Math.min(innerWidth - w - 8, (anchor ? r.right - w : x)));
+  menuEl.style.left = left + 'px';
   menuEl.style.top = (r.bottom + h + 8 > innerHeight ? Math.max(8, r.top - h - 6) : r.bottom + 6) + 'px';
+  menuEl.classList.toggle('fly-left', left + w + 230 > innerWidth);
   menuEl.classList.remove('pop'); void menuEl.offsetWidth; menuEl.classList.add('pop');
-  menuEl.onclick = (e) => { const b = e.target.closest('[data-i]'); if (!b) return; menuEl.hidden = true; items[+b.dataset.i].run(); };
+  // Fill flyouts when hovered (or clicked).
+  menuEl.querySelectorAll('.has-fly').forEach((b) => {
+    const box = b.querySelector('.cms');
+    const fit = () => { box.style.top = ''; const r = box.getBoundingClientRect(); if (r.bottom > innerHeight - 8) box.style.top = (-7 - (r.bottom - innerHeight + 8)) + 'px'; };
+    const fill = async () => { b.classList.add('hov'); if (!box.dataset.ready) { box.dataset.ready = '1'; await flat[+b.dataset.i].flyout(box); } fit(); };
+    b.addEventListener('mouseenter', fill); b.addEventListener('click', fill);
+    box.addEventListener('click', (e) => e.stopPropagation());
+  });
+  menuEl.querySelectorAll('.ctx-item:not(.has-fly), .cqb').forEach((x) => x.addEventListener('mouseenter', () => menuEl.querySelectorAll('.has-fly.hov').forEach((f) => f.classList.remove('hov'))));
+  menuEl.onclick = (e) => { const bt = e.target.closest('[data-i]'); if (!bt || e.target.closest('.cms')) return; const it = flat[+bt.dataset.i]; if (it.flyout && !it.run) return; menuEl.hidden = true; it.run(); };
 }
+// Which songs each playlist already holds (so the flyout and picker can show ticks).
+const plIds = new Map();
+async function plSongs(id) {
+  if (!plIds.has(id)) plIds.set(id, nd('getPlaylist', { id }).then((r) => (r.playlist?.entry || []).map((e) => e.id)).catch(() => []));
+  return plIds.get(id);
+}
+const forgetPl = (id) => (id ? plIds.delete(id) : plIds.clear());
+const plDate = (p) => String(p.changed || p.created || '');
+const editable = () => playlistsCache.filter((p) => !p.readonly);
+const holdsAll = (ids, songs) => songs.length > 0 && songs.every((x) => ids.includes(x.id));
+async function addSongsTo(p, songs) {
+  const have = await plSongs(p.id); const add = songs.filter((x) => !have.includes(x.id));
+  if (!add.length) { toast(`Already in "${p.name}".`); return; }
+  await nd('updatePlaylist', `playlistId=${encodeURIComponent(p.id)}&${add.map((x) => 'songIdToAdd=' + encodeURIComponent(x.id)).join('&')}`);
+  forgetPl(p.id); refreshPlaylists();
+}
+async function removeSongsFrom(p, songs) {
+  const have = await plSongs(p.id); const set = new Set(songs.map((x) => x.id));
+  const idx = have.map((id, k) => (set.has(id) ? k : -1)).filter((k) => k >= 0);
+  if (!idx.length) return;
+  await nd('updatePlaylist', `playlistId=${encodeURIComponent(p.id)}&${idx.map((k) => 'songIndexToRemove=' + k).join('&')}`);
+  forgetPl(p.id); refreshPlaylists();
+}
+// Add to playlist flyout: find box, New playlist, your 6 most recent playlists, All playlists.
+function playlistFlyout(getSongs) {
+  return async (box) => {
+    box.innerHTML = `<label class="fsrch">${MI.search}<input type="text" placeholder="Find a playlist" aria-label="Find a playlist"></label>
+      <div class="fit" data-new="1"><span class="nw">${MI.plus}</span><span class="fall">New playlist</span></div><div class="ctx-sep"></div>
+      <div class="flbl">RECENT</div><div class="flist"><div class="fit dim">Loading…</div></div><div class="ctx-sep"></div>
+      <div class="fit" data-all="1"><span class="nw">${MI.list}</span><span class="fall">All playlists…</span><i class="cmh">${MI.chev}</i></div>`;
+    if (!playlistsLoaded) await refreshPlaylists();
+    const list = box.querySelector('.flist'), lbl = box.querySelector('.flbl'), inp = box.querySelector('input');
+    const songsP = getSongs();
+    const draw = async () => {
+      const q = inp.value.trim().toLowerCase();
+      const pls = q ? editable().filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8) : editable().sort((a, b) => plDate(b).localeCompare(plDate(a))).slice(0, 6);
+      lbl.textContent = q ? 'MATCHES' : 'RECENT';
+      list.innerHTML = pls.length ? pls.map((p) => `<div class="fit" data-id="${esc(p.id)}">${coverHtml(p.coverArt, p.name, 80, 'pc')}<span class="fn">${esc(p.name)}</span><span class="ok" hidden>${MI.check}</span></div>`).join('') : `<div class="fit dim">${q ? 'No playlists match' : 'No playlists yet'}</div>`;
+      const songs = await songsP;
+      pls.forEach(async (p) => { const ids = await plSongs(p.id); const el = list.querySelector(`[data-id="${CSS.escape(p.id)}"] .ok`); if (el) el.hidden = !holdsAll(ids, songs); });
+    };
+    inp.addEventListener('input', draw);
+    inp.addEventListener('keydown', (e) => e.stopPropagation());
+    box.addEventListener('click', async (e) => {
+      const f = e.target.closest('.fit'); if (!f || f.classList.contains('dim')) return;
+      menuEl.hidden = true;
+      const songs = await songsP;
+      if (f.dataset.new) return newPlaylistFrom(songs);
+      if (f.dataset.all) return addToPlaylist(songs);
+      const p = editable().find((x) => x.id === f.dataset.id); if (!p) return;
+      try { await addSongsTo(p, songs); if (!f.querySelector('.ok:not([hidden])')) toast(`Added to "${p.name}".`); } catch (err) { toast(String(err), true); }
+    });
+    draw();
+  };
+}
+async function newPlaylistFrom(songs) {
+  const name = prompt('Name your new playlist', 'New playlist'); if (!name) return false;
+  try { await nd('createPlaylist', `name=${encodeURIComponent(name)}&${songs.map((x) => 'songId=' + encodeURIComponent(x.id)).join('&')}`); toast(`Made "${name}".`); refreshPlaylists(); return true; } catch (err) { toast(String(err), true); return false; }
+}
+const albumSongs = async (id) => (await nd('getAlbum', { id })).album?.song || [];
 export function songMenu(s, anchor, x, y) {
-  openMenu([
-    { label: 'Play next', icon: MI.next, run: () => playNext([s]) },
-    { label: 'Add to queue', icon: MI.addq, run: () => addToQueue([s]) },
-    { label: 'Add to playlist…', icon: MI.list, run: () => addToPlaylist([s]) },
-    '-',
-    { label: s.starred ? 'Remove from Favorites' : 'Add to Favorites', icon: s.starred ? IC.heartOn : IC.heart, cls: s.starred ? 'on' : '', run: () => setFavorite(s, !s.starred) },
-    { label: 'Go to album', icon: MI.album, run: () => (location.hash = href('album', s.albumId)) },
-    { label: 'Go to artist', icon: MI.artist, run: () => (location.hash = href('artist', s.artistId)) },
-  ], anchor, x, y);
+  const one = async () => [s];
+  openMenu({
+    title: s.title, sub: [s.artist, s.album].filter(Boolean).join(' · '),
+    quick: [
+      { label: 'Play now', icon: IC.play, run: () => playSongs([s], 0, { shuffle: false }) },
+      { label: 'Play next', icon: MI.next, run: () => playNext([s]) },
+      { label: 'Add to queue', icon: MI.addq, run: () => addToQueue([s]) },
+      { label: 'Queue album', icon: MI.album, run: async () => { try { addToQueue(await albumSongs(s.albumId)); toast('Whole album added to the queue.'); } catch (e) { toast(String(e), true); } } },
+    ],
+    items: [
+      { label: 'Add to playlist', icon: MI.list, flyout: playlistFlyout(one) },
+      { label: s.starred ? 'Remove from Favorites' : 'Add to Favorites', icon: s.starred ? IC.heartOn : IC.heart, cls: s.starred ? 'on' : '', run: () => setFavorite(s, !s.starred) },
+      '-',
+      { label: 'Go to album', icon: MI.album, run: () => (location.hash = href('album', s.albumId)) },
+      { label: 'Go to artist', icon: MI.artist, run: () => (location.hash = href('artist', s.artistId)) },
+      { label: 'Show lyrics', icon: IC.lyrics, run: () => { if (current()?.id !== s.id) playSongs([s], 0, { shuffle: false }); window.dispatchEvent(new CustomEvent('music:now', { detail: 'lyrics' })); } },
+    ],
+  }, anchor, x, y);
+}
+export function albumMenu(a, anchor, x, y) {
+  const songs = () => albumSongs(a.id);
+  const from = { type: 'album', id: a.id, name: a.name };
+  openMenu({
+    title: a.name, sub: ['Album', a.artist].filter(Boolean).join(' · '),
+    quick: [
+      { label: 'Play', icon: IC.play, run: async () => playSongs(await songs(), 0, { from, shuffle: false }) },
+      { label: 'Shuffle', icon: IC.shuffle, run: async () => playSongs(await songs(), 0, { from, shuffle: true }) },
+      { label: 'Play next', icon: MI.next, run: async () => playNext(await songs()) },
+      { label: 'Add to queue', icon: MI.addq, run: async () => addToQueue(await songs()) },
+    ],
+    items: [
+      { label: 'Add to playlist', icon: MI.list, flyout: playlistFlyout(songs) },
+      { label: a.starred ? 'Remove album from Favorites' : 'Add album to Favorites', icon: a.starred ? IC.heartOn : IC.heart, cls: a.starred ? 'on' : '', run: async () => { try { await nd(a.starred ? 'unstar' : 'star', { albumId: a.id }); a.starred = a.starred ? undefined : new Date().toISOString(); toast(a.starred ? 'Album added to Favorites.' : 'Album removed from Favorites.'); } catch (e) { toast(String(e), true); } } },
+      '-',
+      { label: 'Go to artist', icon: MI.artist, run: () => (location.hash = href('artist', a.artistId)) },
+    ],
+  }, anchor, x, y);
+}
+export function artistMenu(ar, anchor, x, y) {
+  const songs = async () => (await Promise.all(((await nd('getArtist', { id: ar.id })).artist?.album || []).map((al) => albumSongs(al.id).catch(() => [])))).flat();
+  const from = { type: 'artist', id: ar.id, name: ar.name };
+  openMenu({
+    title: ar.name, sub: 'Artist',
+    quick: [
+      { label: 'Play all', icon: IC.play, run: async () => playSongs(await songs(), 0, { from, shuffle: false }) },
+      { label: 'Shuffle', icon: IC.shuffle, run: async () => playSongs(await songs(), 0, { from, shuffle: true }) },
+      { label: 'Play next', icon: MI.next, run: async () => playNext(await songs()) },
+      { label: 'Add to queue', icon: MI.addq, run: async () => addToQueue(await songs()) },
+    ],
+    items: [
+      { label: 'Show favorite songs', icon: IC.heart, run: () => (location.hash = href('artist', ar.id) + '?fav=1') },
+      { label: ar.starred ? 'Remove artist from Favorites' : 'Add artist to Favorites', icon: ar.starred ? IC.heartOn : IC.heart, cls: ar.starred ? 'on' : '', run: async () => { try { await nd(ar.starred ? 'unstar' : 'star', { artistId: ar.id }); ar.starred = ar.starred ? undefined : 1; toast(ar.starred ? 'Artist added to Favorites.' : 'Artist removed from Favorites.'); } catch (e) { toast(String(e), true); } } },
+      '-',
+      { label: 'Go to artist page', icon: MI.artist, run: () => (location.hash = href('artist', ar.id)) },
+    ],
+  }, anchor, x, y);
 }
 export function listMenu(songs, anchor, extra = []) {
+  const get = async () => songs;
   openMenu([
     { label: 'Play next', icon: MI.next, run: () => playNext(songs) },
     { label: 'Add to queue', icon: MI.addq, run: () => addToQueue(songs) },
-    { label: 'Add to playlist…', icon: MI.list, run: () => addToPlaylist(songs) },
+    { label: 'Add to playlist', icon: MI.list, flyout: playlistFlyout(get) },
     ...extra,
   ], anchor);
 }
-// Pick a playlist (or make a new one) and add songs to it.
+// Right-click on album and artist cards anywhere in Music.
+document.addEventListener('contextmenu', (e) => {
+  if (!location.hash.startsWith('#/music') || e.target.closest('.srow, .mmenu')) return;
+  const card = e.target.closest('a.mcard[href*="/album/"], .ab[data-album], a.mcard[href*="/artist/"], a.mli[href*="/album/"], a.mli[href*="/artist/"]');
+  if (!card) return;
+  e.preventDefault();
+  const h = decodeURIComponent(card.getAttribute('href') || '');
+  const id = card.dataset.album || h.split('/').pop().split('?')[0];
+  const name = card.querySelector('.t1, .disp, h2')?.textContent?.trim() || '';
+  if (h.includes('/artist/') && !card.dataset.album) artistMenu({ id, name }, null, e.clientX, e.clientY);
+  else nd('getAlbum', { id }).then((r) => albumMenu(r.album, null, e.clientX, e.clientY)).catch(() => albumMenu({ id, name }, null, e.clientX, e.clientY));
+});
+// All playlists picker: tick every playlist the songs should be in, then Done.
 export async function addToPlaylist(songs) {
-  let lists = playlistsCache;
-  try { lists = (await nd('getPlaylists')).playlists?.playlist || []; playlistsCache = lists; } catch {}
   const wrap = document.createElement('div');
-  wrap.className = 'dlg-wrap';
-  wrap.innerHTML = `<div class="dlg mdlg"><h2>Add to playlist</h2><p class="t2">${songs.length === 1 ? esc(songs[0].title) : plural(songs.length, 'song')}</p>
-    <div class="mdlg-list"><button type="button" class="mdlg-it new" data-new="1">${MI.plus}<span>New playlist</span></button>
-    ${lists.filter((p) => !p.readonly).map((p) => `<button type="button" class="mdlg-it" data-id="${esc(p.id)}">${coverHtml(p.coverArt, '', 100, 'sm')}<span><b>${esc(p.name)}</b><small>${plural(p.songCount, 'song')}</small></span></button>`).join('')}</div>
-    <div class="dlg-btns"><button type="button" class="btn secondary" data-x="1">Cancel</button></div></div>`;
+  wrap.className = 'dlg-wrap pkw';
+  const what = songs.length === 1 ? songs[0].title : plural(songs.length, 'song');
+  wrap.innerHTML = `<div class="dlg pk"><div class="pkh"><h2>Add to playlist</h2><button type="button" class="pkx" data-x="1" aria-label="Close">${MI.close}</button></div>
+    <div class="pks">${esc(what)} · tick every playlist ${songs.length === 1 ? 'it' : 'they'} should be in</div>
+    <label class="pksr">${MI.search}<input type="text" placeholder="Find a playlist" aria-label="Find a playlist"></label>
+    <div class="pkl">${loadingHtml()}</div>
+    <div class="pkf"><button type="button" class="btn secondary" data-x="1">Cancel</button><button type="button" class="btn" data-done="1">Done</button></div></div>`;
   document.body.appendChild(wrap);
-  const close = () => wrap.remove();
+  requestAnimationFrame(() => wrap.classList.add('on'));
+  const close = () => { wrap.classList.remove('on'); setTimeout(() => wrap.remove(), 260); };
+  const inp = wrap.querySelector('input'), box = wrap.querySelector('.pkl');
+  setTimeout(() => inp.focus(), 60);
+  await refreshPlaylists();
+  const lists = editable().sort((a, b) => plDate(b).localeCompare(plDate(a)));
+  const was = {}, now = {};
+  const draw = () => {
+    const q = inp.value.trim().toLowerCase();
+    const show = lists.filter((p) => !q || p.name.toLowerCase().includes(q));
+    box.innerHTML = `<div class="pki" data-new="1"><span class="nw">${MI.plus}</span><div class="tx"><b>New playlist</b><span class="t2">Start one with ${songs.length === 1 ? 'this song' : 'these songs'} in it</span></div></div>`
+      + show.map((p) => `<div class="pki" data-id="${esc(p.id)}">${coverHtml(p.coverArt, p.name, 100, 'pc')}<div class="tx"><b>${esc(p.name)}</b><span class="t2">${plural(p.songCount, 'song')}</span></div><span class="ck${now[p.id] ? ' on' : ''}">${MI.check}</span></div>`).join('')
+      + (show.length ? '' : `<div class="t2" style="padding:14px 12px">No playlists match.</div>`);
+  };
+  draw();
+  lists.forEach(async (p) => {
+    const ids = await plSongs(p.id); was[p.id] = holdsAll(ids, songs);
+    if (now[p.id] === undefined) now[p.id] = was[p.id];
+    const el = box.querySelector(`[data-id="${CSS.escape(p.id)}"] .ck`); if (el) el.classList.toggle('on', !!now[p.id]);
+  });
+  inp.addEventListener('input', draw);
+  wrap.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   wrap.addEventListener('click', async (e) => {
     if (e.target === wrap || e.target.closest('[data-x]')) return close();
-    const ids = songs.map((s) => s.id);
-    if (e.target.closest('[data-new]')) {
-      const name = prompt('Name your new playlist', 'New playlist'); if (!name) return;
-      try { await nd('createPlaylist', `name=${encodeURIComponent(name)}&${ids.map((id) => 'songId=' + encodeURIComponent(id)).join('&')}`); toast(`Made "${name}".`); close(); refreshPlaylists(); } catch (err) { toast(String(err), true); }
-      return;
+    if (e.target.closest('[data-new]')) { if (await newPlaylistFrom(songs)) close(); return; }
+    const it = e.target.closest('[data-id]');
+    if (it) { const id = it.dataset.id; now[id] = !now[id]; it.querySelector('.ck').classList.toggle('on', now[id]); return; }
+    if (e.target.closest('[data-done]')) {
+      close();
+      const adds = lists.filter((p) => now[p.id] && !was[p.id]), rems = lists.filter((p) => !now[p.id] && was[p.id]);
+      try {
+        for (const p of adds) await addSongsTo(p, songs);
+        for (const p of rems) await removeSongsFrom(p, songs);
+        const n = adds.length + rems.length;
+        toast(!n ? 'No changes.' : adds.length === 1 && !rems.length ? `Added to "${adds[0].name}".` : rems.length === 1 && !adds.length ? `Removed from "${rems[0].name}".` : `Updated ${plural(n, 'playlist')}.`);
+      } catch (err) { toast(String(err), true); }
     }
-    const b = e.target.closest('[data-id]'); if (!b) return;
-    try { await nd('updatePlaylist', `playlistId=${encodeURIComponent(b.dataset.id)}&${ids.map((id) => 'songIdToAdd=' + encodeURIComponent(id)).join('&')}`); toast(`Added to "${b.querySelector('b').textContent}".`); close(); refreshPlaylists(); } catch (err) { toast(String(err), true); }
   });
 }
 export function refreshPlaylists() { return nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; playlistsLoaded = true; drawLib(false); return playlistsCache; }).catch(() => playlistsCache); }
@@ -793,6 +962,7 @@ async function artistPage(v, id) {
     c.hidden = false;
     c.innerHTML = `${coverHtml(ar.coverArt, '', 100, 'round')}<span class="favdot">${IC.heartOn}</span><div><div class="t1">Favorite songs</div><div class="t2">${plural(favs.length, 'favorite song')}</div></div>`;
     c.onclick = (e) => { e.preventDefault(); playSongs(favs, 0, { from: { type: 'artistfav', id: ar.id, name: `${ar.name}: Favorite songs` }, shuffle: false }); };
+    if (v.params.get('fav')) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); c.classList.add('pulse'); }
   }).catch(() => {});
   // Bio + similar artists in your library.
   nd('getArtistInfo2', { id: ar.id, count: 12 }).then((info) => {
