@@ -12,7 +12,6 @@ const NAV = [
   ['songs', 'Songs', '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>'],
   ['genres', 'Genres', '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'],
   ['playlists', 'Playlists', '<path d="M4 6h12M4 11h12M4 16h7"/><path d="M19 8v8.5"/><circle cx="16.5" cy="17" r="2.5"/>'],
-  ['stats', 'Stats', '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'],
 ];
 export const MI = {
   pin: line('<path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z"/><path d="M12 14v6"/>', 14),

@@ -77,6 +77,13 @@ const gStyle = (g) => { const c = genreLook(g).c; return `background:linear-grad
 // ---------- the page ----------
 const ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
 const SOURCES = { abs: absModel, music: musicModel, tv: tvModel };
+// Buttons along the top of every stats page: jump to any of the three.
+const SECS = [
+  ['tv', '#/stats', 'Movies & TV', '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>'],
+  ['music', '#/music/stats', 'Music', '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>'],
+  ['abs', '#/audiobooks/stats', 'Audiobooks', '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>'],
+];
+const secBar = (kind) => `<nav class="stx-secs">${SECS.map(([k, href, t, d]) => `<a href="${href}" class="${k === kind ? 'on' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>${t}</a>`).join('')}</nav>`;
 const TITLES = { abs: 'Your listening', music: 'Your music', tv: 'Your watching' };
 const EVERYONE = { abs: "Everyone's listening", tv: "Everyone's watching" };
 
@@ -84,7 +91,7 @@ const EVERYONE = { abs: "Everyone's listening", tv: "Everyone's watching" };
 export async function statsPage(main, kind, alive) {
   let per = localStorage.getItem('statsPer:' + kind) || 'month';
   if (!PERIODS.some(([k]) => k === per)) per = 'month';
-  main.innerHTML = `<div class="stx${kind === 'tv' ? ' full' : ''}"><div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
+  main.innerHTML = `<div class="stx${kind === 'tv' ? ' full' : ''}">${secBar(kind)}<div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
     <div class="seg" id="stxWho" hidden title="Only admins see this"><button type="button" data-w="me" class="on">Me</button><button type="button" data-w="all">Everyone</button></div>
     <div class="seg" id="stxSeg">${PERIODS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === per ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div id="stxBody"><div class="stx-load t2">Adding up your stats…</div></div></div>`;

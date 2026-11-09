@@ -2296,3 +2296,16 @@ body.bnow-open #bbar { display: none; }
 .fa-q button.on i { border-color: var(--red); background: var(--red); box-shadow: inset 0 0 0 3px #1d1412; }
 .fa-q b { display: block; font-size: 14px; } .fa-q span span { font-size: 12.5px; color: #BFA7A8; }
 .fa-card [hidden] { display: none !important; }
+
+/* Stats button (top bar) + section buttons on stats pages */
+#topStatsBtn.on { background: rgba(236,40,46,.18); color: #FF6B6F; box-shadow: inset 0 0 0 1px rgba(236,40,46,.45); }
+.stats-menu { width: 260px; }
+.stats-menu .rm-i.sm { align-items: center; }
+.stats-menu .rm-i.sm .t { flex: 1; }
+.stats-menu .rm-i .here { font-size: 11.5px; color: var(--muted); }
+.stats-menu .rm-i.cur .t::after { content: "✓"; color: var(--red); margin-left: 6px; }
+.stx-secs { display: flex; gap: 6px; padding: 5px; border-radius: 14px; background: rgba(255,255,255,.05); width: max-content; margin-bottom: 22px; }
+.stx-secs a { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 18px; border-radius: 10px; color: #D9C3C4; font-weight: 700; font-size: 14px; text-decoration: none; transition: background .28s var(--ease), color .28s, transform .2s; }
+.stx-secs a:hover { background: rgba(255,255,255,.07); color: #fff; }
+.stx-secs a:active { transform: scale(.96); }
+.stx-secs a.on { background: var(--red); color: #fff; box-shadow: 0 6px 16px rgba(236,40,46,.35); }

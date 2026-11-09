@@ -155,7 +155,6 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   location.hash = '#/login';
 });
 document.getElementById('serversBtn').addEventListener('click', () => { location.hash = '#/servers'; });
-document.getElementById('statsBtn')?.addEventListener('click', () => { document.getElementById('userMenu').hidden = true; location.hash = '#/stats'; });
 document.getElementById('clearCacheBtn').addEventListener('click', async () => {
   await api.clearCache();
   document.getElementById('userMenu').hidden = true;
@@ -255,6 +254,40 @@ async function openRefMenu() {
 }
 refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); quickScan(); });
 refreshBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); if (!refMenu.hidden) { refMenu.hidden = true; return; } openRefMenu(); });
+// ---------- Stats button: click = this tab's stats, right-click = pick any of the three ----------
+const statsBtn = document.getElementById('topStatsBtn');
+const statsMenu = document.getElementById('statsMenu');
+const STATS_ROUTES = { home: '#/stats', music: '#/music/stats', audiobooks: '#/audiobooks/stats' };
+const onStats = () => Object.values(STATS_ROUTES).includes((location.hash || '').split('?')[0]);
+let beforeStats = '';
+const SEC_ICON = {
+  home: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  music: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>',
+  audiobooks: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></svg>',
+};
+function goStats(sec) {
+  statsMenu.hidden = true;
+  if (!onStats()) beforeStats = location.hash || '#/home';
+  location.hash = STATS_ROUTES[sec];
+}
+statsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (onStats()) { location.hash = beforeStats || { home: '#/home', music: '#/music', audiobooks: '#/audiobooks' }[curSection()]; beforeStats = ''; return; }
+  goStats(curSection());
+});
+statsBtn.addEventListener('contextmenu', (e) => {
+  e.preventDefault(); e.stopPropagation();
+  if (!statsMenu.hidden) { statsMenu.hidden = true; return; }
+  refMenu.hidden = true; document.getElementById('userMenu').hidden = true;
+  const here = curSection(), cur = (location.hash || '').split('?')[0];
+  statsMenu.innerHTML = `<div class="rm-h">Open stats</div>` + Object.keys(STATS_ROUTES).map((k) => `<button type="button" class="rm-i sm${cur === STATS_ROUTES[k] ? ' cur' : ''}" data-sec="${k}"><span class="ic">${SEC_ICON[k]}</span><span class="t">${SECTIONS[k].name} stats</span>${k === here ? '<span class="here">this tab</span>' : ''}</button>`).join('');
+  statsMenu.hidden = false;
+});
+statsMenu.addEventListener('click', (e) => { e.stopPropagation(); const b = e.target.closest('[data-sec]'); if (b) goStats(b.dataset.sec); });
+document.addEventListener('click', () => { statsMenu.hidden = true; });
+const litStats = () => statsBtn.classList.toggle('on', onStats());
+window.addEventListener('hashchange', litStats); litStats();
+
 refMenu.addEventListener('click', (e) => {
   e.stopPropagation();
   const b = e.target.closest('[data-act]'); if (!b || b.classList.contains('off')) return;

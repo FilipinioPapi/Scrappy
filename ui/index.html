@@ -37,9 +37,15 @@
 
       <div class="refresh-wrap">
         <button class="icon-btn" id="refreshBtn" title="Refresh (right-click for more)" aria-label="Refresh">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.8 10.6a7.4 7.4 0 0 1 13.4-3.7"/><path d="M18.7 3.2v4h-4"/><path d="M19.2 13.4a7.4 7.4 0 0 1-13.4 3.7"/><path d="M5.3 20.8v-4h4"/></svg>
         </button>
         <div class="menu ref-menu" id="refMenu" hidden></div>
+      </div>
+      <div class="refresh-wrap">
+        <button class="icon-btn" id="topStatsBtn" title="Stats (right-click for all three)" aria-label="Stats">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="13" width="4" height="7" rx="1.4"/><rect x="10" y="8.5" width="4" height="11.5" rx="1.4"/><rect x="16" y="4" width="4" height="16" rx="1.4"/></svg>
+        </button>
+        <div class="menu ref-menu stats-menu" id="statsMenu" hidden></div>
       </div>
       <div class="user-menu">
         <button class="icon-btn" id="userBtn" title="Settings" aria-label="Settings">
@@ -50,7 +56,6 @@
           <div class="menu-info" id="userInfo"></div>
           <label class="toggle">Auto-play next episode <input type="checkbox" id="autoplayToggle"></label>
           <label class="toggle">Play in separate mpv window <input type="checkbox" id="windowModeToggle"></label>
-          <button id="statsBtn">Movies &amp; TV stats</button>
           <button id="serversBtn">Servers</button>
           <button id="clearCacheBtn">Clear image cache</button>
           <button id="logoutBtn">Sign out</button>
