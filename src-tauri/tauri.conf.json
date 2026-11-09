@@ -36,7 +36,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "libmpv/libmpv-2.dll": "libmpv-2.dll"
+      "libmpv/libmpv-2.dll": "libmpv-2.dll",
+      "whisper/*": "whisper/"
     },
     "windows": {
       "nsis": {

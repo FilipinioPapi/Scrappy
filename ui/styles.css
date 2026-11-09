@@ -2256,3 +2256,43 @@ body.bnow-open #bbar { display: none; }
 .stx-top .cv em { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-weight: 800; font-size: 18px; color: #fff; }
 .stx-ppl { margin-bottom: 18px; }
 .stx-fun.wide { grid-template-columns: repeat(4, 1fr); }
+
+/* ---------- Follow along (audiobooks) ---------- */
+.fa-card { height: 100%; }
+.fa-card .bn-head { align-items: center; }
+.fa-card .bn-head .sp { flex: 1; }
+.fa-gear.on { color: var(--red); }
+.fa-pill { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 999px; background: rgba(255,255,255,.07); font-size: 12.5px; font-weight: 700; color: #E9DADB; white-space: nowrap; }
+.fa-pill i { width: 8px; height: 8px; border-radius: 50%; background: #7BE08A; box-shadow: 0 0 8px #7BE08A; animation: faPulse 1.6s infinite; }
+@keyframes faPulse { 50% { opacity: .35; } }
+.fa-tip { position: relative; display: flex; gap: 14px; align-items: flex-start; margin: 0 6px 10px; padding: 14px 44px 14px 16px; border-radius: 14px; background: #2a1a1a; border: 1px solid rgba(236,40,46,.45); box-shadow: 0 14px 30px rgba(0,0,0,.45); animation: faTipIn .4s var(--ease); }
+.fa-tip .ic { font-size: 22px; line-height: 1.2; }
+.fa-tip b { display: block; font-size: 15px; } .fa-tip span { font-size: 13.5px; color: #E9DADB; }
+.fa-tip .x { position: absolute; right: 10px; top: 10px; width: 28px; height: 28px; border-radius: 8px; border: 0; background: rgba(255,255,255,.07); color: #E9DADB; cursor: pointer; font-size: 13px; }
+.fa-tip .x:hover { background: rgba(255,255,255,.14); }
+@keyframes faTipIn { from { opacity: 0; transform: translateY(-6px); } }
+.fa-prep { display: flex; align-items: center; gap: 10px; margin: 4px 6px 8px; font-size: 13px; color: #BFA7A8; }
+.fa-prep.err { color: #FFB4B6; } .fa-prep.err .fa-spin { display: none; }
+.fa-prep .btn.sm, .fa-row .btn.sm { margin-left: 8px; height: 30px; padding: 0 12px; font-size: 12.5px; }
+.fa-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); border-top-color: var(--red); animation: faSpin .8s linear infinite; flex: none; display: inline-block; }
+@keyframes faSpin { to { transform: rotate(360deg); } }
+.fa-txt { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 28vh 10px 34vh; -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent); user-select: text; }
+.fa-txt::-webkit-scrollbar { display: none; }
+.fa-txt p { margin: 0 0 22px; font-size: 26px; line-height: 1.45; font-weight: 700; color: rgba(246,233,233,.22); transition: color .4s; }
+.fa-txt p.past { color: rgba(246,233,233,.45); }
+.fa-txt p.cur { color: rgba(246,233,233,.38); }
+.fa-txt p.cur span.on { color: #fff; transition: color .15s; }
+.fa-wait { display: flex; align-items: center; gap: 10px; justify-content: center; color: #BFA7A8; font-size: 15px; padding-top: 4vh; }
+.fa-foot { display: flex; gap: 10px; margin: 10px 6px 0; font-size: 12.5px; color: #BFA7A8; flex-wrap: wrap; } .fa-foot .sp { flex: 1; }
+.fa-set { display: flex; flex-direction: column; gap: 12px; margin: 4px 6px; overflow-y: auto; }
+.fa-row { padding: 14px 16px; border-radius: 14px; background: rgba(255,255,255,.04); display: flex; flex-direction: column; gap: 4px; }
+.fa-row > b { font-size: 15px; } .fa-row > span { font-size: 13px; color: #BFA7A8; }
+.fa-row .btn.sm { margin: 8px 0 0; }
+.fa-q { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.fa-q button { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .2s, border-color .2s; }
+.fa-q button:hover { background: rgba(255,255,255,.06); }
+.fa-q button.on { border-color: rgba(236,40,46,.5); background: rgba(236,40,46,.1); }
+.fa-q i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #BFA7A8; flex: none; margin-top: 2px; }
+.fa-q button.on i { border-color: var(--red); background: var(--red); box-shadow: inset 0 0 0 3px #1d1412; }
+.fa-q b { display: block; font-size: 14px; } .fa-q span span { font-size: 12.5px; color: #BFA7A8; }
+.fa-card [hidden] { display: none !important; }

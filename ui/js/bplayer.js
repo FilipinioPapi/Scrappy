@@ -6,6 +6,7 @@
 // send the position every 15 seconds and on pause, and close it when you stop.
 import { api, listen, IMG_BASE } from './api.js';
 import { esc, toast } from './components.js';
+import { followHTML, followBind, followActive, FOLLOW_ICON } from './follow.js';
 import { mode, enterBookMode, music as M, setVolume, toggleMute, onMusic, IC } from './mplayer.js';
 
 const { invoke } = window.__TAURI__.core;
@@ -478,7 +479,7 @@ draw();
 const now = document.createElement('div');
 now.id = 'bnow'; now.hidden = true;
 document.body.appendChild(now);
-let nowOpen = false, nowFor = null, nowPane = localStorage.getItem('bnowPane') === 'about' ? 'about' : 'chapters';
+let nowOpen = false, nowFor = null, nowPane = ['about', 'follow'].includes(localStorage.getItem('bnowPane')) ? localStorage.getItem('bnowPane') : 'chapters';
 const plain = (html) => { const d = new DOMParser().parseFromString(String(html || ''), 'text/html'); d.querySelectorAll('br,p,div,li').forEach((n) => n.append('\n')); return (d.body.textContent || '').replace(/\n{3,}/g, '\n\n').trim(); };
 export function openBookNow() {
   if (!B.item) return;
@@ -487,7 +488,7 @@ export function openBookNow() {
 }
 export function closeBookNow() {
   if (!nowOpen) return;
-  nowOpen = false; now.classList.add('closing'); closePop();
+  nowOpen = false; now.classList.add('closing'); closePop(); followActive(false);
   setTimeout(() => { if (!nowOpen) { now.hidden = true; now.classList.remove('closing'); document.body.classList.remove('bnow-open'); } }, 280);
 }
 $('bbCover').onclick = openBookNow;
@@ -526,18 +527,20 @@ function buildNow() {
         <div class="bn-book"><span>Book</span><div class="bk-prog thin"><i id="bnBookBar"></i></div><span id="bnBookTxt"></span></div>
         <div class="mn-bot bn-bot"><button type="button" class="gb" id="bnMute" aria-label="Mute">${IC.vol}</button><div class="mseek vol" id="bnVol"><div class="track"><i></i></div><b></b></div>
           <span class="sp"></span>
+          <button type="button" class="gb mode" data-pane="follow" title="Follow along" aria-label="Follow along">${FOLLOW_ICON}</button>
           ${B.chapters.length ? `<button type="button" class="gb mode" data-pane="chapters" title="Chapters" aria-label="Chapters">${BI.chapters}</button>` : ''}
           <button type="button" class="gb mode" data-pane="about" title="About this book" aria-label="About this book">${line('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>')}</button></div>
       </div>
       <div class="bn-right">
         ${B.chapters.length ? `<div class="bn-pane" data-pane="chapters"><div class="bn-card"><div class="bn-head"><h2 class="disp">CHAPTERS</h2><span class="t2" id="bnChN"></span></div>
           <div class="bn-list" id="bnList">${B.chapters.map((c, i) => `<button type="button" class="bk-chi bn-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div></div></div>` : ''}
+        ${followHTML()}
         <div class="bn-pane" data-pane="about"><div class="bn-card bn-about"><div class="bn-head"><h2 class="disp">ABOUT THIS BOOK</h2></div>
           <div class="bn-scroll">${desc ? `<p>${esc(desc)}</p>` : '<p class="t2">No description.</p>'}
           <div class="bn-facts">${facts.map(([k, v]) => `<span>${k}</span><b>${esc(v)}</b>`).join('')}</div></div></div></div>
       </div>
     </div>`;
-  if (!B.chapters.length) nowPane = 'about';
+  if (!B.chapters.length && nowPane === 'chapters') nowPane = 'about';
   n$('bnClose').onclick = closeBookNow;
   n$('bnPlay').onclick = toggleBook;
   n$('bnBack').onclick = () => skip(-10);
@@ -552,6 +555,7 @@ function buildNow() {
   slider(n$('bnVol'), (f) => { setVolume(f * 100); drawNow(); draw(); });
   now.querySelectorAll('.mode[data-pane]').forEach((b) => (b.onclick = () => { nowPane = b.dataset.pane; try { localStorage.setItem('bnowPane', nowPane); } catch {} drawPane(); }));
   n$('bnList')?.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const c = B.chapters[Number(b.dataset.i)]; if (!c) return; if (!B.started) playBook(B.item.id, { at: c.start }); else seekBook(c.start); });
+  followBind(now, B);
   drawPane(); drawNow(true);
 }
 let nowDrag = false, nowCh = -2;
@@ -559,6 +563,7 @@ function drawPane() {
   now.querySelectorAll('.bn-pane').forEach((p) => p.classList.toggle('off', p.dataset.pane !== nowPane));
   now.querySelectorAll('.mode[data-pane]').forEach((b) => b.classList.toggle('on', b.dataset.pane === nowPane));
   if (nowPane === 'chapters') scrollCur(true);
+  followActive(nowOpen && nowPane === 'follow');
 }
 function scrollCur(force) { const l = n$('bnList'), c = l?.querySelector('.cur'); if (l && c && (force || !l.matches(':hover'))) l.scrollTo({ top: c.offsetTop - l.clientHeight / 3, behavior: force ? 'auto' : 'smooth' }); }
 function drawNow(first) {

@@ -38,6 +38,37 @@ jobs:
           if (-not $dll) { throw "libmpv dll not found in archive" }
           Copy-Item $dll.FullName src-tauri/libmpv/libmpv-2.dll
 
+      # Speech engine for Follow-along text: whisper.cpp, built with Vulkan so it can use
+      # any graphics card (AMD, NVIDIA, Intel). Backends load as DLLs, so a PC without a
+      # usable graphics driver falls back to the processor instead of failing to start.
+      - name: Cache speech engine
+        id: wcache
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/whisper
+          key: whisper-v1.9.5-vulkan1.4.357.0-r1
+
+      - name: Build speech engine
+        if: steps.wcache.outputs.cache-hit != 'true'
+        shell: pwsh
+        env:
+          VULKAN_VERSION: 1.4.357.0
+        run: |
+          curl.exe -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o "$env:RUNNER_TEMP\vksdk.exe" "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Vulkan SDK download failed" }
+          & "$env:RUNNER_TEMP\vksdk.exe" --accept-licenses --default-answer --confirm-command install | Out-Null
+          $env:VULKAN_SDK = "C:\VulkanSDK\$env:VULKAN_VERSION"
+          $env:PATH = "$env:VULKAN_SDK\Bin;$env:PATH"
+          git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp wsrc
+          cmake -S wsrc -B wsrc/build -DGGML_VULKAN=ON -DGGML_BACKEND_DL=ON -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF -DWHISPER_SDL2=OFF
+          if ($LASTEXITCODE -ne 0) { throw "configure failed" }
+          cmake --build wsrc/build --config Release -j 4
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          New-Item -ItemType Directory -Force -Path src-tauri/whisper | Out-Null
+          Copy-Item wsrc/build/bin/Release/whisper-cli.exe src-tauri/whisper/
+          Copy-Item wsrc/build/bin/Release/*.dll src-tauri/whisper/
+          Get-ChildItem src-tauri/whisper | Format-Table Name, Length
+
       # Keep the installer tools Tauri downloads, so a GitHub download hiccup can't break the build.
       - uses: actions/cache@v4
         with:
@@ -80,6 +111,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path portable | Out-Null
           Copy-Item src-tauri/target/release/scrappy.exe portable/Scrappy.exe
           Copy-Item src-tauri/libmpv/libmpv-2.dll portable/
+          Copy-Item -Recurse src-tauri/whisper portable/whisper
           Compress-Archive -Path portable/* -DestinationPath Scrappy-portable.zip -Force
           Copy-Item (Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1).FullName Scrappy-setup.exe
 

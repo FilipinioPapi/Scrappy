@@ -1,4 +1,5 @@
 mod emby;
+mod follow;
 mod mpv;
 mod music;
 mod servers;
@@ -1125,6 +1126,13 @@ pub fn run() {
             abs_send,
             refresh_covers,
             music::book_play,
+            follow::fa_info,
+            follow::fa_start,
+            follow::fa_pos,
+            follow::fa_stop,
+            follow::fa_cached,
+            follow::fa_saved,
+            follow::fa_clear,
             nd_playlist_image,
             nd_reauth,
             lyrics_find,

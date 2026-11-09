@@ -2740,6 +2740,7 @@ dependencies = [
  "tauri-build",
  "tokio",
  "uuid",
+ "windows",
 ]
 
 [[package]]
