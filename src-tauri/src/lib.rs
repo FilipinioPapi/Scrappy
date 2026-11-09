@@ -1,5 +1,6 @@
 mod emby;
 mod mpv;
+mod music;
 mod servers;
 
 use emby::Config;
@@ -18,6 +19,8 @@ struct AppState {
     mpv_dirs: Vec<PathBuf>,
     http: reqwest::Client,
     player: Mutex<Option<(usize, bool, mpv::Player)>>,
+    /// The audio-only player for music: (instance id, player).
+    music: Mutex<Option<(usize, mpv::Player)>>,
     now: Mutex<Option<NowPlaying>>,
     /// Seek-bar preview pictures for the current video: (item id, frames).
     bif: Mutex<Option<(String, Vec<Vec<u8>>)>>,
@@ -535,6 +538,10 @@ async fn play(
 
     // Save the resume point of whatever was playing before.
     finish_current(&app);
+    // A video starting pauses the music.
+    if let Some((_, m)) = state.music.lock().unwrap().as_ref() {
+        let _ = m.set_property("pause", "yes");
+    }
 
     let player = ensure_player(&app, embedded)?;
     *state.now.lock().unwrap() = Some(NowPlaying {
@@ -739,6 +746,10 @@ async fn serve_image(app: AppHandle, uri: String) -> Response<Vec<u8>> {
         }
         return not_found();
     }
+    // Navidrome cover art: /nd/<coverArt id>?w=300
+    if parts[0] == "nd" {
+        return serve_nd_cover(&state, parts[1], &parsed).await;
+    }
     let (item_id, img_type) = (parts[0], parts[1]);
     let index = parts.get(2).copied().unwrap_or("");
     let mut tag = String::new();
@@ -778,6 +789,34 @@ async fn serve_image(app: AppHandle, uri: String) -> Response<Vec<u8>> {
     );
     match state.http.get(url).header("X-Emby-Token", &cfg.token).send().await {
         Ok(r) if r.status().is_success() => match r.bytes().await {
+            Ok(b) => {
+                let b = b.to_vec();
+                if let Some(d) = file.parent() {
+                    let _ = std::fs::create_dir_all(d);
+                }
+                let _ = std::fs::write(&file, &b);
+                img_response(StatusCode::OK, sniff_mime(&b), b)
+            }
+            Err(_) => not_found(),
+        },
+        _ => not_found(),
+    }
+}
+
+async fn serve_nd_cover(state: &AppState, id: &str, parsed: &reqwest::Url) -> Response<Vec<u8>> {
+    let not_found = || img_response(StatusCode::NOT_FOUND, "text/plain", Vec::new());
+    let size = parsed.query_pairs().find(|(k, _)| k == "w").map(|(_, v)| v.to_string()).unwrap_or_else(|| "300".into());
+    let file = state.cache_dir.join("img").join(format!("nd_{}_{}", sanitize(id), sanitize(&size)));
+    if let Ok(bytes) = std::fs::read(&file) {
+        return img_response(StatusCode::OK, sniff_mime(&bytes), bytes);
+    }
+    let cfg = state.cfg();
+    if !cfg.nd_logged_in() {
+        return not_found();
+    }
+    let url = servers::nd_url(&cfg, "getCoverArt", &format!("id={}&size={}", servers::enc(id), servers::enc(&size)));
+    match state.http.get(url).send().await {
+        Ok(r) if r.status().is_success() && r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false) => match r.bytes().await {
             Ok(b) => {
                 let b = b.to_vec();
                 if let Some(d) = file.parent() {
@@ -835,6 +874,7 @@ pub fn run() {
                 mpv_dirs,
                 http: emby::http_client(),
                 player: Mutex::new(None),
+                music: Mutex::new(None),
                 now: Mutex::new(None),
                 bif: Mutex::new(None),
             });
@@ -875,6 +915,7 @@ pub fn run() {
                 if let Some((_, _, p)) = player {
                     p.quit();
                 }
+                music::quit(&app);
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -888,6 +929,12 @@ pub fn run() {
             nd_cached,
             abs_get,
             abs_cached,
+            music::music_play,
+            music::music_upnext,
+            music::music_command,
+            music::music_set,
+            music::music_get,
+            music::music_stop,
             api_get,
             api_cached,
             api_send,

@@ -1,5 +1,7 @@
 import { api, quiet } from './api.js';
 import './player.js';
+import './mplayer.js';
+import { musicView } from './music.js';
 import './menu.js';
 import { toast } from './components.js';
 import { loginView, firstTab, homeView, libraryView, itemView, personView, searchView, comingSoonView } from './views.js';
@@ -115,7 +117,7 @@ async function route(opts = {}) {
     case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'person': return personView(viewEl, ctx, id);
     case 'search': return searchView(viewEl, ctx);
-    case 'music': return comingSoonView(viewEl, 'Music from Navidrome will live here.');
+    case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return comingSoonView(viewEl, 'Audiobooks from Audiobookshelf will live here.');
     default: return homeView(viewEl, ctx);
   }
