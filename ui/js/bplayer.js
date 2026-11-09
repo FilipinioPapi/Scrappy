@@ -215,7 +215,7 @@ bar.id = 'bbar';
 bar.hidden = true;
 bar.innerHTML = `
   <div class="mb-now">
-    <a class="mb-cover" id="bbCover" title="Open the book"><img alt=""></a>
+    <button type="button" class="mb-cover" id="bbCover" title="Now listening"><img alt=""></button>
     <div class="mb-txt"><a class="mb-title" id="bbTitle"></a><div class="mb-sub" id="bbSub"></div><div class="mb-sub bb-ch" id="bbCh"></div></div>
   </div>
   <div class="mb-mid">
@@ -235,6 +235,7 @@ bar.innerHTML = `
     <button type="button" class="gb" id="bbChap" title="Chapters" aria-label="Chapters">${BI.chapters}</button>
     <button type="button" class="gb" id="bbMute" title="Mute" aria-label="Mute">${IC.vol}</button>
     <div class="mseek vol" id="bbVol"><div class="track"><i></i></div><b></b></div>
+    <button type="button" class="gb" id="bbExp" title="Now listening" aria-label="Now listening">${IC.expand}</button>
   </div>`;
 document.body.appendChild(bar);
 const pop = document.createElement('div');
@@ -256,7 +257,6 @@ function draw() {
     im.src = absCover(it, 160);
   }
   const href = `#/audiobooks/book/${encodeURIComponent(it.id)}`;
-  $('bbCover').href = href;
   const t = $('bbTitle'); t.textContent = md.title || ''; t.href = href;
   const au = md.authors?.[0];
   $('bbSub').innerHTML = au?.id ? `<a href="#/audiobooks/author/${encodeURIComponent(au.id)}">${esc(md.authorName || au.name)}</a>` : esc(md.authorName || '');
@@ -332,13 +332,13 @@ function togglePop(kind, anchor) {
   fillPop(kind);
   const r = anchor.getBoundingClientRect(), w = pop.offsetWidth;
   pop.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width / 2 - w / 2)) + 'px';
-  pop.style.bottom = (window.innerHeight - bar.getBoundingClientRect().top + 10) + 'px';
-  bar.querySelectorAll('.pop-on').forEach((b) => b.classList.remove('pop-on'));
+  pop.style.bottom = (window.innerHeight - (bar.contains(anchor) ? bar.getBoundingClientRect().top : r.top) + 10) + 'px';
+  document.querySelectorAll('.pop-on').forEach((b) => b.classList.remove('pop-on'));
   anchor.classList.add('pop-on');
   if (kind === 'chapters') pop.querySelector('.cur')?.scrollIntoView({ block: 'center' });
 }
-function closePop() { pop.classList.add('off'); bar.querySelectorAll('.pop-on').forEach((b) => b.classList.remove('pop-on')); }
-document.addEventListener('pointerdown', (e) => { if (!pop.classList.contains('off') && !pop.contains(e.target) && !e.target.closest('#bbSpd,#bbSleep,#bbChap')) closePop(); });
+function closePop() { pop.classList.add('off'); document.querySelectorAll('.pop-on').forEach((b) => b.classList.remove('pop-on')); }
+document.addEventListener('pointerdown', (e) => { if (!pop.classList.contains('off') && !pop.contains(e.target) && !e.target.closest('#bbSpd,#bbSleep,#bbChap,#bnSpd,#bnSleep')) closePop(); });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 
 const STOPS = Array.from({ length: Math.round((SPEED_MAX - SPEED_MIN) / SPEED_STEP) + 1 }, (_, i) => Math.round((SPEED_MIN + i * SPEED_STEP) * 100) / 100);
@@ -403,3 +403,122 @@ window.addEventListener('keydown', (e) => {
 // After a restart, show the last book in the bar (paused) if a book was the last thing playing.
 if (B.item && localStorage.getItem('lastAudio') === 'book') enterBookMode();
 draw();
+
+// ---------- Now listening: the full-screen book player ----------
+const now = document.createElement('div');
+now.id = 'bnow'; now.hidden = true;
+document.body.appendChild(now);
+let nowOpen = false, nowFor = null, nowPane = localStorage.getItem('bnowPane') === 'about' ? 'about' : 'chapters';
+const plain = (html) => { const d = new DOMParser().parseFromString(String(html || ''), 'text/html'); d.querySelectorAll('br,p,div,li').forEach((n) => n.append('\n')); return (d.body.textContent || '').replace(/\n{3,}/g, '\n\n').trim(); };
+export function openBookNow() {
+  if (!B.item) return;
+  nowOpen = true; now.hidden = false; now.classList.remove('closing'); document.body.classList.add('bnow-open');
+  closePop(); buildNow();
+}
+export function closeBookNow() {
+  if (!nowOpen) return;
+  nowOpen = false; now.classList.add('closing'); closePop();
+  setTimeout(() => { if (!nowOpen) { now.hidden = true; now.classList.remove('closing'); document.body.classList.remove('bnow-open'); } }, 280);
+}
+$('bbCover').onclick = openBookNow;
+$('bbExp').onclick = openBookNow;
+window.addEventListener('hashchange', closeBookNow);
+window.addEventListener('keydown', (e) => { if (nowOpen && e.key === 'Escape' && pop.classList.contains('off')) { e.preventDefault(); closeBookNow(); } });
+window.addEventListener('book:stop', closeBookNow);
+const n$ = (id) => now.querySelector('#' + id);
+function buildNow() {
+  const it = B.item; if (!it) return closeBookNow();
+  nowFor = it.id;
+  const m = it.media?.metadata || {}, au = m.authors?.[0];
+  const desc = plain(m.description);
+  const facts = [['Author', m.authorName], ['Narrator', m.narratorName], ['Length', B.duration ? hm(B.duration) + (B.chapters.length ? ` · ${B.chapters.length} chapters` : '') : ''], ['Series', (m.seriesName || '').replace(/ #(\S+)/g, ' · Book $1')], ['Published', m.publishedYear], ['Genres', (m.genres || []).join(', ')]].filter(([, v]) => v);
+  now.innerHTML = `
+    <div class="mn-bg"><img src="${absCover(it, 600)}" alt="" onload="this.classList.add('in')" onerror="this.remove()"></div>
+    <div class="mn-top"><button type="button" class="gb sq" id="bnClose" title="Close" aria-label="Close">${line('<path d="M6 9l6 6 6-6"/>')}</button>
+      <div class="mn-from"><div class="kicker">NOW LISTENING</div><div class="t1">Audiobooks</div></div>
+      <a class="gb sq" id="bnBook" href="#/audiobooks/book/${encodeURIComponent(it.id)}" title="Open the book page" aria-label="Open the book page">${line('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3"/>')}</a></div>
+    <div class="bn-body">
+      <div class="bn-left">
+        <div class="bn-cover" id="bnCover"><span>${esc(m.title || '')}</span><img src="${absCover(it, 800)}" alt="" onload="this.classList.add('in')" onerror="this.remove()"></div>
+        <div class="disp bn-title">${esc(m.title || '')}</div>
+        <div class="bn-meta">${au?.id ? `<a href="#/audiobooks/author/${encodeURIComponent(au.id)}">${esc(m.authorName || au.name)}</a>` : esc(m.authorName || '')}${m.narratorName ? ` &nbsp;·&nbsp; Read by ${esc(m.narratorName)}` : ''}</div>
+        <div class="bn-ch" id="bnCh"></div>
+        <div class="mb-seek bn-seek"><span id="bnPos">0:00</span><div class="mseek" id="bnSeek"><div class="track"><i></i></div><b></b></div><span id="bnRem">0:00</span></div>
+        <div class="bn-ctl">
+          <button type="button" class="bb-spd" id="bnSpd" title="Speed" aria-label="Speed">1.00×</button>
+          <button type="button" class="gb sq" id="bnPrev" title="Previous chapter" aria-label="Previous chapter">${IC.prev}</button>
+          <button type="button" class="gb bn-skip" id="bnBack" title="Back 10 seconds" aria-label="Back 10 seconds">${BI.back10}</button>
+          <button type="button" class="mb-play xl" id="bnPlay" aria-label="Play">${IC.play}</button>
+          <button type="button" class="gb bn-skip" id="bnFwd" title="Forward 10 seconds" aria-label="Forward 10 seconds">${BI.fwd10}</button>
+          <button type="button" class="gb sq" id="bnNext" title="Next chapter" aria-label="Next chapter">${IC.next}</button>
+          <button type="button" class="gb sq" id="bnSleep" title="Sleep timer" aria-label="Sleep timer">${BI.moon}<i class="bb-sl"></i></button>
+        </div>
+        <div class="bn-book"><span>Book</span><div class="bk-prog thin"><i id="bnBookBar"></i></div><span id="bnBookTxt"></span></div>
+        <div class="mn-bot bn-bot"><button type="button" class="gb" id="bnMute" aria-label="Mute">${IC.vol}</button><div class="mseek vol" id="bnVol"><div class="track"><i></i></div><b></b></div>
+          <span class="sp"></span>
+          ${B.chapters.length ? `<button type="button" class="gb mode" data-pane="chapters" title="Chapters" aria-label="Chapters">${BI.chapters}</button>` : ''}
+          <button type="button" class="gb mode" data-pane="about" title="About this book" aria-label="About this book">${line('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>')}</button></div>
+      </div>
+      <div class="bn-right">
+        ${B.chapters.length ? `<div class="bn-pane" data-pane="chapters"><div class="bn-card"><div class="bn-head"><h2 class="disp">CHAPTERS</h2><span class="t2" id="bnChN"></span></div>
+          <div class="bn-list" id="bnList">${B.chapters.map((c, i) => `<button type="button" class="bk-chi bn-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div></div></div>` : ''}
+        <div class="bn-pane" data-pane="about"><div class="bn-card bn-about"><div class="bn-head"><h2 class="disp">ABOUT THIS BOOK</h2></div>
+          <div class="bn-scroll">${desc ? `<p>${esc(desc)}</p>` : '<p class="t2">No description.</p>'}
+          <div class="bn-facts">${facts.map(([k, v]) => `<span>${k}</span><b>${esc(v)}</b>`).join('')}</div></div></div></div>
+      </div>
+    </div>`;
+  if (!B.chapters.length) nowPane = 'about';
+  n$('bnClose').onclick = closeBookNow;
+  n$('bnPlay').onclick = toggleBook;
+  n$('bnBack').onclick = () => skip(-10);
+  n$('bnFwd').onclick = () => skip(10);
+  n$('bnPrev').onclick = prevChapter;
+  n$('bnNext').onclick = nextChapter;
+  n$('bnSpd').onclick = (e) => togglePop('speed', e.currentTarget);
+  n$('bnSleep').onclick = (e) => togglePop('sleep', e.currentTarget);
+  n$('bnMute').onclick = () => { toggleMute(); drawNow(); };
+  slider(n$('bnSeek'), (f) => { nowDrag = true; const { start, end } = span(); setFill(n$('bnSeek'), f); n$('bnPos').textContent = clock(f * (end - start)); n$('bnRem').textContent = '-' + clock((1 - f) * (end - start)); },
+    (f) => { nowDrag = false; const { start, end } = span(); seekBook(start + f * (end - start)); });
+  slider(n$('bnVol'), (f) => { setVolume(f * 100); drawNow(); draw(); });
+  now.querySelectorAll('.mode[data-pane]').forEach((b) => (b.onclick = () => { nowPane = b.dataset.pane; try { localStorage.setItem('bnowPane', nowPane); } catch {} drawPane(); }));
+  n$('bnList')?.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const c = B.chapters[Number(b.dataset.i)]; if (!c) return; if (!B.started) playBook(B.item.id, { at: c.start }); else seekBook(c.start); });
+  drawPane(); drawNow(true);
+}
+let nowDrag = false, nowCh = -2;
+function drawPane() {
+  now.querySelectorAll('.bn-pane').forEach((p) => p.classList.toggle('off', p.dataset.pane !== nowPane));
+  now.querySelectorAll('.mode[data-pane]').forEach((b) => b.classList.toggle('on', b.dataset.pane === nowPane));
+  if (nowPane === 'chapters') scrollCur(true);
+}
+function scrollCur(force) { const l = n$('bnList'), c = l?.querySelector('.cur'); if (l && c && (force || !l.matches(':hover'))) l.scrollTo({ top: c.offsetTop - l.clientHeight / 3, behavior: force ? 'auto' : 'smooth' }); }
+function drawNow(first) {
+  if (!nowOpen) return;
+  if (!B.item) return closeBookNow();
+  if (B.item.id !== nowFor) return buildNow();
+  const playing = B.playing && B.started;
+  const pb = n$('bnPlay');
+  if (pb.dataset.st !== String(playing)) { pb.dataset.st = String(playing); pb.innerHTML = playing ? IC.pause : IC.play; pb.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
+  n$('bnCover').classList.toggle('paused', !playing);
+  n$('bnSpd').textContent = B.speed.toFixed(2) + '×'; n$('bnSpd').classList.toggle('on', B.speed !== 1);
+  const sl = n$('bnSleep'); sl.classList.toggle('on', !!B.sleep);
+  sl.querySelector('.bb-sl').textContent = B.sleep?.end ? Math.max(1, Math.ceil((B.sleep.end - Date.now()) / 60000)) + 'm' : B.sleep ? 'ch' : '';
+  n$('bnPrev').disabled = n$('bnNext').disabled = !B.chapters.length;
+  n$('bnMute').innerHTML = M.muted || M.volume === 0 ? IC.muted : IC.vol;
+  setFill(n$('bnVol'), M.muted ? 0 : M.volume / 100);
+  const c = curChapter(), ci = chapterAt(B.chapters, B.pos);
+  n$('bnCh').textContent = c?.title || '';
+  if (!nowDrag) { const { start, end } = span(); n$('bnPos').textContent = clock(B.pos - start); n$('bnRem').textContent = '-' + clock(end - B.pos); setFill(n$('bnSeek'), (B.pos - start) / Math.max(1, end - start)); }
+  const f = B.duration ? B.pos / B.duration : 0;
+  n$('bnBookBar').style.width = (f * 100).toFixed(2) + '%';
+  n$('bnBookTxt').textContent = B.duration ? `${Math.round(f * 100)}% · ${hm((B.duration - B.pos) / B.speed)} left` : '';
+  const chN = n$('bnChN'); if (chN) chN.textContent = ci >= 0 ? `${ci + 1} of ${B.chapters.length}` : plural(B.chapters.length);
+  now.querySelectorAll('.bn-chi').forEach((b, i) => {
+    b.classList.toggle('cur', i === ci); b.classList.toggle('past', i < ci);
+    b.querySelector('.left').textContent = i === ci ? `${clock(B.chapters[i].end - B.pos)} left` : '';
+  });
+  if (ci !== nowCh) { const was = nowCh; nowCh = ci; if (!first && was !== -2) scrollCur(false); }
+}
+const plural = (n) => `${n} chapter${n === 1 ? '' : 's'}`;
+onBook(() => drawNow());
+onMusic(() => { if (mode.book) drawNow(); });
+setInterval(() => { if (nowOpen && B.playing) drawNow(); }, 1000);

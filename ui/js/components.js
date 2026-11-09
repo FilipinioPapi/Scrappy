@@ -181,11 +181,35 @@ function addRowArrows(row) {
   const go = (dir) => row.scrollBy({ left: dir * Math.max(200, row.clientWidth * 0.85), behavior: 'smooth' });
   wrap.querySelector('.row-arrow.l').addEventListener('click', (e) => { e.stopPropagation(); go(-1); });
   wrap.querySelector('.row-arrow.r').addEventListener('click', (e) => { e.stopPropagation(); go(1); });
-  row.addEventListener('scroll', update, { passive: true });
+  // One thin bar under every sideways row (same look everywhere). Click or drag it to slide the row.
+  const bar = document.createElement('div');
+  bar.className = 'hbar'; bar.innerHTML = '<i></i>';
+  (wrap.closest('.bs-case') || wrap).after(bar);
+  const th = bar.firstChild;
+  const drawBar = () => {
+    const max = row.scrollWidth - row.clientWidth;
+    bar.classList.toggle('none', max < 4); if (max < 4) return;
+    const w = Math.max(8, (row.clientWidth / row.scrollWidth) * 100);
+    th.style.width = w + '%'; th.style.left = (row.scrollLeft / max) * (100 - w) + '%';
+  };
+  bar.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); bar.setPointerCapture(e.pointerId); bar.classList.add('drag');
+    row.style.scrollBehavior = 'auto'; row.style.scrollSnapType = 'none';
+    const r = bar.getBoundingClientRect(), tw = th.getBoundingClientRect().width;
+    const go = (x) => { const f = Math.min(1, Math.max(0, (x - r.left - tw / 2) / (r.width - tw))); row.scrollLeft = f * (row.scrollWidth - row.clientWidth); };
+    go(e.clientX);
+    const mv = (ev) => go(ev.clientX);
+    const up = () => { bar.classList.remove('drag'); row.style.scrollBehavior = ''; row.style.scrollSnapType = ''; bar.removeEventListener('pointermove', mv); };
+    bar.addEventListener('pointermove', mv); bar.addEventListener('pointerup', up, { once: true }); bar.addEventListener('pointercancel', up, { once: true });
+  });
+  const both = () => { update(); drawBar(); };
+  row.addEventListener('scroll', both, { passive: true });
   wrap.addEventListener('mouseenter', update);
-  new ResizeObserver(update).observe(row);
-  update();
+  new ResizeObserver(both).observe(row);
+  new MutationObserver(both).observe(row, { childList: true });
+  both();
 }
 
-const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows])').forEach(addRowArrows);
+// Every sideways row: Movies & TV rows (.row) and Music / Audiobooks rows (.mrow).
+const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows]), #view .mrow:not([data-arrows])').forEach(addRowArrows);
 new MutationObserver(scanRows).observe(document.getElementById('view'), { childList: true, subtree: true });

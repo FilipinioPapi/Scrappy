@@ -10,6 +10,9 @@ const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}"
 const NAV = [
   ['', 'Home', '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>'],
   ['library', 'Library', '<path d="M5 4h4v16H5zM10 4h4v16h-4zM15.5 5l3.8-1 3 15.4-3.8 1z"/>'],
+  ['authors', 'Authors', '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'],
+  ['series', 'Series', '<rect x="3" y="6" width="12" height="15" rx="1.5"/><path d="M7 3h12.5A1.5 1.5 0 0 1 21 4.5V17"/>'],
+  ['genres', 'Genres', '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>'],
 ];
 const BOOK_ICON = 'M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3';
 const plural = (n, w) => `${(n || 0).toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
@@ -93,7 +96,7 @@ function authorCard(a) {
 }
 function genreTile(g, list) {
   const fan = list.slice(0, 3).map((it) => `<span style="background-image:url('${absCover(it, 120)}')"></span>`).join('');
-  return `<a class="mood" href="${H('library')}?genre=${encodeURIComponent(g)}" style="--h:${genreHue(g)}"><div class="shine"></div><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><path d="${BOOK_ICON}"/></svg><div class="fan">${fan}</div>
+  return `<a class="mood" href="${H('genre/' + encodeURIComponent(g))}" style="--h:${genreHue(g)}"><div class="shine"></div><svg class="art" viewBox="0 0 24 24" aria-hidden="true"><path d="${BOOK_ICON}"/></svg><div class="fan">${fan}</div>
     <div class="txt"><div class="nm">${esc(g)}</div><div class="ct">${plural(list.length, 'book')}</div></div></a>`;
 }
 const section = (title, sub, inner, extra = '', id = '') => `<section class="msec"${id ? ` id="${id}"` : ''}><div class="msec-h"><h2>${esc(title)}${sub ? ` <span class="t2 bk-sub">${esc(sub)}</span>` : ''}</h2>${extra}</div>${inner}</section>`;
@@ -131,7 +134,7 @@ export async function booksView(root, ctx) {
   const params = new URLSearchParams(qs || '');
   if (!root.querySelector('.bkshell')) root.innerHTML = shellHtml();
   // Home is lit on the home page, Library on the library pages (book and author pages light neither).
-  const lit = page === '' ? '' : page === 'library' ? 'library' : null;
+  const lit = ['', 'library', 'authors', 'series', 'genres'].includes(page) ? page : page === 'genre' ? 'genres' : null;
   root.querySelectorAll('.mnav[data-p]').forEach((a) => a.classList.toggle('on', a.dataset.p === lit));
   const main = root.querySelector('#mmain');
   main.className = 'mmain bk page-' + (page || 'home');
@@ -140,7 +143,11 @@ export async function booksView(root, ctx) {
   try {
     await libraries(); drawLibs(root);
     switch (page) {
-      case 'library': return await libraryPage(v);
+      case 'library': return params.get('genre') ? await libraryPage(v) : await shelfPage(v);
+      case 'authors': return await authorsPage(v);
+      case 'series': return await seriesPage(v);
+      case 'genres': return await genresPage(v);
+      case 'genre': return await genrePage(v, id);
       case 'book': return await bookPage(v, id);
       case 'author': return await authorPage(v, id);
       default: return await homePage(v);
@@ -243,7 +250,7 @@ async function authorPage(v, id) {
     const fin = list.filter((it) => progOf(it.id)?.isFinished).length;
     const img = absAuthorImg(a, 400), bio = plainText(a.description);
     main.innerHTML = `
-      ${crumbs([['Home', H()], ['Authors', H() + '?row=authors'], [a.name]])}
+      ${crumbs([['Authors', H('authors')], [a.name]])}
       <div class="bk-ahead"><div class="mcv round bk-av bk-big" style="--h:${hue(a.name)}"><b>${esc(initials(a.name))}</b>${img ? `<img src="${img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
         <div style="min-width:0"><div class="kicker">AUTHOR</div><h1 class="disp mtitle">${esc(a.name)}</h1>
         <div class="t2 bk-meta">${plural(list.length, 'book')} in your library · ${fin} finished</div>
@@ -282,7 +289,7 @@ async function bookPage(v, id) {
         <div>
           ${desc ? `<h2 class="bk-h2">About this book</h2><p class="bk-desc clamp" id="bkDesc">${esc(desc)}</p><button type="button" class="bk-more" id="bkDescMore" hidden>More</button>` : ''}
           ${seriesOf(it) ? `<div class="kicker bk-k">SERIES</div><div class="bk-line">${esc(seriesOf(it))}</div>` : ''}
-          ${(m.genres || []).length ? `<div class="kicker bk-k">GENRES</div><div class="bk-chips">${m.genres.map((g) => `<a class="bk-chip" href="${H('library')}?genre=${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>` : ''}
+          ${(m.genres || []).length ? `<div class="kicker bk-k">GENRES</div><div class="bk-chips">${m.genres.map((g) => `<a class="bk-chip" href="${H('genre/' + encodeURIComponent(g))}">${esc(g)}</a>`).join('')}</div>` : ''}
         </div>
         ${chapters.length ? `<div><div class="bk-chh"><h2 class="bk-h2">Chapters</h2><span class="t2">${plural(chapters.length, 'chapter')}</span></div>
           <div class="bk-chl" id="bkChl">${chapters.map((c, i) => `<button type="button" class="bk-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div></div>` : ''}
@@ -337,4 +344,243 @@ async function bookPage(v, id) {
     if (cur) { const box = main.querySelector('#bkChl'); box.scrollTop = cur.offsetTop - box.offsetTop - box.clientHeight / 3; }
   }, alive);
   if (!item) throw new Error('Book not found.');
+}
+
+// ---------- Bookshelf pieces (Library, Authors, Series, Genres) ----------
+const nameKey = (n) => { const w = String(n || '').trim().split(/\s+/); return (w.length > 1 ? w[w.length - 1] + ' ' + w.slice(0, -1).join(' ') : w[0] || '').toLowerCase(); };
+const titleKey = (it) => (md(it).titleIgnorePrefix || md(it).title || '').toLowerCase();
+const authorKey = (it) => (md(it).authorNameLF || nameKey(md(it).authorName)).toLowerCase();
+const authorsOf = (it) => String(md(it).authorName || '').split(/\s*,\s*|\s+&\s+/).filter(Boolean);
+/** "Mistborn #1, Cosmere #3" -> [{ name, seq }] (minified items only carry this string). */
+const seriesList = (it) => {
+  const m = md(it);
+  if (Array.isArray(m.series) && m.series.length) return m.series.map((x) => ({ name: x.name, seq: x.sequence || '' }));
+  return String(m.seriesName || '').split(/,\s+(?=[^,]*?(?:#|$))/).map((x) => x.trim()).filter(Boolean).map((x) => { const r = x.match(/^(.*?)\s+#(\S+)$/); return r ? { name: r[1], seq: r[2] } : { name: x, seq: '' }; });
+};
+const seqNum = (x) => { const n = parseFloat(x); return Number.isFinite(n) ? n : 1e9; };
+const SEARCH = line('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>', 16);
+
+/** A book standing on a shelf: its full cover art, a progress line and a finished tick. */
+function shelfBook(it) {
+  const m = md(it), p = progOf(it.id), pct = pctOf(it.id), fin = p?.isFinished;
+  const state = fin ? 'Finished' : pct > 0 ? `${Math.round(pct * 100)}% listened` : 'Not started';
+  return `<a class="bs-book" href="${bookHref(it.id)}" title="${esc(`${m.title || ''}\n${m.authorName || ''}\n${state}`)}">
+    <div class="bs-art" style="--h:${hue(m.title || it.id)}"><span class="bs-ph"><b>${esc(m.title || '')}</b><i>${esc(m.authorName || '')}</i></span>
+      <img loading="lazy" src="${absCover(it, 400)}" alt="" onload="this.parentNode.classList.add('ld')" onerror="this.remove()">
+      ${pct > 0 && !fin ? `<span class="bs-pg"><i style="width:${(pct * 100).toFixed(1)}%"></i></span>` : ''}
+      ${fin ? `<span class="bs-fin">${BI.check}</span>` : ''}
+      <button type="button" class="hoverplay" data-playbook="${esc(it.id)}" aria-label="Play">${IC.play}</button></div></a>`;
+}
+/** One sideways shelf. Arrows and the thin bar under it come from components.js (any .row). */
+const sideShelf = (list) => `<div class="bs-case"><div class="row bs-row">${list.map(shelfBook).join('')}</div><div class="bs-plank"></div></div>`;
+const segHtml = (id, opts, cur) => `<div class="bk-seg" id="${id}" role="group">${opts.map(([k, l, ic]) => `<button type="button" data-k="${k}" class="${k === cur ? 'on' : ''}">${ic || ''}${l}</button>`).join('')}</div>`;
+function wireSeg(main, id, fn) {
+  const box = main.querySelector('#' + id);
+  box.onclick = (e) => { const b = e.target.closest('[data-k]'); if (!b) return; box.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); fn(b.dataset.k); };
+}
+const pageHead = (title, find) => `<div class="bk-libh"><h1 class="disp bk-h1">${title}</h1><span class="t2" id="bkCount"></span><span class="sp"></span>
+  <label class="bk-find">${SEARCH}<input id="bkQ" placeholder="${find}" autocomplete="off"></label></div>`;
+function wireFind(main, fn) { let t; main.querySelector('#bkQ').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => fn(e.target.value.trim().toLowerCase()), 120); }); }
+const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+/** Big lists draw a screenful first, then the rest as you scroll near the end. */
+function drawChunks(box, parts, after) {
+  let n = 0; const step = 12;
+  const more = () => { box.insertAdjacentHTML('beforeend', parts.slice(n, n + step).join('')); n += step; after?.(); if (n < parts.length) io.observe(box.lastElementChild); };
+  const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); more(); } }, { rootMargin: '800px' });
+  box._more = () => { io.disconnect(); if (n < parts.length) more(); else box._more = null; };
+  box.innerHTML = ''; if (!parts.length) { box._more = null; return; } more();
+}
+
+
+function sortBooks(l, sort) {
+  const r = (it) => (progOf(it.id)?.isFinished ? 2 : pctOf(it.id) > 0 ? 0 : 1);
+  if (sort === 'title') return l.slice().sort((a, b) => titleKey(a).localeCompare(titleKey(b)));
+  if (sort === 'author') return l.slice().sort((a, b) => authorKey(a).localeCompare(authorKey(b)) || seqNum(seriesList(a)[0]?.seq) - seqNum(seriesList(b)[0]?.seq) || titleKey(a).localeCompare(titleKey(b)));
+  if (sort === 'progress') return l.slice().sort((a, b) => r(a) - r(b) || pctOf(b.id) - pctOf(a.id) || titleKey(a).localeCompare(titleKey(b)));
+  return l.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+}
+/** A tall bookshelf: as many covers per shelf as fit, shelves stacked top to bottom. */
+function mountWall(wall, rail, alive, chunked = true) {
+  let list = [], per = 0, letters = false;
+  const letter = (it) => { const c = (titleKey(it)[0] || '#').toUpperCase(); return /[A-Z]/.test(c) ? c : '#'; };
+  const perRow = () => { const w = wall.clientWidth - 44; return Math.max(1, Math.floor((w + 22) / (158 + 22))); };
+  const draw = () => {
+    per = perRow();
+    const rows = [];
+    for (let i = 0; i < list.length; i += per) rows.push(list.slice(i, i + per));
+    (chunked ? drawChunks : (box, parts) => { box.innerHTML = parts.join(''); })(wall, rows.map((r, i) => `<div class="bs-case bs-tall" data-i="${i}"><div class="bs-books">${r.map(shelfBook).join('')}</div><div class="bs-plank"></div></div>`));
+    if (!list.length) wall.innerHTML = '<div class="t2 bk-none">No books match.</div>';
+    if (!rail) return;
+    // A–Z strip: jump to the first shelf holding that letter.
+    rail.hidden = !letters || list.length < 30;
+    if (rail.hidden) return;
+    const first = new Map(); list.forEach((it, i) => { const l = letter(it); if (!first.has(l)) first.set(l, Math.floor(i / per)); });
+    rail.innerHTML = '#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l) => `<button type="button" data-row="${first.get(l) ?? ''}"${first.has(l) ? '' : ' disabled'}>${l}</button>`).join('');
+  };
+  if (rail) rail.onclick = (e) => {
+    const b = e.target.closest('[data-row]'); if (!b || b.dataset.row === '') return;
+    const target = Number(b.dataset.row);
+    let guard = 0; // shelves draw as you scroll; draw enough to reach that one
+    while (!wall.querySelector(`[data-i="${target}"]`) && wall._more && guard++ < 500) wall._more();
+    wall.querySelector(`[data-i="${target}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  let rt; new ResizeObserver(() => { if (!alive()) return; if (list.length && perRow() !== per) { clearTimeout(rt); rt = setTimeout(draw, 80); } }).observe(wall);
+  return { set(l, az) { list = l; letters = az; draw(); } };
+}
+
+// ---------- Library: the whole library on one tall bookshelf ----------
+const LSORTS = [['title', 'Title A–Z'], ['author', 'Author'], ['added', 'Recently added'], ['progress', 'Progress']];
+async function shelfPage(v) {
+  const { main, alive } = v;
+  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  if (!alive()) return;
+  const st = { q: '', sort: LSORTS.some(([k]) => k === localStorage.getItem('bkShelfSort')) ? localStorage.getItem('bkShelfSort') : 'title' };
+  main.innerHTML = `${pageHead('LIBRARY', 'Find a book')}
+    <div class="bk-sortrow"><span class="bk-lab">SORT BY</span>${segHtml('bkSortSeg', LSORTS, st.sort)}</div>
+    <div class="bs-wall" id="bkWall"></div><div class="bs-rail" id="bkRail" hidden></div>`;
+  const wall = mountWall(main.querySelector('#bkWall'), main.querySelector('#bkRail'), alive);
+  const sorted = () => sortBooks(all.filter((it) => !st.q || (md(it).title || '').toLowerCase().includes(st.q) || (md(it).authorName || '').toLowerCase().includes(st.q)), st.sort);
+  const redo = () => { const l = sorted(); wall.set(l, st.sort === 'title'); main.querySelector('#bkCount').textContent = plural(l.length, 'book'); };
+  wireFind(main, (q) => { st.q = q; redo(); });
+  wireSeg(main, 'bkSortSeg', (k) => { st.sort = k; save('bkShelfSort', k); redo(); });
+  wirePlay(main);
+  redo();
+}
+
+// ---------- Authors: a shelf per author ----------
+async function authorsPage(v) {
+  const { main, alive } = v;
+  const lib = libId();
+  const [all, , ar] = await Promise.all([items(lib), loadProgress(), api.abs(`/api/libraries/${lib}/authors`).catch(() => ({ authors: [] }))]);
+  if (!alive()) return;
+  const byName = new Map();
+  all.forEach((it) => authorsOf(it).forEach((n) => { const k = n.toLowerCase(); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(it); }));
+  const known = new Map((ar.authors || []).map((a) => [String(a.name).toLowerCase(), a]));
+  const authors = [...byName.entries()].map(([k, list]) => { const a = known.get(k) || { name: authorsOf(list[0]).find((n) => n.toLowerCase() === k) || k }; return { a, list: list.slice().sort((x, y) => seqNum(seriesList(x)[0]?.seq) - seqNum(seriesList(y)[0]?.seq) || titleKey(x).localeCompare(titleKey(y))) }; })
+    .sort((x, y) => nameKey(x.a.name).localeCompare(nameKey(y.a.name)));
+  main.innerHTML = `${pageHead('AUTHORS', 'Find an author')}<div id="bkShelves"></div>`;
+  const box = main.querySelector('#bkShelves');
+  const draw = (q = '') => {
+    const l = authors.filter((x) => !q || x.a.name.toLowerCase().includes(q));
+    main.querySelector('#bkCount').textContent = plural(l.length, 'author');
+    drawChunks(box, l.map(({ a, list }) => {
+      const img = a.id ? absAuthorImg(a, 120) : '';
+      const head = `<span class="mcv round bk-av bs-av" style="--h:${hue(a.name)}"><b>${esc(initials(a.name))}</b>${img ? `<img loading="lazy" src="${img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span>`;
+      const name = a.id ? `<a class="bs-name" href="${authorHref(a.id)}">${esc(a.name)}</a>` : `<b class="bs-name">${esc(a.name)}</b>`;
+      return `<section class="bs-grp"><div class="bs-gh">${head}${name}<span class="t2">${plural(list.length, 'book')}</span></div>${sideShelf(list)}</section>`;
+    }));
+    if (!l.length) box.innerHTML = '<div class="t2 bk-none">No authors match.</div>';
+  };
+  wireFind(main, draw); wirePlay(main); draw();
+}
+
+
+function seriesGroups(all) {
+  const map = new Map();
+  all.forEach((it) => seriesList(it).forEach(({ name, seq }) => { const k = name.toLowerCase(); if (!map.has(k)) map.set(k, { name, books: [] }); map.get(k).books.push({ it, seq }); }));
+  return [...map.values()].map((x) => {
+    const list = x.books.sort((a, b) => seqNum(a.seq) - seqNum(b.seq) || titleKey(a.it).localeCompare(titleKey(b.it))).map((b) => b.it);
+    return { name: x.name, list, by: md(list[0]).authorName || '', akey: authorKey(list[0]), added: Math.max(...list.map((it) => it.addedAt || 0)) };
+  });
+}
+function seriesTile(x) {
+  const n = x.list.length, f = x.list.filter((it) => progOf(it.id)?.isFinished).length, avg = x.list.reduce((t, it) => t + pctOf(it.id), 0) / n;
+  const prog = f === n ? 'Finished' : f ? `${f} of ${n} finished` : avg > 0 ? 'Started' : 'Not started';
+  return `<a class="bs-tile" href="${H('series')}?q=${encodeURIComponent(x.name)}"><div class="bs-stack">${x.list.slice(0, 3).map((it) => `<span class="bs-art sm" style="--h:${hue(md(it).title || it.id)}"><span class="bs-ph"><b>${esc(md(it).title || '')}</b></span><img loading="lazy" src="${absCover(it, 240)}" alt="" onload="this.parentNode.classList.add('ld')" onerror="this.remove()"></span>`).join('')}</div>
+    <div class="t1">${esc(x.name)}</div><div class="t2">${esc(x.by)} · ${plural(n, 'book')}</div><div class="t2">${prog}</div><div class="bk-prog"><i style="width:${(avg * 100).toFixed(1)}%"></i></div></a>`;
+}
+
+// ---------- Series: a shelf per series (or a grid of collections) ----------
+const SSORTS = [['author', 'Author'], ['name', 'Series A–Z'], ['added', 'Recently added']];
+const SVIEWS = [['shelves', 'Shelves', line('<rect x="3" y="4" width="5" height="6" rx="1"/><rect x="10" y="4" width="5" height="6" rx="1"/><path d="M2 12h20"/><rect x="3" y="14" width="5" height="6" rx="1"/><rect x="10" y="14" width="5" height="6" rx="1"/><path d="M2 22h20"/>', 16)],
+  ['grid', 'Collections', line('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', 16)]];
+async function seriesPage(v) {
+  const { main, alive, params } = v;
+  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  if (!alive()) return;
+  const series = seriesGroups(all);
+  const st = { q: (params.get('q') || '').toLowerCase(), sort: SSORTS.some(([k]) => k === localStorage.getItem('bkSerSort')) ? localStorage.getItem('bkSerSort') : 'author', view: localStorage.getItem('bkSerView') === 'grid' ? 'grid' : 'shelves' };
+  main.innerHTML = `${pageHead('SERIES', 'Find a series')}
+    <div class="bk-sortrow"><span class="bk-lab">SORT BY</span>${segHtml('bkSortSeg', SSORTS, st.sort)}<span class="sp"></span>${segHtml('bkViewSeg', SVIEWS, st.view)}</div>
+    <div id="bkShelves"></div>`;
+  const box = main.querySelector('#bkShelves');
+  let shown = [];
+  const draw = () => {
+    shown = series.filter((x) => !st.q || x.name.toLowerCase().includes(st.q) || x.by.toLowerCase().includes(st.q));
+    if (st.sort === 'author') shown.sort((a, b) => a.akey.localeCompare(b.akey) || a.name.localeCompare(b.name));
+    else if (st.sort === 'name') shown.sort((a, b) => a.name.replace(/^the /i, '').localeCompare(b.name.replace(/^the /i, '')));
+    else shown.sort((a, b) => b.added - a.added);
+    main.querySelector('#bkCount').textContent = plural(shown.length, 'series').replace(/seriess$/, 'series');
+    if (st.view === 'grid') { box.className = 'bs-tiles'; drawChunks(box, shown.map(seriesTile)); }
+    else { box.className = ''; drawChunks(box, shown.map((x, i) => `<section class="bs-grp" data-s="${i}"><div class="bs-gh"><b class="bs-name">${esc(x.name)}</b><span class="t2">by ${esc(x.by)}</span><span class="t2">· ${plural(x.list.length, 'book')}</span></div>${sideShelf(x.list)}</section>`)); }
+    if (!shown.length) box.innerHTML = `<div class="t2 bk-none">${series.length ? 'No series match.' : 'No series in this library yet.'}</div>`;
+  };
+  if (st.q) { st.view = 'shelves'; main.querySelector('#bkQ').value = params.get('q'); main.querySelectorAll('#bkViewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.k === 'shelves')); }
+  wireFind(main, (q) => { st.q = q; draw(); });
+  wireSeg(main, 'bkSortSeg', (k) => { st.sort = k; save('bkSerSort', k); draw(); });
+  wireSeg(main, 'bkViewSeg', (k) => { st.view = k; save('bkSerView', k); draw(); });
+  wirePlay(main); draw();
+}
+
+// ---------- Genres: a shelf per genre ----------
+async function genresPage(v) {
+  const { main, alive } = v;
+  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  if (!alive()) return;
+  const gmap = new Map();
+  all.forEach((it) => (md(it).genres || []).forEach((g) => { if (!gmap.has(g)) gmap.set(g, []); gmap.get(g).push(it); }));
+  const genres = [...gmap.entries()].sort((a, b) => b[1].length - a[1].length).map(([g, l]) => [g, l.slice().sort((a, b) => titleKey(a).localeCompare(titleKey(b)))]);
+  main.innerHTML = `${pageHead('GENRES', 'Find a genre')}<div id="bkShelves"></div>`;
+  const box = main.querySelector('#bkShelves');
+  const draw = (q = '') => {
+    const l = genres.filter(([g]) => !q || g.toLowerCase().includes(q));
+    main.querySelector('#bkCount').textContent = plural(l.length, 'genre');
+    drawChunks(box, l.map(([g, list]) => `<section class="bs-grp"><div class="bs-gh"><a class="bs-name lk" href="${H('genre/' + encodeURIComponent(g))}">${esc(g)}<span class="chev">›</span></a><span class="t2">${plural(list.length, 'book')}</span></div>${sideShelf(list)}</section>`));
+    if (!l.length) box.innerHTML = `<div class="t2 bk-none">${genres.length ? 'No genres match.' : 'Your books have no genres set in Audiobookshelf.'}</div>`;
+  };
+  wireFind(main, draw); wirePlay(main); draw();
+}
+
+// ---------- One genre ----------
+async function genrePage(v, g) {
+  const { main, alive } = v;
+  const lib = libId();
+  const [all] = await Promise.all([items(lib), loadProgress()]);
+  if (!alive()) return;
+  const mine = all.filter((it) => (md(it).genres || []).includes(g));
+  if (!mine.length) { main.innerHTML = crumbs([['Genres', H('genres')], [g]]) + '<div class="empty">No books in this genre.</div>'; return; }
+  const cont = mine.filter((it) => !progOf(it.id)?.isFinished && pctOf(it.id) > 0).sort((a, b) => (progOf(b.id)?.lastUpdate || 0) - (progOf(a.id)?.lastUpdate || 0));
+  const series = seriesGroups(mine).sort((a, b) => b.list.length - a.list.length);
+  const byAuthor = new Map(); mine.forEach((it) => authorsOf(it).forEach((n) => byAuthor.set(n, (byAuthor.get(n) || 0) + 1)));
+  const known = new Map(); try { ((await api.abs(`/api/libraries/${lib}/authors`)).authors || []).forEach((a) => known.set(String(a.name).toLowerCase(), a)); } catch {}
+  if (!alive()) return;
+  const authors = [...byAuthor.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14).map(([n, c]) => ({ ...(known.get(n.toLowerCase()) || { name: n }), numBooks: c }));
+  const hours = mine.reduce((t, it) => t + (it.media?.duration || 0), 0) / 3600;
+  const recent = mine.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)).slice(0, 20);
+  const gmap = new Map(); all.forEach((it) => (md(it).genres || []).forEach((x) => { if (x === g) return; if (!gmap.has(x)) gmap.set(x, []); gmap.get(x).push(it); }));
+  const others = [...gmap.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 8);
+  const st = { sort: LSORTS.some(([k]) => k === localStorage.getItem('bkGenreSort')) ? localStorage.getItem('bkGenreSort') : 'title' };
+  const hc = mine.slice(0, 3);
+  main.innerHTML = `
+    ${crumbs([['Genres', H('genres')], [g]])}
+    <div class="bg-hero" style="--h:${genreHue(g)}">
+      ${hc.map((it, i) => `<span class="bs-art bg-hc" style="--h:${hue(md(it).title || it.id)};right:${60 + i * 120}px;transform:rotate(${[6, -4, -10][i]}deg);z-index:${3 - i}"><span class="bs-ph"><b>${esc(md(it).title || '')}</b></span><img src="${absCover(it, 300)}" alt="" onload="this.parentNode.classList.add('ld')" onerror="this.remove()"></span>`).join('')}
+      <div class="bg-btns"><button type="button" class="btn" id="bkSurprise">${IC.play}<span>Surprise me</span></button></div>
+      <h1 class="disp bg-t">${esc(g.toUpperCase())}</h1>
+      <div class="bg-s">${[plural(mine.length, 'book'), plural(byAuthor.size, 'author'), hours >= 1 ? Math.round(hours).toLocaleString() + ' hours' : '', cont.length ? cont.length + ' in progress' : ''].filter(Boolean).join(' · ')}</div>
+    </div>
+    ${cont.length ? section('Continue listening', `${g} you've started`, sideShelf(cont)) : ''}
+    ${series.length ? section('Series', plural(series.length, 'series').replace(/seriess$/, 'series'), `<div class="row bs-tilerow">${series.map(seriesTile).join('')}</div>`) : ''}
+    ${section('Recently added', '', sideShelf(recent))}
+    <section class="msec"><div class="msec-h bk-allh"><h2>All ${esc(g)} <span class="t2 bk-sub">${plural(mine.length, 'book')}</span></h2>${segHtml('bkSortSeg', LSORTS, st.sort)}</div><div class="bs-wall" id="bkWall"></div></section>
+    ${authors.length ? section('Authors', `Most books in ${g} first`, `<div class="mrow">${authors.map(authorCard).join('')}</div>`) : ''}
+    ${others.length ? section('More genres', '', `<div class="bk-genres">${others.map(([x, l]) => genreTile(x, l)).join('')}</div>`) : ''}`;
+  const wall = mountWall(main.querySelector('#bkWall'), null, alive, false);
+  wall.set(sortBooks(mine, st.sort), false);
+  wireSeg(main, 'bkSortSeg', (k) => { st.sort = k; save('bkGenreSort', k); wall.set(sortBooks(mine, k), false); });
+  main.querySelector('#bkSurprise').onclick = () => {
+    const pool = mine.filter((it) => !progOf(it.id)); const list = pool.length ? pool : mine;
+    playBook(list[Math.floor(Math.random() * list.length)].id);
+  };
+  wirePlay(main);
 }
