@@ -1,5 +1,6 @@
 mod emby;
 mod mpv;
+mod servers;
 
 use emby::Config;
 use serde_json::{json, Value};
@@ -34,12 +35,100 @@ impl AppState {
 fn get_session(state: State<'_, AppState>) -> Value {
     let c = state.cfg();
     json!({
-        "loggedIn": c.logged_in(),
+        "loggedIn": c.logged_in() || c.nd_logged_in() || c.abs_logged_in(),
         "server": c.server,
         "serverName": c.server_name,
         "userName": c.user_name,
         "userId": c.user_id,
+        "servers": {
+            "emby": { "signedIn": c.logged_in(), "address": c.server, "name": c.server_name, "user": c.user_name },
+            "navidrome": { "signedIn": c.nd_logged_in(), "address": c.nd_server, "name": c.nd_name, "user": c.nd_user },
+            "audiobookshelf": { "signedIn": c.abs_logged_in(), "address": c.abs_server, "name": c.abs_name, "user": c.abs_user },
+        },
     })
+}
+
+/// Step 1 of signing in: is there really an Emby / Navidrome / Audiobookshelf there?
+#[tauri::command]
+async fn server_check(state: State<'_, AppState>, kind: String, address: String) -> Result<Value, String> {
+    if address.trim().is_empty() {
+        return Err("Enter your server address.".into());
+    }
+    let (base, name) = match kind.as_str() {
+        "emby" => emby::find_server(&state.http, &address).await?,
+        "navidrome" => servers::nd_find(&state.http, &address).await?,
+        "audiobookshelf" => servers::abs_find(&state.http, &address).await?,
+        _ => return Err("Unknown server type.".into()),
+    };
+    Ok(json!({ "address": base, "name": name }))
+}
+
+/// Step 2: sign in with the address found in step 1.
+#[tauri::command]
+async fn server_login(
+    state: State<'_, AppState>,
+    kind: String,
+    address: String,
+    username: String,
+    password: String,
+) -> Result<Value, String> {
+    if username.trim().is_empty() {
+        return Err("Enter your username.".into());
+    }
+    let user = username.trim();
+    match kind.as_str() {
+        "emby" => {
+            login(state.clone(), address, username, password).await?;
+        }
+        "navidrome" => {
+            let (base, name) = servers::nd_find(&state.http, &address).await?;
+            let (u, salt, token) = servers::nd_login(&state.http, &base, user, &password).await?;
+            let mut c = state.cfg.lock().unwrap();
+            c.nd_server = base;
+            c.nd_name = name;
+            c.nd_user = u;
+            c.nd_salt = salt;
+            c.nd_token = token;
+            c.save(&state.cfg_path)?;
+        }
+        "audiobookshelf" => {
+            let (base, name) = servers::abs_find(&state.http, &address).await?;
+            let (u, token) = servers::abs_login(&state.http, &base, user, &password).await?;
+            let mut c = state.cfg.lock().unwrap();
+            c.abs_server = base;
+            c.abs_name = name;
+            c.abs_user = u;
+            c.abs_token = token;
+            c.save(&state.cfg_path)?;
+        }
+        _ => return Err("Unknown server type.".into()),
+    }
+    Ok(get_session(state))
+}
+
+/// Sign out of one server. The address and username stay filled in for next time.
+#[tauri::command]
+async fn server_logout(state: State<'_, AppState>, kind: String) -> Result<Value, String> {
+    match kind.as_str() {
+        "emby" => logout_emby(&state).await?,
+        "navidrome" => {
+            let mut c = state.cfg.lock().unwrap();
+            c.nd_token.clear();
+            c.nd_salt.clear();
+            c.save(&state.cfg_path)?;
+        }
+        "audiobookshelf" => {
+            let cfg = state.cfg();
+            if cfg.abs_logged_in() {
+                let _ = state.http.post(format!("{}/logout", cfg.abs_server)).bearer_auth(&cfg.abs_token).send().await;
+            }
+            let mut c = state.cfg.lock().unwrap();
+            c.abs_token.clear();
+            c.save(&state.cfg_path)?;
+        }
+        _ => return Err("Unknown server type.".into()),
+    }
+    Ok(get_session(state))
 }
 
 #[tauri::command]
@@ -71,8 +160,7 @@ async fn login(
     Ok(get_session(state))
 }
 
-#[tauri::command]
-async fn logout(state: State<'_, AppState>) -> Result<(), String> {
+async fn logout_emby(state: &AppState) -> Result<(), String> {
     let cfg = state.cfg();
     if cfg.logged_in() {
         // Tell Emby to forget this token; ignore failures (server may be offline).
@@ -81,6 +169,18 @@ async fn logout(state: State<'_, AppState>) -> Result<(), String> {
     let mut c = state.cfg.lock().unwrap();
     c.token.clear();
     c.user_id.clear();
+    c.save(&state.cfg_path)?;
+    Ok(())
+}
+
+/// "Sign out" in the account menu: every server at once.
+#[tauri::command]
+async fn logout(state: State<'_, AppState>) -> Result<(), String> {
+    logout_emby(&state).await?;
+    let mut c = state.cfg.lock().unwrap();
+    c.nd_token.clear();
+    c.nd_salt.clear();
+    c.abs_token.clear();
     c.save(&state.cfg_path)?;
     Ok(())
 }
@@ -135,6 +235,56 @@ fn api_cached(state: State<'_, AppState>, path: String) -> Value {
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or(Value::Null)
+}
+
+fn cache_file(state: &AppState, key: &str) -> PathBuf {
+    let mut h = DefaultHasher::new();
+    key.hash(&mut h);
+    state.cache_dir.join("meta").join(format!("{:016x}.json", h.finish()))
+}
+
+fn save_cache(file: &PathBuf, v: &Value) {
+    if let Some(d) = file.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(file, serde_json::to_vec(v).unwrap_or_default());
+}
+
+fn read_cache(file: &PathBuf) -> Value {
+    std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null)
+}
+
+fn nd_key(cfg: &Config, endpoint: &str, query: &str) -> String {
+    format!("nd|{}|{}|{}?{}", cfg.nd_server, cfg.nd_user, endpoint, query)
+}
+
+/// Navidrome (Subsonic API) call, e.g. nd_get("getAlbumList2", "type=newest&size=30").
+#[tauri::command]
+async fn nd_get(state: State<'_, AppState>, endpoint: String, query: String) -> Result<Value, String> {
+    let cfg = state.cfg();
+    let v = servers::nd_get(&state.http, &cfg, &endpoint, &query).await?;
+    save_cache(&cache_file(&state, &nd_key(&cfg, &endpoint, &query)), &v);
+    Ok(v)
+}
+
+#[tauri::command]
+fn nd_cached(state: State<'_, AppState>, endpoint: String, query: String) -> Value {
+    let cfg = state.cfg();
+    read_cache(&cache_file(&state, &nd_key(&cfg, &endpoint, &query)))
+}
+
+#[tauri::command]
+async fn abs_get(state: State<'_, AppState>, path: String) -> Result<Value, String> {
+    let cfg = state.cfg();
+    let v = servers::abs_get(&state.http, &cfg, &path).await?;
+    save_cache(&cache_file(&state, &format!("abs|{}|{}|{}", cfg.abs_server, cfg.abs_user, path)), &v);
+    Ok(v)
+}
+
+#[tauri::command]
+fn abs_cached(state: State<'_, AppState>, path: String) -> Value {
+    let cfg = state.cfg();
+    read_cache(&cache_file(&state, &format!("abs|{}|{}|{}", cfg.abs_server, cfg.abs_user, path)))
 }
 
 // ---------- Playback ----------
@@ -731,6 +881,13 @@ pub fn run() {
             get_session,
             login,
             logout,
+            server_check,
+            server_login,
+            server_logout,
+            nd_get,
+            nd_cached,
+            abs_get,
+            abs_cached,
             api_get,
             api_cached,
             api_send,

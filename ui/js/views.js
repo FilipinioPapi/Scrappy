@@ -4,53 +4,190 @@ import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
 const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
 
-// ---------------- Login ----------------
+// ---------------- Sign in: one panel for all three servers ----------------
 
-export function loginView(root, ctx) {
-  const s = ctx.session || {};
+const SERVERS = [
+  { kind: 'emby', name: 'Emby', what: 'Movies & TV', eg: '192.168.1.20:8096',
+    icon: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M3 15h18M8 5v4M16 5v4M8 15v4M16 15v4"/>' },
+  { kind: 'navidrome', name: 'Navidrome', what: 'Music', eg: '192.168.1.20:4533',
+    icon: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>' },
+  { kind: 'audiobookshelf', name: 'Audiobookshelf', what: 'Audiobooks', eg: '192.168.1.20:13378',
+    icon: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>' },
+];
+const SPIN = '<svg class="spin" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-9 9"/></svg>';
+const svgLine = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+
+// Where to go once signed in: the first tab whose server is signed in.
+export function firstTab(session) {
+  const s = session?.servers || {};
+  if (s.emby?.signedIn) return '#/home';
+  if (s.navidrome?.signedIn) return '#/music';
+  if (s.audiobookshelf?.signedIn) return '#/audiobooks';
+  return '#/login';
+}
+
+export function loginView(root, ctx, pick = '') {
+  let session = ctx.session || {};
+  const srv = () => session.servers || {};
+  // Start on the server asked for, else the first one not signed in yet.
+  let sel = SERVERS.find((x) => x.kind === pick) || SERVERS.find((x) => !srv()[x.kind]?.signedIn) || SERVERS[0];
+  const found = {}; // kind -> address that passed the check
+
   root.innerHTML = `
-    <div class="login-wrap">
-      <form class="login-card" id="loginForm" autocomplete="off">
-        <img class="login-logo" src="logo.png" alt="">
-        <h1>Scrappy<small>MEDIA CENTER</small></h1>
-        <p class="sub">Sign in to your Emby server</p>
-        <div class="field">
-          <label for="server">Server address</label>
-          <input type="text" id="server" placeholder="e.g. 192.168.1.20:8096" value="${esc(s.server || '')}" spellcheck="false">
-          <div class="hint">The same address you use for Emby in a browser.</div>
-        </div>
-        <div class="field">
-          <label for="username">Username</label>
-          <input type="text" id="username" value="${esc(s.userName || '')}" spellcheck="false">
-        </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input type="password" id="password">
-        </div>
-        <button class="btn" type="submit" id="loginBtn">Sign in</button>
-        <div class="error" id="loginError"></div>
-      </form>
+    <div class="signin">
+      <div class="signin-brand">
+        <img src="logo.png" alt="">
+        <div><div class="brand-name">SCRAPPY</div><div class="brand-sub">MEDIA CENTER <span class="dot">·</span> <span class="nas">JJsNAS</span></div></div>
+      </div>
+      <div class="signin-card">
+        <nav class="signin-list">
+          <div class="signin-label">YOUR SERVERS</div>
+          <div id="srvList"></div>
+          <div class="signin-note">Only the servers you sign in to show up as tabs. You can come back here any time from the account menu.</div>
+        </nav>
+        <form class="signin-form" id="srvForm" autocomplete="off"></form>
+      </div>
     </div>`;
-  const form = root.querySelector('#loginForm');
-  const btn = root.querySelector('#loginBtn');
-  const err = root.querySelector('#loginError');
-  (s.server ? root.querySelector(s.userName ? '#password' : '#username') : root.querySelector('#server')).focus();
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    err.textContent = '';
-    btn.disabled = true;
-    btn.textContent = 'Signing in…';
-    try {
-      await api.login(form.server.value, form.username.value, form.password.value);
-      location.hash = '#/home';
-      ctx.refreshSession();
-    } catch (e2) {
-      err.textContent = String(e2);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Sign in';
+  const list = root.querySelector('#srvList');
+  const form = root.querySelector('#srvForm');
+
+  function drawList() {
+    list.innerHTML = SERVERS.map((x) => {
+      const st = srv()[x.kind] || {};
+      const status = st.signedIn
+        ? `<span class="st ok"><i></i>Signed in as ${esc(st.user)}</span>`
+        : x === sel ? `<span class="st set"><i></i>Setting up…</span>` : `<span class="st"><i></i>Not set up</span>`;
+      return `<button type="button" class="srv${x === sel ? ' sel' : ''}" data-k="${x.kind}">
+        <span class="svc">${svgLine(x.icon)}</span>
+        <span class="srv-txt"><b>${x.name}</b>${status}</span></button>`;
+    }).join('');
+  }
+
+  function drawForm() {
+    const st = srv()[sel.kind] || {};
+    const anyIn = Object.values(srv()).some((v) => v.signedIn);
+    const foot = `
+      <div class="signin-foot">
+        ${st.signedIn ? '<span></span>' : '<button type="button" class="link" id="skipBtn">Skip for now</button>'}
+        <div class="signin-btns">
+          <button type="button" class="btn secondary" id="openBtn" ${anyIn ? '' : 'disabled'}>Open Scrappy</button>
+          ${st.signedIn ? '<button type="button" class="btn secondary" id="outBtn">Sign out</button>' : '<button type="submit" class="btn" id="goBtn" disabled>Sign in</button>'}
+        </div>
+      </div>`;
+    if (st.signedIn) {
+      form.innerHTML = `
+        <div><h1>${sel.name}</h1><p class="sub">Signed in. Your ${sel.what.toLowerCase()} shows up in the ${sel.what} tab.</p></div>
+        <div class="signed-box">
+          <div><span>Server</span><b>${esc(st.address)}</b></div>
+          <div><span>Account</span><b>${esc(st.user)}</b></div>
+        </div>
+        <div class="error" id="srvErr"></div>${foot}`;
+    } else {
+      const addr = st.address || '';
+      form.innerHTML = `
+        <div><h1>${sel.name}</h1><p class="sub" id="stepTxt">Step 1: tell Scrappy where your server is.</p></div>
+        <div class="field">
+          <label for="addr">Server address</label>
+          <div class="addr-row">
+            <input type="text" id="addr" placeholder="e.g. ${sel.eg}" value="${esc(addr)}" spellcheck="false">
+            <button type="button" class="btn secondary" id="chkBtn">Check</button>
+          </div>
+          <div class="hint" id="addrHint">The same address you use for ${sel.name} in a browser.</div>
+        </div>
+        <div class="creds locked" id="creds">
+          <div class="field"><label for="user">Username</label><input type="text" id="user" spellcheck="false" placeholder="Unlocks after the check" value="${esc(st.user || '')}" disabled></div>
+          <div class="field"><label for="pass">Password</label><input type="password" id="pass" disabled></div>
+        </div>
+        <div class="error" id="srvErr"></div>${foot}`;
     }
+    wire();
+  }
+
+  function next() {
+    const i = SERVERS.indexOf(sel);
+    const rest = [...SERVERS.slice(i + 1), ...SERVERS.slice(0, i)].find((x) => !srv()[x.kind]?.signedIn);
+    if (rest) { sel = rest; drawList(); drawForm(); }
+    else location.hash = firstTab(session);
+  }
+
+  function wire() {
+    const $ = (q) => form.querySelector(q);
+    const err = $('#srvErr');
+    $('#openBtn').onclick = () => { location.hash = firstTab(session); };
+    if ($('#skipBtn')) $('#skipBtn').onclick = next;
+    if ($('#outBtn')) $('#outBtn').onclick = async () => {
+      try { session = await api.serverLogout(sel.kind); await ctx.refreshSession(); drawList(); drawForm(); }
+      catch (e) { err.textContent = String(e); }
+    };
+    const addr = $('#addr'); if (!addr) return;
+    const chk = $('#chkBtn'), hint = $('#addrHint'), creds = $('#creds'), go = $('#goBtn');
+    const lock = (on) => {
+      creds.classList.toggle('locked', on);
+      creds.querySelectorAll('input').forEach((i) => (i.disabled = on));
+      go.disabled = on;
+      $('#user').placeholder = on ? 'Unlocks after the check' : '';
+    };
+    let checking = 0;
+    async function check() {
+      const value = addr.value.trim();
+      if (!value) { addr.focus(); return; }
+      const my = ++checking;
+      err.textContent = '';
+      hint.className = 'hint'; hint.textContent = `Looking for ${sel.name} at that address…`;
+      chk.disabled = true; chk.innerHTML = `${SPIN}Checking…`;
+      try {
+        const r = await api.serverCheck(sel.kind, value);
+        if (my !== checking) return;
+        found[sel.kind] = r.address;
+        hint.className = 'hint ok'; hint.textContent = `Found ${r.name} at ${r.address}`;
+        chk.innerHTML = `${svgLine('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 16)}Found`;
+        $('#stepTxt').textContent = 'Step 2: sign in with your account.';
+        lock(false);
+        ($('#user').value ? $('#pass') : $('#user')).focus();
+      } catch (e) {
+        if (my !== checking) return;
+        hint.className = 'hint bad'; hint.textContent = String(e);
+        chk.textContent = 'Check';
+        lock(true);
+      } finally {
+        if (my === checking) chk.disabled = false;
+      }
+    }
+    chk.onclick = check;
+    addr.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); check(); } });
+    addr.addEventListener('input', () => {
+      if (!found[sel.kind]) return;
+      delete found[sel.kind]; checking++;
+      chk.textContent = 'Check'; chk.disabled = false;
+      hint.className = 'hint'; hint.textContent = `The same address you use for ${sel.name} in a browser.`;
+      $('#stepTxt').textContent = 'Step 1: tell Scrappy where your server is.';
+      lock(true);
+    });
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!found[sel.kind]) { check(); return; }
+      err.textContent = '';
+      go.disabled = true; go.innerHTML = `${SPIN}Signing in…`;
+      try {
+        session = await api.serverLogin(sel.kind, found[sel.kind], $('#user').value, $('#pass').value);
+        await ctx.refreshSession();
+        toast(`Signed in to ${sel.name}.`);
+        next();
+      } catch (e2) {
+        err.textContent = String(e2);
+        go.disabled = false; go.textContent = 'Sign in';
+      }
+    };
+    setTimeout(() => (addr.value ? check() : addr.focus()), 0);
+  }
+
+  list.addEventListener('click', (e) => {
+    const b = e.target.closest('.srv'); if (!b) return;
+    const x = SERVERS.find((y) => y.kind === b.dataset.k);
+    if (x === sel) return;
+    sel = x; drawList(); drawForm();
   });
+  drawList(); drawForm();
 }
 
 // ---------------- Home (Watch) ----------------

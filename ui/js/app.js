@@ -2,7 +2,7 @@ import { api, quiet } from './api.js';
 import './player.js';
 import './menu.js';
 import { toast } from './components.js';
-import { loginView, homeView, libraryView, itemView, personView, searchView, comingSoonView } from './views.js';
+import { loginView, firstTab, homeView, libraryView, itemView, personView, searchView, comingSoonView } from './views.js';
 
 const viewEl = document.getElementById('view');
 
@@ -30,8 +30,15 @@ let enterTimer;
 
 async function refreshSession() {
   session = await api.session();
-  document.getElementById('userInfo').innerHTML =
-    `<b>${escapeText(session.userName)}</b>${escapeText(session.serverName || session.server)}`;
+  const sv = session.servers || {};
+  const rows = [['emby', 'Emby'], ['navidrome', 'Navidrome'], ['audiobookshelf', 'Audiobookshelf']]
+    .filter(([k]) => sv[k]?.signedIn)
+    .map(([k, n]) => `<div class="menu-srv"><b>${n}</b>${escapeText(sv[k].user)}</div>`).join('');
+  document.getElementById('userInfo').innerHTML = rows || 'Not signed in';
+  // Only servers you're signed in to get a tab.
+  const tabFor = { home: 'emby', music: 'navidrome', audiobooks: 'audiobookshelf' };
+  document.querySelectorAll('.tabs a').forEach((a) => (a.hidden = !sv[tabFor[a.dataset.tab]]?.signedIn));
+  const pill = document.querySelector('.tab-pill'); if (pill) pill.classList.remove('ready');
 }
 const escapeText = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
@@ -46,9 +53,10 @@ function makeCtx() {
     onLeave: (f) => leaveHandlers.push(f),
     fail(e, soft = false) {
       const msg = String(e);
-      if (msg === 'SESSION_EXPIRED' || msg === 'Not logged in.') {
+      const expired = { SESSION_EXPIRED: 'emby', 'Not logged in.': 'emby', ND_SESSION_EXPIRED: 'navidrome', ABS_SESSION_EXPIRED: 'audiobookshelf' }[msg];
+      if (expired) {
         toast('Your sign-in expired. Please sign in again.', true);
-        location.hash = '#/login';
+        api.serverLogout(expired).catch(() => {}).then(refreshSession).then(() => { location.hash = `#/servers/${expired}`; });
         return;
       }
       if (soft) toast(msg, true);
@@ -74,9 +82,12 @@ async function route(opts = {}) {
   const [, name, arg, arg2] = hash.split('/');
 
   if (!session.loggedIn && name !== 'login') { location.hash = '#/login'; return; }
-  if (session.loggedIn && name === 'login') { location.hash = '#/home'; return; }
+  if (session.loggedIn && name === 'login') { location.hash = firstTab(session); return; }
+  // A tab whose server isn't signed in goes to one that is.
+  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || (['login', 'servers'].includes(name) ? '' : 'emby');
+  if (need && !session.servers?.[need]?.signedIn) { location.hash = firstTab(session); return; }
 
-  topbar.hidden = name === 'login';
+  topbar.hidden = name === 'login' || name === 'servers';
   document.querySelectorAll('.tabs a').forEach((a) =>
     a.classList.toggle('active', a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
@@ -99,6 +110,7 @@ async function route(opts = {}) {
   if (!['home', undefined, ''].includes(name)) setTimeout(hideIntro, 0);
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
+    case 'servers': return loginView(viewEl, ctx, id);
     case 'library': return libraryView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'person': return personView(viewEl, ctx, id);
@@ -123,6 +135,7 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   await refreshSession();
   location.hash = '#/login';
 });
+document.getElementById('serversBtn').addEventListener('click', () => { location.hash = '#/servers'; });
 document.getElementById('clearCacheBtn').addEventListener('click', async () => {
   await api.clearCache();
   document.getElementById('userMenu').hidden = true;

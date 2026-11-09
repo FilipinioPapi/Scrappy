@@ -12,15 +12,25 @@ pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// What we remember between launches. The password is never stored, only the
 /// access token Emby hands back after login.
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Config {
     pub server: String,
     pub user_id: String,
     pub user_name: String,
     pub token: String,
     pub device_id: String,
-    #[serde(default)]
     pub server_name: String,
+    // Navidrome (music). Salt + token come from Navidrome itself, never the password.
+    pub nd_server: String,
+    pub nd_name: String,
+    pub nd_user: String,
+    pub nd_salt: String,
+    pub nd_token: String,
+    // Audiobookshelf (audiobooks).
+    pub abs_server: String,
+    pub abs_name: String,
+    pub abs_user: String,
+    pub abs_token: String,
 }
 
 impl Config {
@@ -99,7 +109,7 @@ pub fn normalize_server(input: &str) -> String {
     s
 }
 
-fn friendly_error(e: reqwest::Error) -> String {
+pub fn friendly_error(e: reqwest::Error) -> String {
     if e.is_timeout() {
         "The server took too long to answer.".into()
     } else if e.is_connect() {
