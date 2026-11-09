@@ -51,7 +51,8 @@ function save() {
 
 const CHUNK = 400; // songs handed to mpv at a time
 async function loadFrom(i) {
-  S.idx = i; S.base = i; S.pos = 0; S.dur = S.queue[i]?.duration || 0; S.started = true; S.scrobbled = false;
+  // Starting a song always means playing; mpv won't send a 'pause' change if it was already unpaused.
+  S.idx = i; S.base = i; S.pos = 0; S.dur = S.queue[i]?.duration || 0; S.started = true; S.scrobbled = false; S.playing = true;
   const ids = S.queue.slice(i, i + CHUNK).map((s) => s.id);
   S.loadedTo = i + ids.length;
   notify(); save();
@@ -218,6 +219,8 @@ export async function setFavorite(song, on) {
 // ---------- Events from mpv ----------
 listen('music-prop', ({ payload: { name, value } }) => {
   if (name === 'time-pos' && typeof value === 'number') {
+    // Time moving forward means it's playing, even if a pause event was missed (keeps the records spinning).
+    if (!S.playing && S.started && value > S.pos + 0.2 && value - S.pos < 3) { S.pos = value; S.playing = true; notify(); }
     S.pos = value;
     const cur = current();
     // Count a play once half the song (or 4 minutes) has played.
