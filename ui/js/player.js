@@ -228,12 +228,29 @@ function pickTracks() {
   S.subWhy = tp.sub ? 'your last pick for this show' : (S.defaults?.subKnown ? 'Emby\'s default for you' : 'the video\'s default');
   if (S.pick.audio) {
     if (!w.audio) S.pick.audio = false;
-    else { const t = matchTrack('audio', w.audio); if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.pick.audio = false; } }
+    else { const t = matchTrack('audio', w.audio); if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.wantAid = t.id; S.pick.audio = false; } }
   }
   if (S.pick.sub) {
     if (!w.sub) S.pick.sub = false;
     else if (w.sub === 'off') { if (S.sid != null) setProp('sid', 'no'); }
-    else { const t = matchTrack('sub', w.sub); if (t) { if (t.id !== S.sid) setProp('sid', t.id); S.lastSid = t.id; S.pick.sub = false; } }
+    else {
+      let t = matchTrack('sub', w.sub), done = !!t;
+      // Not your own pick: if it's in a different language from what you're listening to, use a full
+      // subtitle track in your listening language instead (e.g. English audio gets English subtitles).
+      // Subtitle files can arrive late, so keep looking for one until the lookout ends.
+      if (!tp.sub) {
+        const audio = S.tracks.find((x) => x.type === 'audio' && x.id === (S.wantAid ?? S.aid)) || S.tracks.find((x) => x.type === 'audio' && x.selected);
+        const al = audio && langOf(audio.lang);
+        const lang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
+        if (al && al !== 'und' && (!t || lang(t) !== al)) {
+          const alt = S.tracks.find((x) => x.type === 'sub' && !x.forced && lang(x) === al);
+          if (alt) { t = alt; done = true; S.subWhy = 'the language you\'re listening in'; }
+          else done = false;
+        }
+      }
+      if (t) { if (t.id !== S.sid) setProp('sid', t.id); S.lastSid = t.id; }
+      if (done) S.pick.sub = false;
+    }
   }
 }
 function stopPicking() { S.pick = null; }
@@ -446,7 +463,7 @@ export async function startPlayback(id, opts = {}) {
   }
   S.pos = opts.startSecs || 0; S.duration = 0; S.cache = 0; S.buffering = true;
   S.tracks = []; S.aid = null; S.sid = null; S.prefsApplied = false;
-  S.defaults = undefined; S.playMethod = ''; S.pick = { audio: true, sub: true };
+  S.defaults = undefined; S.playMethod = ''; S.pick = { audio: true, sub: true }; S.wantAid = null;
   clearTimeout(S.pickTimer);
   S.creditsHandled = false; S.introDismissed = false; S.previews = null;
   toggleEps(false);
@@ -692,6 +709,7 @@ el.querySelector('.p-settings').addEventListener('change', (e) => {
   switch (sel.dataset.set) {
     case 'audio': {
       if (S.pick) S.pick.audio = false;
+      S.wantAid = null;
       setProp('aid', v);
       saveTrackPrefs({ audio: trackRef(S.tracks.find((t) => String(t.id) === v)) });
       break;
