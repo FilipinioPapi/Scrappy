@@ -134,6 +134,7 @@ async function route(opts = {}) {
     case 'search': return searchPage(viewEl, ctx);
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return booksView(viewEl, ctx);
+    case 'stats': viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, 'tv', ctx.alive));
     default: return homeView(viewEl, ctx);
   }
 }
@@ -154,6 +155,7 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   location.hash = '#/login';
 });
 document.getElementById('serversBtn').addEventListener('click', () => { location.hash = '#/servers'; });
+document.getElementById('statsBtn')?.addEventListener('click', () => { document.getElementById('userMenu').hidden = true; location.hash = '#/stats'; });
 document.getElementById('clearCacheBtn').addEventListener('click', async () => {
   await api.clearCache();
   document.getElementById('userMenu').hidden = true;

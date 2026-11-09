@@ -318,6 +318,11 @@ async fn nd_reauth(state: State<'_, AppState>, password: String) -> Result<(), S
 }
 
 #[tauri::command]
+async fn lb_listens(state: State<'_, AppState>, user: String, max_ts: i64) -> Result<Value, String> {
+    servers::lb_listens(&state.http, &user, max_ts).await
+}
+
+#[tauri::command]
 async fn lyrics_find(state: State<'_, AppState>, artist: String, title: String, album: String, duration: u64) -> Result<Value, String> {
     servers::lyrics_find(&state.http, &artist, &title, &album, duration).await
 }
@@ -1113,6 +1118,7 @@ pub fn run() {
             nd_playlist_image,
             nd_reauth,
             lyrics_find,
+            lb_listens,
             music::music_play,
             music::music_upnext,
             music::music_command,

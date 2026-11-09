@@ -233,6 +233,7 @@ listen('music-prop', ({ payload: { name, value } }) => {
     if (cur && !S.scrobbled && S.dur > 0 && (value > S.dur / 2 || value > 240)) {
       S.scrobbled = true;
       api.nd('scrobble', `id=${encodeURIComponent(cur.id)}&submission=true`).catch(() => {});
+      import('./stats.js').then((m) => m.logPlay(cur)).catch(() => {});
     }
     drawProgress();
   } else if (name === 'duration' && typeof value === 'number') { S.dur = value; drawProgress(); }
