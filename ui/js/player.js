@@ -208,6 +208,7 @@ function wanted() {
 // Languages come as 'en', 'eng' or 'English' depending on where they're from.
 const LANGS = { en: 'en', eng: 'en', english: 'en', de: 'de', ger: 'de', deu: 'de', german: 'de', fr: 'fr', fre: 'fr', fra: 'fr', french: 'fr', es: 'es', spa: 'es', spanish: 'es', it: 'it', ita: 'it', ja: 'ja', jpn: 'ja', japanese: 'ja' };
 const langOf = (l) => { const k = String(l || '').toLowerCase().trim(); return LANGS[k] || k; };
+const SUB_LANG = 'en'; // your subtitle language
 const sameLang = (a, b) => !a || !b || langOf(a) === langOf(b);
 function matchTrack(type, ref) {
   const list = S.tracks.filter((t) => t.type === type);
@@ -232,19 +233,18 @@ function pickTracks() {
   }
   if (S.pick.sub) {
     if (!w.sub) S.pick.sub = false;
-    else if (w.sub === 'off') { if (S.sid != null) setProp('sid', 'no'); }
+    else if (w.sub === 'off' && (tp.sub || !hasMySubs())) { if (S.sid != null) setProp('sid', 'no'); }
     else {
-      let t = matchTrack('sub', w.sub), done = !!t;
-      // Not your own pick: if it's in a different language from what you're listening to, use a full
-      // subtitle track in your listening language instead (e.g. English audio gets English subtitles).
-      // Subtitle files can arrive late, so keep looking for one until the lookout ends.
+      let t = w.sub === 'off' ? null : matchTrack('sub', w.sub), done = !!t;
+      // Not your own pick: always start on a full English subtitle track when there is one
+      // (never a German or "forced" one). Subtitle files can arrive late, so keep looking
+      // for one until the lookout ends.
       if (!tp.sub) {
-        const audio = S.tracks.find((x) => x.type === 'audio' && x.id === (S.wantAid ?? S.aid)) || S.tracks.find((x) => x.type === 'audio' && x.selected);
-        const al = audio && langOf(audio.lang);
         const lang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
-        if (al && al !== 'und' && (!t || lang(t) !== al)) {
-          const alt = S.tracks.find((x) => x.type === 'sub' && !x.forced && lang(x) === al);
-          if (alt) { t = alt; done = true; S.subWhy = 'the language you\'re listening in'; }
+        const mine = SUB_LANG;
+        if (!t || lang(t) !== mine || t.forced) {
+          const alt = S.tracks.find((x) => x.type === 'sub' && !x.forced && lang(x) === mine);
+          if (alt) { t = alt; done = true; S.subWhy = 'English subtitles first'; }
           else done = false;
         }
       }
@@ -252,6 +252,11 @@ function pickTracks() {
       if (done) S.pick.sub = false;
     }
   }
+}
+// Is there a full English subtitle track?
+function hasMySubs() {
+  const lang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
+  return S.tracks.some((x) => x.type === 'sub' && !x.forced && lang(x) === SUB_LANG);
 }
 function stopPicking() { S.pick = null; }
 
@@ -684,12 +689,11 @@ function toggleSubs() {
   }
   const subs = S.tracks.filter((t) => t.type === 'sub');
   if (!subs.length) { toast('This video has no subtitles.'); return; }
-  // Turning subtitles on: your own last pick, then Emby's pick, then the language you're listening in, then English.
+  // Turning subtitles on: your own last pick, then English, then Emby's pick.
   const pref = loadTrackPrefs().sub, d = S.defaults || {};
-  const audio = S.tracks.find((t) => t.type === 'audio' && t.selected);
   const full = subs.filter((t) => !t.forced);
-  const t = (pref && pref !== 'off' && matchTrack('sub', pref)) || (d.sub && matchTrack('sub', d.sub))
-    || (audio?.lang && full.find((x) => x.lang === audio.lang)) || full.find((x) => /^(en|eng)$/i.test(x.lang || '')) || full[0] || subs[0];
+  const t = (pref && pref !== 'off' && matchTrack('sub', pref)) || full.find((x) => langOf(x.lang) === SUB_LANG)
+    || (d.sub && matchTrack('sub', d.sub)) || full[0] || subs[0];
   setProp('sid', t.id);
   saveTrackPrefs({ sub: trackRef(t) });
 }
