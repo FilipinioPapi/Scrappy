@@ -1579,3 +1579,4 @@ body.mnow-open #mbar { display: none; }
   .mn-body { grid-template-columns: 1fr; overflow-y: auto; }
   .tdrop { width: min(640px, 92vw); }
 }
+.mseek.wheel .track i { transition: width .18s cubic-bezier(.2,.8,.2,1); } .mseek.wheel > b { transition: left .18s cubic-bezier(.2,.8,.2,1); }

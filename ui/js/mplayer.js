@@ -169,6 +169,16 @@ export function setVolume(v) {
   invoke('music_set', { name: 'volume', value: String(S.volume) }).catch(() => {});
   save(); drawBar();
 }
+// Scrolling over a volume bar or mute button nudges the volume, 5% per notch.
+document.addEventListener('wheel', (e) => {
+  const el = e.target.closest?.('.mseek.vol, #mbMute, #mnMute');
+  if (!el) return;
+  e.preventDefault();
+  const bar = el.matches('.mseek') ? el : el.nextElementSibling;
+  bar?.classList.add('wheel'); clearTimeout(bar?._wt); if (bar) bar._wt = setTimeout(() => bar.classList.remove('wheel'), 300);
+  setVolume((S.muted ? 0 : S.volume) + (e.deltaY < 0 ? 5 : -5));
+  notify();
+}, { passive: false });
 export function toggleMute() {
   S.muted = !S.muted;
   invoke('music_set', { name: 'volume', value: String(S.muted ? 0 : S.volume) }).catch(() => {});
