@@ -577,6 +577,9 @@ fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String>
         // Arrow-key skips land exactly where you asked, not on the nearest keyframe.
         ("hr-seek", "yes".into()),
         ("sub-auto", "fuzzy".into()),
+        // Don't let mpv jump to forced subtitles just because they match the audio
+        // language (it picked Dark's German forced ones over its English default).
+        ("subs-fallback-forced", "no".into()),
         ("cache", "yes".into()),
         ("demuxer-max-bytes", "150MiB".into()),
         ("user-agent", "Scrappy/mpv".into()),

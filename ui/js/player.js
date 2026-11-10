@@ -246,8 +246,10 @@ function pickTracks() {
     else { const t = matchTrack('audio', w.audio); if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.wantAid = t.id; S.pick.audio = false; } }
   }
   if (!S.pick.sub) return;
-  const use = (t) => { if (t.id !== S.sid) setProp('sid', t.id); S.lastSid = t.id; };
-  const off = () => { if (S.sid != null) setProp('sid', 'no'); };
+  // The chosen subtitles are held (see holdSubs): mpv can switch by itself afterwards,
+  // e.g. to forced subtitles that match the audio language.
+  const use = (t) => { S.subTarget = t.id; S.lastSid = t.id; holdSubs(); };
+  const off = () => { S.subTarget = 'no'; holdSubs(); };
   if (tp.sub) {
     // Your own pick for this show wins. "Off" is held off for the whole lookout.
     S.subWhy = 'your last pick for this show';
@@ -271,6 +273,13 @@ function pickTracks() {
   off();
 }
 function stopPicking() { S.pick = null; }
+// Keep the subtitles the app chose for this video, until you change them yourself.
+function holdSubs() {
+  if (S.subTarget == null) return;
+  const want = S.subTarget === 'no' ? null : S.subTarget;
+  if (S.sid !== want) setProp('sid', S.subTarget);
+}
+const letGoOfSubs = () => { S.subTarget = null; if (S.pick) S.pick.sub = false; };
 
 // One-time clean-up: forget saved subtitle picks, so every show starts again on
 // its own default subtitles.
@@ -415,7 +424,7 @@ function drawSettings() {
   const ed = S.defaults?.sub;
   const emby = !S.defaults ? 'unknown' : ed ? (ed.displayTitle || langName(ed.lang) || 'a track') + ` (#${ed.index})` : (S.defaults.subKnown ? 'Off' : 'none given');
   const fd = S.tracks.filter((t) => t.type === 'sub' && t.default).map(trackLabel).join(', ') || 'none';
-  $('.p-set-note').textContent = `Audio, subtitles and speed are remembered for ${name}. Skip lengths and quality apply everywhere.${S.subWhy ? ` Subtitles started from ${S.subWhy}.` : ''} Emby's default subtitles: ${emby}. The video marks as default: ${fd}.`;
+  $('.p-set-note').textContent = `Audio, subtitles and speed are remembered for ${name}. Skip lengths and quality apply everywhere.${S.subWhy ? ` Subtitles started from ${S.subWhy}.` : ''} Emby's default subtitles: ${emby}. The video marks as default: ${fd}. Held on: ${S.subTarget == null ? 'nothing' : S.subTarget === 'no' ? 'Off' : (S.tracks.find((t) => t.type === 'sub' && t.id === S.subTarget) ? trackLabel(S.tracks.find((t) => t.type === 'sub' && t.id === S.subTarget)) : '#' + S.subTarget)}.`;
 }
 
 // ---------- Skip Intro / credits ----------
@@ -588,7 +597,7 @@ export async function startPlayback(id, opts = {}) {
   }
   S.pos = opts.startSecs || 0; markPos(); S.duration = 0; S.cache = 0; S.buffering = true;
   S.tracks = []; S.aid = null; S.sid = null; S.prefsApplied = false;
-  S.defaults = undefined; S.playMethod = ''; S.pick = { audio: true, sub: true }; S.wantAid = null;
+  S.defaults = undefined; S.playMethod = ''; S.pick = { audio: true, sub: true }; S.wantAid = null; S.subTarget = null;
   clearTimeout(S.pickTimer);
   S.creditsHandled = false; S.introDismissed = false; S.previews = null;
   toggleEps(false);
@@ -728,6 +737,7 @@ listen('mpv-prop', ({ payload: { name, value } }) => {
       S.sid = s ? s.id : null;
       if (S.sid != null) S.lastSid = S.sid;
       pickTracks();
+      holdSubs();
       if (S.settingsOpen) drawSettings();
       drawButtons();
       break;
@@ -748,8 +758,9 @@ listen('player-loaded', ({ payload }) => {
   // External subtitles are added just after loading; give them a moment.
   if (!S.prefsApplied) { S.prefsApplied = true; const sp = loadPrefs().speed; if (sp) setProp('speed', sp); }
   pickTracks();
-  // Keep a lookout for late subtitle tracks, then stop. Subtitles set to "off" are held off the whole time.
-  clearTimeout(S.pickTimer); S.pickTimer = setTimeout(() => { pickTracks(); stopPicking(); }, 10000);
+  holdSubs();
+  // Keep a lookout for late subtitle tracks, then stop looking (the choice stays held).
+  clearTimeout(S.pickTimer); S.pickTimer = setTimeout(() => { pickTracks(); stopPicking(); holdSubs(); }, 10000);
 });
 
 listen('player-ended', ({ payload }) => {
@@ -802,7 +813,7 @@ function cycleSpeed() {
 }
 
 function toggleSubs() {
-  if (S.pick) S.pick.sub = false;
+  letGoOfSubs();
   if (S.sid != null) {
     setProp('sid', 'no');
     saveTrackPrefs({ sub: 'off' });
@@ -840,7 +851,7 @@ el.querySelector('.p-settings').addEventListener('change', (e) => {
       break;
     }
     case 'sub': {
-      if (S.pick) S.pick.sub = false;
+      letGoOfSubs();
       setProp('sid', v);
       saveTrackPrefs({ sub: v === 'no' ? 'off' : trackRef(S.tracks.find((t) => String(t.id) === v)) });
       break;
