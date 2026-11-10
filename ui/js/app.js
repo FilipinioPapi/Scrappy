@@ -78,6 +78,8 @@ function moveTabPill() {
   const nav = document.querySelector('.tabs'); if (!nav || nav.closest('[hidden]')) return;
   let pill = nav.querySelector('.tab-pill');
   if (!pill) { pill = document.createElement('span'); pill.className = 'tab-pill'; nav.prepend(pill); nav.classList.add('has-pill'); }
+  if (document.body.classList.contains('tab-stats')) { pill.classList.add('gone'); return; }
+  pill.classList.remove('gone');
   const on = nav.querySelector('a.active'); if (!on || !on.offsetWidth) { requestAnimationFrame(moveTabPill); return; }
   pill.style.left = on.offsetLeft + 'px'; pill.style.width = on.offsetWidth + 'px';
   if (!pill.classList.contains('ready')) requestAnimationFrame(() => pill.classList.add('ready'));
@@ -89,11 +91,14 @@ async function route(opts = {}) {
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
   const [, name, arg, arg2] = hash.split('/');
+  // Stats are their own section now: the old per-tab addresses move there.
+  if ((name === 'music' || name === 'audiobooks') && (arg || '').split('?')[0] === 'stats') { location.replace(`#/stats/${name}`); return; }
+  const statsKind = name === 'stats' ? ({ music: 'music', audiobooks: 'abs' }[arg] || 'tv') : '';
 
   if (!session.loggedIn && name !== 'login') { location.hash = '#/login'; return; }
   if (session.loggedIn && name === 'login') { location.hash = firstTab(session); return; }
   // A tab whose server isn't signed in shows a sign-in prompt for it.
-  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || (['login', 'servers', 'search'].includes(name) ? '' : 'emby');
+  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || { music: 'navidrome', abs: 'audiobookshelf' }[statsKind] || (['login', 'servers', 'search'].includes(name) ? '' : 'emby');
   const notSigned = need && !session.servers?.[need]?.signedIn;
 
   topbar.hidden = name === 'login' || name === 'servers';
@@ -103,8 +108,10 @@ async function route(opts = {}) {
   const swapped = document.body.classList.contains('tab-music') !== audioTab && !!lastRouteName;
   lastRouteName = name;
   document.body.classList.toggle('tab-music', audioTab);
+  // Stats act as their own section: no side bars, no bottom bar, no tab lit up.
+  document.body.classList.toggle('tab-stats', !!statsKind);
   document.querySelectorAll('.tabs a').forEach((a) =>
-    a.classList.toggle('active', a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
+    a.classList.toggle('active', !statsKind && a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
   document.getElementById('userMenu').hidden = true;
 
@@ -134,7 +141,7 @@ async function route(opts = {}) {
     case 'search': return searchPage(viewEl, ctx);
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return booksView(viewEl, ctx);
-    case 'stats': viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, 'tv', ctx.alive));
+    case 'stats': viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
     default: return homeView(viewEl, ctx);
   }
 }
@@ -169,7 +176,7 @@ const SECTIONS = {
   music: { name: 'Music', server: 'Navidrome', what: 'album art', deep: 'Asks Navidrome to look through its music folder for new or changed files, then refreshes. About a minute.' },
   audiobooks: { name: 'Audiobooks', server: 'Audiobookshelf', what: 'covers', deep: 'Asks Audiobookshelf to look through its folders for new or changed files, then refreshes. A few minutes.' },
 };
-const curSection = () => { const n = (location.hash || '#/home').split('/')[1]; return n === 'music' || n === 'audiobooks' ? n : 'home'; };
+const curSection = () => { const [, n, a] = (location.hash || '#/home').split('/'); const k = n === 'stats' ? a : n; return k === 'music' || k === 'audiobooks' ? k : 'home'; };
 const lastRefresh = {};
 const adminCache = {};
 async function isAdmin(sec) {
@@ -257,7 +264,7 @@ refreshBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPr
 // ---------- Stats button: click = this tab's stats, right-click = pick any of the three ----------
 const statsBtn = document.getElementById('topStatsBtn');
 const statsMenu = document.getElementById('statsMenu');
-const STATS_ROUTES = { home: '#/stats', music: '#/music/stats', audiobooks: '#/audiobooks/stats' };
+const STATS_ROUTES = { home: '#/stats', music: '#/stats/music', audiobooks: '#/stats/audiobooks' };
 const onStats = () => Object.values(STATS_ROUTES).includes((location.hash || '').split('?')[0]);
 let beforeStats = '';
 const SEC_ICON = {
