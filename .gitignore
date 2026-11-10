@@ -1,5 +1,6 @@
 node_modules/
 src-tauri/target/
-src-tauri/gen/
+src-tauri/gen/*
+!src-tauri/gen/android/
 src-tauri/libmpv/
 src-tauri/whisper/

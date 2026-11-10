@@ -740,7 +740,11 @@ fn stop_playback(app: AppHandle, state: State<'_, AppState>) {
 #[tauri::command]
 fn set_fullscreen(app: AppHandle, on: bool) -> Result<bool, String> {
     let w = app.get_webview_window("main").ok_or("no window")?;
+    // On the TV the app always fills the screen.
+    #[cfg(desktop)]
     w.set_fullscreen(on).map_err(|e| e.to_string())?;
+    #[cfg(mobile)]
+    let _ = w;
     Ok(on)
 }
 
@@ -1035,6 +1039,7 @@ async fn tokio_sleep(secs: u64) {
     tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .register_asynchronous_uri_scheme_protocol("img", |ctx, request, responder| {

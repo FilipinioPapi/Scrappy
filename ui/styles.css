@@ -2309,3 +2309,18 @@ body.bnow-open #bbar { display: none; }
 .stx-secs a:hover { background: rgba(255,255,255,.07); color: #fff; }
 .stx-secs a:active { transform: scale(.96); }
 .stx-secs a.on { background: var(--red); color: #fff; box-shadow: 0 6px 16px rgba(236,40,46,.35); }
+
+/* ---------- Google TV (remote control) ---------- */
+/* A clear highlight on whatever the remote is pointing at. */
+html.tv :focus { outline: none; }
+html.tv :focus-visible, html.tv a:focus, html.tv button:focus, html.tv input:focus, html.tv select:focus {
+  outline: 3px solid #fff; outline-offset: 3px; border-radius: 10px;
+}
+html.tv .card:focus { outline: none; }
+html.tv .card:focus .art { transform: translateY(-4px) scale(1.04); border-color: var(--red); box-shadow: 0 0 0 3px var(--red), 0 14px 26px rgba(0,0,0,.55); }
+html.tv .card:focus .title { color: #fff; }
+html.tv .card .art { transition: transform .12s ease-out; }
+/* Keep it light: blur effects are the main cause of lag on TVs. */
+html.tv *, html.tv *::before, html.tv *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+/* No mouse on a TV. */
+html.tv .row-arrow { display: none !important; }

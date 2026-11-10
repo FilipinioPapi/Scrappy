@@ -1,0 +1,89 @@
+name: Build Google TV app
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android-tv:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 64-bit and 32-bit, since many TVs run 32-bit Android even on 64-bit chips.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      # The signing key: from the TV_KEYSTORE secret if one is set, otherwise made once
+      # and kept in the build cache, so each new build installs over the last one.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scrappy-tv-key
+          key: scrappy-tv-key-v1
+
+      - name: Signing key
+        env:
+          KS: ${{ secrets.TV_KEYSTORE }}
+          KP: ${{ secrets.TV_KEY_PASS }}
+        run: |
+          mkdir -p ~/.scrappy-tv-key
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > ~/.scrappy-tv-key/tv.keystore
+            echo "$KP" > ~/.scrappy-tv-key/pass
+          elif [ ! -f ~/.scrappy-tv-key/tv.keystore ]; then
+            openssl rand -hex 16 > ~/.scrappy-tv-key/pass
+            keytool -genkeypair -keystore ~/.scrappy-tv-key/tv.keystore -alias scrappy -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$(cat ~/.scrappy-tv-key/pass)" -keypass "$(cat ~/.scrappy-tv-key/pass)" -dname "CN=Scrappy"
+          fi
+          echo "TV_KEYSTORE=$HOME/.scrappy-tv-key/tv.keystore" >> "$GITHUB_ENV"
+          echo "::add-mask::$(cat ~/.scrappy-tv-key/pass)"
+          echo "TV_KEY_PASS=$(cat ~/.scrappy-tv-key/pass)" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          npm ci
+          npx tauri android build --apk --target aarch64 --target armv7
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name "*universal*release*.apk" | head -1)
+          echo "Built $apk"
+          cp "$apk" Scrappy-TV.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scrappy-TV
+          path: Scrappy-TV.apk
+
+      # main -> "TV build"; any other branch -> "TV Preview build" (for testing before merging).
+      - name: Publish build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then tag=tv; title="Google TV build"; else tag=tv-preview; title="Google TV Preview build (${{ github.ref_name }})"; fi
+          gh release delete $tag --yes --cleanup-tag 2>/dev/null || true
+          gh release create $tag Scrappy-TV.apk --title "$title" --notes "Built from ${{ github.ref_name }} at commit ${{ github.sha }}. Install Scrappy-TV.apk on the TV with the Downloader app." --prerelease --target ${{ github.sha }}

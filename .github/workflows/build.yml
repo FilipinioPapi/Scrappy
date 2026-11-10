@@ -9,6 +9,8 @@ permissions:
 
 jobs:
   windows:
+    # The Google TV branch builds only the TV app, so it doesn't replace the Windows Preview.
+    if: github.ref_name != 'claude/project-thread-qraw4y'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
