@@ -4,6 +4,8 @@
 @font-face { font-family: "Inter"; font-weight: 700; font-display: swap; src: url("fonts/inter-700.woff2") format("woff2"); }
 @font-face { font-family: "Inter"; font-weight: 800; font-display: swap; src: url("fonts/inter-800.woff2") format("woff2"); }
 @font-face { font-family: "Luckiest Guy"; font-weight: 400; font-display: swap; src: url("fonts/luckiest-guy.woff2") format("woff2"); }
+@font-face { font-family: "Literata"; font-weight: 500; font-display: swap; src: url("fonts/literata-500.woff2") format("woff2"); }
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 700; font-display: swap; src: url("fonts/atkinson-700.woff2") format("woff2"); }
 
 /* Watch Party palette (from Jayden). */
 :root {
@@ -2271,10 +2273,34 @@ body.bnow-open #bbar { display: none; }
 @keyframes faSpin { to { transform: rotate(360deg); } }
 .fa-txt { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 28vh 10px 34vh; -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent); user-select: text; }
 .fa-txt::-webkit-scrollbar { display: none; }
-.fa-txt p { margin: 0 0 22px; font-size: 26px; line-height: 1.45; font-weight: 700; color: rgba(246,233,233,.22); transition: color .4s; }
-.fa-txt p.past { color: rgba(246,233,233,.45); }
-.fa-txt p.cur { color: rgba(246,233,233,.38); }
-.fa-txt p.cur span.on { color: #fff; transition: color .15s; }
+.fa-txt { --fa-lit: #fff; --fa-dim: rgba(246,233,233,.32); font-family: var(--fa-font, Inter, sans-serif); }
+.fa-txt p { margin: 0 0 .85em; font-size: var(--fa-size, 26px); line-height: var(--fa-line, 1.45); font-weight: var(--fa-weight, 700); color: var(--fa-dim); transition: opacity .5s var(--ease); }
+.fa-txt p.ahead { opacity: .8; }
+.fa-txt p.past { opacity: .55; }
+.fa-txt.focus p:not(.cur) { opacity: .16; }
+.fa-txt span.on { color: var(--fa-lit); }
+/* Highlight styles: Simple snaps, Soft fades, Sweep fills each word as it's spoken, Glow, Marker. */
+.fa-txt[data-style="soft"] span { transition: color .45s ease; }
+.fa-txt[data-style="sweep"] span.cur { color: transparent; background-image: linear-gradient(90deg, var(--fa-lit) calc(var(--p, 0) * 100%), var(--fa-dim) calc(var(--p, 0) * 100% + 18%)); -webkit-background-clip: text; background-clip: text; }
+.fa-txt[data-style="glow"] span { text-shadow: 0 0 0 rgba(255,110,100,0); transition: color .5s, text-shadow .9s; }
+.fa-txt[data-style="glow"] span.cur { text-shadow: 0 0 14px rgba(255,110,100,.95), 0 0 3px rgba(255,255,255,.7); transition: color .2s, text-shadow .2s; }
+.fa-txt[data-style="marker"] span { border-radius: 6px; box-shadow: 0 0 0 4px rgba(236,40,46,0); transition: background-color .35s, box-shadow .35s, color .3s; }
+.fa-txt[data-style="marker"] span.cur { color: #fff; background-color: rgba(236,40,46,.42); box-shadow: 0 0 0 4px rgba(236,40,46,.42); transition: background-color .18s, box-shadow .18s; }
+/* Look options in the gear */
+.fa-seg { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 10px; background: rgba(255,255,255,.05); margin-top: 8px; }
+.fa-seg button { flex: 1; height: 30px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: #D9C3C4; font: 700 12.5px Inter, sans-serif; cursor: pointer; white-space: nowrap; transition: background .2s var(--ease), color .2s; }
+.fa-seg button:hover { background: rgba(255,255,255,.06); }
+.fa-seg button.on { background: var(--red); color: #fff; }
+.fa-sw { display: flex; gap: 10px; margin-top: 8px; }
+.fa-sw button { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: border-color .2s, transform .2s var(--ease); }
+.fa-sw button.on { border-color: #fff; transform: scale(1.08); }
+.fa-row.fa-tg { flex-direction: row; align-items: center; gap: 12px; }
+.fa-row.fa-tg > div:first-child { flex: 1; display: flex; flex-direction: column; gap: 2px; } .fa-row.fa-tg b { font-size: 15px; } .fa-row.fa-tg span { font-size: 13px; color: #BFA7A8; }
+.fa-switch { width: 44px; height: 26px; border-radius: 999px; border: 0; background: rgba(255,255,255,.14); position: relative; cursor: pointer; flex: none; transition: background .25s; }
+.fa-switch i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .25s var(--ease); }
+.fa-switch.on { background: var(--red); } .fa-switch.on i { transform: translateX(18px); }
+.fa-step { display: flex; align-items: center; gap: 8px; } .fa-step b { min-width: 58px; text-align: center; font-variant-numeric: tabular-nums; font-size: 14px; }
+.fa-step button { width: 30px; height: 30px; border-radius: 8px; border: 0; background: rgba(255,255,255,.08); color: #fff; font: 800 15px Inter, sans-serif; cursor: pointer; }
 .fa-wait { display: flex; align-items: center; gap: 10px; justify-content: center; color: #BFA7A8; font-size: 15px; padding-top: 4vh; }
 .fa-foot { display: flex; gap: 10px; margin: 10px 6px 0; font-size: 12.5px; color: #BFA7A8; flex-wrap: wrap; } .fa-foot .sp { flex: 1; }
 .fa-set { display: flex; flex-direction: column; gap: 12px; margin: 4px 6px; overflow-y: auto; }
@@ -2676,3 +2702,58 @@ body #topbar .tsearch { min-width: 220px;
 #player .p-dl-get:active { transform: scale(.95); }
 #player .p-dl-get.busy { color: var(--muted); cursor: default; }
 #player .p-dl-get.done { background: #1f7a46; color: #fff; }
+
+/* ---------- Follow along right panel (audiobooks), like Music's Up next panel ---------- */
+.bpanel { position: fixed; right: 0; top: 72px; bottom: var(--mbar); width: 380px; z-index: 14; background: #140D0E; border-left: 1px solid #2A1C1D; display: flex; flex-direction: column;
+  transform: translateX(100%); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .36s var(--ease), opacity .3s var(--ease), visibility 0s linear .36s; }
+.bpanel.open { transform: none; opacity: 1; visibility: visible; pointer-events: auto; transition: transform .36s var(--ease), opacity .3s var(--ease), visibility 0s; }
+.bkshell .mmain { transition: margin .36s var(--ease); }
+body.bpanel-open .bkshell .mmain { margin-right: 380px; }
+body.bpanel-open .bkshell .rail { right: 390px; }
+.bpanel .bn-pane { position: static; flex: 1; min-height: 0; display: flex; }
+.bpanel .bn-card { flex: 1; max-height: none; height: 100%; padding: 16px 8px 12px 18px; border-radius: 0; background: none; border: 0; backdrop-filter: none; }
+.bpanel .bn-head { margin: 0 0 4px; gap: 4px; align-items: center; }
+.bpanel .bn-head h2 { font-size: 21px; flex: none; }
+.bpanel .fa-pillrow { margin: 4px 0 2px; }
+.bpanel .fa-pill { height: 24px; font-size: 11.5px; padding: 0 10px; }
+.bpanel .fa-txt { padding: 26vh 10px 30vh 0; }
+.bpanel .fa-tip { margin: 6px 6px 8px 0; padding: 12px 40px 12px 12px; }
+.bpanel .fa-set { margin: 6px 6px 0 0; padding-right: 4px; }
+.bpanel .fa-foot { margin: 6px 10px 0 0; padding-top: 8px; border-top: 1px solid #2A1C1D; font-size: 12px; }
+.bb-fa.on { color: #fff !important; background: rgba(236,40,46,.28); }
+
+/* ---------- Follow along pop-out window (follow.html) ---------- */
+body.fpop-body { overflow: hidden; background: #150E0D; }
+.fpop { position: fixed; inset: 0; animation: viewIn .4s var(--ease-out); }
+.fp-bg { position: absolute; inset: -60px; overflow: hidden; pointer-events: none;
+  background: radial-gradient(900px 600px at 18% 12%, rgba(232,163,60,.22), transparent 60%), radial-gradient(900px 700px at 88% 96%, rgba(122,46,18,.32), transparent 60%); }
+.fp-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(70px) saturate(1.3); opacity: 0; transition: opacity .8s var(--ease); }
+.fp-bg img.in { opacity: .28; }
+.fp-top { position: absolute; left: 26px; right: 26px; top: 20px; display: flex; align-items: center; gap: 12px; z-index: 3; transition: opacity .6s var(--ease), transform .6s var(--ease); }
+.fp-top .sp { flex: 1; }
+.fp-cv { position: relative; width: 42px; height: 42px; border-radius: 8px; overflow: hidden; flex: none; background: linear-gradient(135deg, #7A1418, #2C1C1D); box-shadow: 0 6px 14px rgba(0,0,0,.45); }
+.fp-cv img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .4s var(--ease); } .fp-cv img.in { opacity: 1; }
+.fp-cv.sm { width: 50px; height: 50px; border-radius: 9px; }
+.fp-ti { min-width: 0; } .fp-ti b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-ti span, .fp-info span { display: block; font-size: 12px; color: var(--blush); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#fpAa.on { color: #fff; background: rgba(236,40,46,.28); }
+.fp-main { position: absolute; left: 0; right: 0; top: 76px; bottom: 116px; display: flex; justify-content: center; }
+.fp-main .bn-pane { position: static; width: min(900px, calc(100% - 64px)); display: flex; }
+.fp-main .bn-card { flex: 1; max-height: none; height: 100%; padding: 0; border: 0; background: none; backdrop-filter: none; border-radius: 0; }
+.fp-main .bn-head, .fp-main .fa-foot, .fp-main #faTip { display: none; }
+.fp-main .fa-txt { padding: 24vh 4px 46vh; -webkit-mask-image: linear-gradient(transparent, #000 16%, #000 76%, transparent); mask-image: linear-gradient(transparent, #000 16%, #000 76%, transparent); }
+.fp-main .fa-set { max-width: 620px; width: 100%; margin: 10px auto; padding: 4px 6px 30px; }
+.fp-mini { position: absolute; left: 50%; bottom: 22px; width: min(740px, calc(100% - 40px)); transform: translateX(-50%); height: 76px; border-radius: 20px; z-index: 3;
+  background: rgba(30,20,21,.82); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,.07); box-shadow: 0 20px 50px rgba(0,0,0,.5);
+  display: flex; align-items: center; gap: 12px; padding: 0 16px 0 12px; transition: opacity .6s var(--ease), transform .6s var(--ease); }
+.fp-info { width: 160px; min-width: 0; flex: none; } .fp-info b { display: block; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-mini .mb-play { width: 44px; height: 44px; flex: none; }
+.fp-mini .gb { width: 40px; height: 40px; }
+.fp-seek { flex: 1; min-width: 120px; }
+.fp-seek span { width: auto; min-width: 36px; }
+body.idle .fp-top { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+body.idle .fp-mini { opacity: .28; transform: translate(-50%, 6px); }
+body.idle { cursor: none; }
+@media (max-width: 760px) { .fp-info { display: none; } }
+.bpanel .fa-gear:not(:hover):not(.on) { background: none; }
+.bpanel .fa-seg button { padding: 0 5px; font-size: 12px; }

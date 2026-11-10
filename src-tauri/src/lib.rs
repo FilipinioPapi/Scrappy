@@ -232,6 +232,40 @@ async fn api_upload_image(state: State<'_, AppState>, path: String, base64: Stri
     emby::send_raw(&state.http, &cfg, reqwest::Method::POST, &path, base64, &content_type).await
 }
 
+/// Follow along in its own window: open it (or bring it to the front if it's already open).
+/// The main window keeps playing the book and sends the pop-out its position.
+#[tauri::command]
+async fn fa_popout(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("follow") {
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    #[cfg(desktop)]
+    let made = tauri::WebviewWindowBuilder::new(&app, "follow", tauri::WebviewUrl::App("follow.html".into()))
+        .title("Scrappy \u{b7} Follow along")
+        .inner_size(1100.0, 760.0)
+        .min_inner_size(560.0, 420.0)
+        .center()
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string());
+    #[cfg(not(desktop))]
+    let made: Result<(), String> = Err("Pop-out windows are only on the PC app.".into());
+    made
+}
+
+/// Send the text back into the main window: close the pop-out (the main window hears "fa-popin").
+#[tauri::command]
+fn fa_popin(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("follow") {
+        let _ = w.close();
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_focus();
+    }
+}
+
 /// Save a picture (PNG bytes) in Pictures\Scrappy, e.g. a Year in Review card,
 /// then show it in the file manager. Returns where it went.
 #[tauri::command]
@@ -1189,8 +1223,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // The Follow along pop-out closed: tell the main window to show the text again.
+            if window.label() == "follow" {
+                if let tauri::WindowEvent::Destroyed = event {
+                    let _ = window.app_handle().emit_to("main", "fa-popin", ());
+                }
+                return;
+            }
             // Closing the app mid-video: save the resume point first.
             if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if let Some(w) = window.app_handle().get_webview_window("follow") {
+                    let _ = w.destroy();
+                }
                 let app = window.app_handle().clone();
                 let state = app.state::<AppState>();
                 let np = state.now.lock().unwrap().take();
@@ -1235,6 +1279,8 @@ pub fn run() {
             follow::fa_cached,
             follow::fa_saved,
             follow::fa_clear,
+            fa_popout,
+            fa_popin,
             nd_playlist_image,
             nd_reauth,
             lyrics_find,

@@ -5,8 +5,9 @@
 // Audiobookshelf keeps your spot: we open a "play session" when a book starts,
 // send the position every 15 seconds and on pause, and close it when you stop.
 import { api, listen, IMG_BASE } from './api.js';
+const { emit } = window.__TAURI__.event;
 import { esc, toast } from './components.js';
-import { followHTML, followBind, followActive, FOLLOW_ICON } from './follow.js';
+import { followHTML, followBind, followActive, followRoot, openSettings, FOLLOW_ICON, POP_ICON } from './follow.js';
 import { mode, enterBookMode, music as M, setVolume, toggleMute, onMusic, IC } from './mplayer.js';
 
 const { invoke } = window.__TAURI__.core;
@@ -216,7 +217,7 @@ bar.id = 'bbar';
 bar.hidden = true;
 bar.innerHTML = `
   <div class="mb-now">
-    <button type="button" class="mb-cover" id="bbCover" title="Now listening"><img alt=""></button>
+    <button type="button" class="mb-cover" id="bbCover" title="Now playing"><img alt=""></button>
     <div class="mb-txt"><a class="mb-title" id="bbTitle"></a><div class="mb-sub" id="bbSub"></div><div class="mb-sub bb-ch" id="bbCh"></div></div>
   </div>
   <div class="mb-mid">
@@ -233,10 +234,11 @@ bar.innerHTML = `
   </div>
   <div class="mb-right">
     <span class="bb-left" id="bbLeft"></span>
+    <button type="button" class="gb bb-fa" id="bbFa" title="Follow along" aria-label="Follow along">${FOLLOW_ICON}</button>
     <button type="button" class="gb" id="bbChap" title="Chapters" aria-label="Chapters">${BI.chapters}</button>
     <button type="button" class="gb" id="bbMute" title="Mute" aria-label="Mute">${IC.vol}</button>
     <div class="mseek vol" id="bbVol"><div class="track"><i></i></div><b></b></div>
-    <button type="button" class="gb" id="bbExp" title="Now listening" aria-label="Now listening">${IC.expand}</button>
+    <button type="button" class="gb" id="bbExp" title="Now playing" aria-label="Now playing">${IC.expand}</button>
   </div>`;
 document.body.appendChild(bar);
 const pop = document.createElement('div');
@@ -475,24 +477,25 @@ window.addEventListener('keydown', (e) => {
 if (B.item && localStorage.getItem('lastAudio') === 'book') enterBookMode();
 draw();
 
-// ---------- Now listening: the full-screen book player ----------
+// ---------- Now playing: the full-screen book player ----------
 const now = document.createElement('div');
 now.id = 'bnow'; now.hidden = true;
 document.body.appendChild(now);
 let nowOpen = false, nowFor = null, nowPane = ['about', 'follow'].includes(localStorage.getItem('bnowPane')) ? localStorage.getItem('bnowPane') : 'chapters';
 const plain = (html) => { const d = new DOMParser().parseFromString(String(html || ''), 'text/html'); d.querySelectorAll('br,p,div,li').forEach((n) => n.append('\n')); return (d.body.textContent || '').replace(/\n{3,}/g, '\n\n').trim(); };
-export function openBookNow() {
+export function openBookNow(pane) {
   if (!B.item) return;
+  if (pane) { nowPane = pane; try { localStorage.setItem('bnowPane', pane); } catch {} }
   nowOpen = true; now.hidden = false; now.classList.remove('closing'); document.body.classList.add('bnow-open');
   closePop(); buildNow();
 }
 export function closeBookNow() {
   if (!nowOpen) return;
-  nowOpen = false; now.classList.add('closing'); closePop(); followActive(false);
+  nowOpen = false; now.classList.add('closing'); closePop(); syncFollow();
   setTimeout(() => { if (!nowOpen) { now.hidden = true; now.classList.remove('closing'); document.body.classList.remove('bnow-open'); } }, 280);
 }
-$('bbCover').onclick = openBookNow;
-$('bbExp').onclick = openBookNow;
+$('bbCover').onclick = () => openBookNow();
+$('bbExp').onclick = () => openBookNow();
 window.addEventListener('hashchange', closeBookNow);
 window.addEventListener('keydown', (e) => { if (nowOpen && e.key === 'Escape' && pop.classList.contains('off')) { e.preventDefault(); closeBookNow(); } });
 window.addEventListener('book:stop', closeBookNow);
@@ -506,7 +509,7 @@ function buildNow() {
   now.innerHTML = `
     <div class="mn-bg"><img src="${absCover(it, 600)}" alt="" onload="this.classList.add('in')" onerror="this.remove()"></div>
     <div class="mn-top"><button type="button" class="gb sq" id="bnClose" title="Close" aria-label="Close">${line('<path d="M6 9l6 6 6-6"/>')}</button>
-      <div class="mn-from"><div class="kicker">NOW LISTENING</div><div class="t1">Audiobooks</div></div>
+      <div class="mn-from"><div class="kicker">NOW PLAYING</div><div class="t1">Audiobooks</div></div>
       <a class="gb sq" id="bnBook" href="#/audiobooks/book/${encodeURIComponent(it.id)}" title="Open the book page" aria-label="Open the book page">${line('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3"/>')}</a></div>
     <div class="bn-body">
       <div class="bn-left">
@@ -534,7 +537,7 @@ function buildNow() {
       <div class="bn-right">
         ${B.chapters.length ? `<div class="bn-pane" data-pane="chapters"><div class="bn-card"><div class="bn-head"><h2 class="disp">CHAPTERS</h2><span class="t2" id="bnChN"></span></div>
           <div class="bn-list" id="bnList">${B.chapters.map((c, i) => `<button type="button" class="bk-chi bn-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div></div></div>` : ''}
-        ${followHTML()}
+        ${followHTML('now', `<button type="button" class="gb sq fa-popbtn" title="Pop out into its own window" aria-label="Pop out into its own window">${POP_ICON}</button>`)}
         <div class="bn-pane" data-pane="about"><div class="bn-card bn-about"><div class="bn-head"><h2 class="disp">ABOUT THIS BOOK</h2></div>
           <div class="bn-scroll">${desc ? `<p>${esc(desc)}</p>` : '<p class="t2">No description.</p>'}
           <div class="bn-facts">${facts.map(([k, v]) => `<span>${k}</span><b>${esc(v)}</b>`).join('')}</div></div></div></div>
@@ -555,15 +558,15 @@ function buildNow() {
   slider(n$('bnVol'), (f) => { setVolume(f * 100); drawNow(); draw(); });
   now.querySelectorAll('.mode[data-pane]').forEach((b) => (b.onclick = () => { nowPane = b.dataset.pane; try { localStorage.setItem('bnowPane', nowPane); } catch {} drawPane(); }));
   n$('bnList')?.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const c = B.chapters[Number(b.dataset.i)]; if (!c) return; if (!B.started) playBook(B.item.id, { at: c.start }); else seekBook(c.start); });
-  followBind(now, B);
-  drawPane(); drawNow(true);
+  now.querySelector('.fa-popbtn').onclick = popOut;
+  fBound = null; drawPane(); drawNow(true);
 }
 let nowDrag = false, nowCh = -2;
 function drawPane() {
   now.querySelectorAll('.bn-pane').forEach((p) => p.classList.toggle('off', p.dataset.pane !== nowPane));
   now.querySelectorAll('.mode[data-pane]').forEach((b) => b.classList.toggle('on', b.dataset.pane === nowPane));
   if (nowPane === 'chapters') scrollCur(true);
-  followActive(nowOpen && nowPane === 'follow');
+  syncFollow();
 }
 function scrollCur(force) { const l = n$('bnList'), c = l?.querySelector('.cur'); if (l && c && (force || !l.matches(':hover'))) l.scrollTo({ top: c.offsetTop - l.clientHeight / 3, behavior: force ? 'auto' : 'smooth' }); }
 function drawNow(first) {
@@ -597,3 +600,66 @@ const plural = (n) => `${n} chapter${n === 1 ? '' : 's'}`;
 onBook(() => drawNow());
 onMusic(() => { if (mode.book) drawNow(); });
 setInterval(() => { if (nowOpen && B.playing) drawNow(); }, 1000);
+
+
+// ---------- Follow along: right panel, and its own pop-out window ----------
+// The Follow along button in the bottom bar opens a panel on the right, like Music's queue.
+// From there it can open in Now playing, or pop out into its own window (and come back).
+const panel = document.createElement('aside');
+panel.id = 'bpanel'; panel.className = 'bpanel'; panel.setAttribute('aria-label', 'Follow along');
+panel.innerHTML = followHTML('panel',
+  `<button type="button" class="gb" id="fpPop" title="Pop out into its own window" aria-label="Pop out into its own window">${POP_ICON}</button>
+   <button type="button" class="gb" id="fpNow" title="Open in Now playing" aria-label="Open in Now playing">${line('<path d="M6 15l6-6 6 6"/>')}</button>`,
+  `<button type="button" class="gb" id="fpClose" title="Close" aria-label="Close">${line('<path d="M6 6l12 12M18 6L6 18"/>')}</button>`);
+document.body.appendChild(panel);
+let panelWant = localStorage.getItem('bpanel') === '1', popped = false, fBound = null;
+const onBooks = () => location.hash.startsWith('#/audiobooks');
+const panelShown = () => panelWant && !popped && onBooks() && !!B.item && mode.book;
+function setPanel(on) { panelWant = on; try { localStorage.setItem('bpanel', on ? '1' : ''); } catch {} syncFollow(); }
+/** Decide where the text shows (Now playing, the panel, or the pop-out window) and run the worker only then. */
+function syncFollow() {
+  const show = panelShown();
+  panel.classList.toggle('open', show);
+  document.body.classList.toggle('bpanel-open', show);
+  $('bbFa').classList.toggle('on', show || popped);
+  const nowF = nowOpen && nowPane === 'follow';
+  const host = nowF ? now : show ? panel : null;
+  if (host && (host !== fBound || followRoot() !== host)) { fBound = host; followBind(host, B); }
+  if (!host) fBound = null;
+  followActive(nowF || show || popped);
+}
+$('bbFa').onclick = () => { if (popped) invoke('fa_popout').catch(() => {}); else setPanel(!panelShown()); };
+panel.querySelector('#fpClose').onclick = () => setPanel(false);
+panel.querySelector('#fpNow').onclick = () => openBookNow('follow');
+panel.querySelector('#fpPop').onclick = popOut;
+window.addEventListener('hashchange', () => setTimeout(syncFollow, 0));
+onBook(() => { if (!!B.item !== !!fBound || (panelWant && !panel.classList.contains('open'))) syncFollow(); });
+
+// The pop-out window shows the text and a small player; this window stays in charge of playback.
+async function popOut() {
+  if (!B.item) return;
+  try { await invoke('fa_popout'); } catch (e) { toast(String(e), true); return; }
+  popped = true;
+  if (nowOpen) closeBookNow();
+  syncFollow(); sendState();
+}
+function sendState() {
+  if (!popped) return;
+  const it = B.item, m = it?.media?.metadata || {}, c = curChapter(), { start, end } = span();
+  emit('fa-state', { item: it ? { id: it.id } : null, title: m.title || '', author: m.authorName || '', chapter: c?.title || '', cover: absCover(it, 300),
+    pos: B.pos, playing: B.playing && B.started, started: B.started, speed: B.speed, start, end }).catch(() => {});
+}
+setInterval(sendState, 250);
+onBook(sendState);
+listen('fa-cmd', ({ payload: c }) => {
+  if (!c) return;
+  if (c.cmd === 'hello') sendState();
+  else if (c.cmd === 'toggle') toggleBook();
+  else if (c.cmd === 'skip') skip(Number(c.n) || 0);
+  else if (c.cmd === 'seek') seekBook(Number(c.pos) || 0);
+  else if (c.cmd === 'speed') { const L = [1, 1.25, 1.5, 1.75, 2, 0.9]; const i = L.findIndex((v) => Math.abs(v - B.speed) < 0.01); setSpeed(L[(i + 1) % L.length]); }
+});
+// The pop-out window closed (its send-back button or its X): the text comes back to the panel.
+listen('fa-popin', () => { if (!popped) return; popped = false; panelWant = true; try { localStorage.setItem('bpanel', '1'); } catch {} syncFollow(); });
+window.addEventListener('book:stop', () => { if (popped) invoke('fa_popin').catch(() => {}); });
+syncFollow();
