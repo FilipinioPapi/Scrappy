@@ -20,11 +20,12 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
-
+      # GitHub's Linux machines come with the Android SDK; add the NDK (for the Rust part).
       - name: Install Android NDK
         run: |
-          sdkmanager --install "ndk;${NDK_VERSION}" > /dev/null
+          SDKM=$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | sort -V | tail -1)/sdkmanager
+          yes | $SDKM --licenses > /dev/null || true
+          $SDKM --install "ndk;${NDK_VERSION}" > /dev/null
           echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
