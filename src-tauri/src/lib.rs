@@ -542,9 +542,6 @@ fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String>
         // Arrow-key skips land exactly where you asked, not on the nearest keyframe.
         ("hr-seek", "yes".into()),
         ("sub-auto", "fuzzy".into()),
-        // mpv's own first choice is English subtitles (the page then makes sure it's
-        // a full English track, or your own pick for the show).
-        ("slang", "en,eng,english".into()),
         ("cache", "yes".into()),
         ("demuxer-max-bytes", "150MiB".into()),
         ("user-agent", "Scrappy/mpv".into()),

@@ -218,7 +218,12 @@ function matchTrack(type, ref) {
       const ext = list.filter((t) => t.external);
       return ext.find((t) => (t.title || '') === ref.displayTitle) || ext.find((t) => sameLang(t.lang, ref.lang) && t.lang) || null;
     }
-    if (S.playMethod !== 'Transcode') { const t = list.find((x) => !x.external && x['ff-index'] === ref.index); if (t && sameLang(t.lang, ref.lang)) return t; }
+    if (S.playMethod !== 'Transcode') {
+      // Only trust the number when the language (or, without one, the name) agrees too.
+      const t = list.find((x) => !x.external && x['ff-index'] === ref.index);
+      const ok = t && (t.lang && ref.lang ? langOf(t.lang) === langOf(ref.lang) : (t.title || '') === (ref.title || ''));
+      if (ok) return t;
+    }
   }
   return findTrack(type, ref);
 }
@@ -243,29 +248,33 @@ function pickTracks() {
     if (t) { use(t); S.pick.sub = false; }
     return;
   }
-  // Otherwise: a full (not forced) English track, always, whatever the file or Emby
-  // would pick. Subtitle files can arrive a few seconds late, so keep looking.
-  const english = S.tracks.find((x) => x.type === 'sub' && !x.forced && subLang(x) === SUB_LANG);
-  if (english) { use(english); S.subWhy = 'English subtitles first'; S.pick.sub = false; return; }
-  // No full English track (yet): only keep an English one Emby picked (like forced
-  // English for foreign bits), never a German or other-language track.
-  const d = w.sub && w.sub !== 'off' ? matchTrack('sub', w.sub) : null;
-  if (d && subLang(d) === SUB_LANG) { use(d); S.subWhy = 'Emby\'s default for you'; }
-  else { off(); S.subWhy = 'no English subtitles found'; }
+  // Otherwise the show's own default: the subtitles Emby itself would start with
+  // (it knows the file's default flag and your Emby settings), then the subtitles
+  // the file marks as default, otherwise off.
+  if (w.sub && w.sub !== 'off') {
+    S.subWhy = 'Emby\'s default';
+    const t = matchTrack('sub', w.sub); // an external file can arrive a few seconds late
+    if (t) { use(t); S.pick.sub = false; }
+    return;
+  }
+  const fileDefault = !w.sub && S.tracks.find((x) => x.type === 'sub' && x.default);
+  if (fileDefault) { use(fileDefault); S.subWhy = 'the video\'s default'; S.pick.sub = false; return; }
+  S.subWhy = w.sub === 'off' ? 'Emby\'s default (off)' : 'the video\'s default (none)';
+  off();
 }
 function stopPicking() { S.pick = null; }
 
-// One-time clean-up: forget saved subtitle picks that aren't English, so every show
-// starts on English again. Picks of "Off" and English ones are kept.
+// One-time clean-up: forget saved subtitle picks, so every show starts again on
+// its own default subtitles.
 try {
-  if (!ls.get('subFix2')) {
+  if (!ls.get('subFix3')) {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
       if (!k || !k.startsWith('tracks:')) continue;
       const v = ls.json(k);
-      if (v?.sub && v.sub !== 'off' && langOf(v.sub.lang) !== SUB_LANG) { delete v.sub; ls.set(k, JSON.stringify(v)); }
+      if (v?.sub) { delete v.sub; ls.set(k, JSON.stringify(v)); }
     }
-    ls.set('subFix2', '1');
+    ls.set('subFix3', '1');
   }
 } catch {}
 
