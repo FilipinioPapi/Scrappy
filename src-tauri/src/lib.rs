@@ -792,6 +792,31 @@ fn player_set(state: State<'_, AppState>, name: String, value: String) -> Result
     p.ok_or("Nothing is playing.")?.set_property(&name, &value)
 }
 
+/// Add a subtitle file that was just downloaded to the server to the video that's
+/// playing, and turn it on. `index` is Emby's stream number for the new subtitles.
+#[tauri::command]
+fn player_add_sub(state: State<'_, AppState>, index: i64, codec: String, title: String, lang: String) -> Result<(), String> {
+    let c = state.cfg();
+    let url = {
+        let mut now = state.now.lock().unwrap();
+        let np = now.as_mut().ok_or("Nothing is playing.")?;
+        let fmt = match codec.to_lowercase().as_str() {
+            "ass" | "ssa" => codec.to_lowercase(),
+            "vtt" | "webvtt" => "vtt".to_string(),
+            _ => "srt".to_string(),
+        };
+        let url = format!(
+            "{}/Videos/{}/{}/Subtitles/{}/Stream.{}?api_key={}",
+            c.server.trim_end_matches('/'), np.item_id, np.media_source_id, index, fmt, c.token
+        );
+        // Also add it again if the same video gets reloaded.
+        np.external_subs.push((url.clone(), title.clone(), lang.clone()));
+        url
+    };
+    let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
+    p.ok_or("Nothing is playing.")?.command(&["sub-add", &url, "select", &title, &lang])
+}
+
 #[tauri::command]
 fn player_get(state: State<'_, AppState>, name: String) -> Value {
     let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
@@ -1229,6 +1254,7 @@ pub fn run() {
             load_previews,
             play,
             player_command,
+            player_add_sub,
             player_set,
             player_get,
             stop_playback,

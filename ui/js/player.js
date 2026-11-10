@@ -8,6 +8,7 @@ const { invoke } = window.__TAURI__.core;
 const ICONS = {
   play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
   pause: '<svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   back: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></g></svg>',
   next: '<svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2z"/><path d="M5 5.5v13L15 12z"/></svg>',
   vol: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></g></svg>',
@@ -42,6 +43,10 @@ const S = {
   aspect: 'auto', quality: ls.get('quality', ''), intro: null, credits: null,
   creditsHandled: false, introDismissed: false, prefsApplied: false, settingsOpen: false,
 };
+// Languages offered when downloading subtitles (Emby wants 3-letter codes).
+const DL_LANGS = [['eng', 'English'], ['spa', 'Spanish'], ['fre', 'French'], ['ger', 'German'], ['ita', 'Italian'], ['por', 'Portuguese'],
+  ['dut', 'Dutch'], ['swe', 'Swedish'], ['nor', 'Norwegian'], ['dan', 'Danish'], ['fin', 'Finnish'], ['pol', 'Polish'], ['rus', 'Russian'],
+  ['tur', 'Turkish'], ['ara', 'Arabic'], ['hin', 'Hindi'], ['jpn', 'Japanese'], ['kor', 'Korean'], ['chi', 'Chinese']];
 const skipBack = () => Number(ls.get('skipBack', 10));
 const skipFwd = () => Number(ls.get('skipFwd', 10));
 
@@ -94,9 +99,13 @@ el.innerHTML = `
     </div>
   </div>
   <div class="p-settings" aria-hidden="true">
+   <div class="p-set-main">
     <div class="p-set-head"><b>Playback settings</b><span class="p-set-scope"></span></div>
     <label>Audio<select data-set="audio"></select></label>
-    <label>Subtitles<select data-set="sub"></select></label>
+    <div class="p-set-sub">
+      <label>Subtitles<select data-set="sub"></select></label>
+      <button class="p-sub-add" data-act="sub-dl" title="Download subtitles" aria-label="Download subtitles" hidden>${ICONS.plus}</button>
+    </div>
     <div class="p-set-2">
       <label>Subtitle size<select data-set="subScale">${SUB_SIZES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label>Speed<select data-set="speed">${SPEEDS.map((v) => `<option value="${v}">${v}×</option>`).join('')}</select></label>
@@ -110,6 +119,17 @@ el.innerHTML = `
       <label>Skip forward (+)<select data-set="skipFwd">${SKIPS.map((v) => `<option value="${v}">${v} seconds</option>`).join('')}</select></label>
     </div>
     <div class="p-set-note"></div>
+   </div>
+   <div class="p-set-dl" hidden>
+    <div class="p-set-head"><button class="p-dl-back" data-act="sub-dl-back" title="Back to Playback settings" aria-label="Back">${ICONS.back}</button><b>Download subtitles</b></div>
+    <div class="p-set-note p-dl-what"></div>
+    <div class="p-dl-search">
+      <select data-dl-lang>${DL_LANGS.map(([c, n]) => `<option value="${c}">${n}</option>`).join('')}</select>
+      <button class="btn" data-act="sub-dl-search">Search</button>
+    </div>
+    <div class="p-dl-results"><div class="p-dl-empty">Pick a language and press Search.</div></div>
+    <div class="p-set-note">Best matches first. Downloaded subtitles are saved on your Emby server, so they show up on every device.</div>
+   </div>
   </div>
   <div class="p-bottom">
     <div class="p-seek-row">
@@ -412,6 +432,7 @@ function drawSettings() {
     : '<option>No audio tracks</option>';
   $('[data-set=sub]').innerHTML = `<option value="no" ${S.sid == null ? 'selected' : ''}>Off</option>` +
     subs.map((t) => `<option value="${t.id}" ${t.id === S.sid ? 'selected' : ''}>${esc(trackLabel(t))}</option>`).join('');
+  drawSubAdd();
   $('[data-set=subScale]').value = S.subScale;
   $('[data-set=speed]').value = String(S.speed);
   $('[data-set=aspect]').value = S.aspect;
@@ -551,9 +572,116 @@ document.documentElement.addEventListener('mouseleave', () => {
 function toggleSettings(force) {
   S.settingsOpen = force ?? !S.settingsOpen;
   reveal('.p-settings', S.settingsOpen);
-  if (S.settingsOpen) drawSettings();
+  if (S.settingsOpen) { showDlPage(false); drawSettings(); }
   drawButtons();
   wake();
+}
+
+// ---------- Download subtitles from inside the player ----------
+
+// Only accounts allowed to manage or download subtitles get the + button.
+let canDownloadSubs = null;
+async function checkSubRights() {
+  if (canDownloadSubs != null) return canDownloadSubs;
+  try {
+    const p = (await api.get('/Users/{userId}'))?.Policy || {};
+    canDownloadSubs = !!(p.IsAdministrator || p.EnableSubtitleManagement || p.EnableSubtitleDownloading);
+  } catch { canDownloadSubs = false; }
+  return canDownloadSubs;
+}
+window.addEventListener('hashchange', () => { if (location.hash === '#/login') canDownloadSubs = null; });
+function drawSubAdd() {
+  const b = $('.p-sub-add');
+  checkSubRights().then((ok) => { b.hidden = !ok || !S.item; });
+}
+
+let dlRun = 0; // stops old search results from showing after a new search
+function showDlPage(on) {
+  const main = $('.p-set-main'), dl = $('.p-set-dl');
+  if (!on) {
+    if (!dl.hidden) { dl.hidden = true; main.hidden = false; main.classList.remove('p-slide-back'); void main.offsetWidth; main.classList.add('p-slide-back'); }
+    return;
+  }
+  const it = S.item;
+  if (!it) return;
+  $('.p-dl-what').textContent = (it.Type === 'Episode'
+    ? [it.SeriesName, `S${it.ParentIndexNumber}:E${it.IndexNumber}`, it.Name].filter(Boolean).join(' · ')
+    : it.Name) + '. Searches the subtitle sources set up on your Emby server (like OpenSubtitles).';
+  $('[data-dl-lang]').value = localStorage.getItem('subSearchLang') || 'eng';
+  if (dl.dataset.item !== it.Id) {
+    dl.dataset.item = it.Id;
+    dlRun++;
+    $('.p-dl-results').innerHTML = '<div class="p-dl-empty">Pick a language and press Search.</div>';
+  }
+  main.hidden = true;
+  dl.hidden = false;
+  dl.classList.remove('p-slide-in'); void dl.offsetWidth; dl.classList.add('p-slide-in');
+}
+
+async function searchSubs() {
+  const it = S.item;
+  if (!it) return;
+  const code = $('[data-dl-lang]').value;
+  localStorage.setItem('subSearchLang', code);
+  const out = $('.p-dl-results');
+  const run = ++dlRun;
+  out.innerHTML = '<div class="p-dl-empty"><div class="spinner"></div>Searching…</div>';
+  let list;
+  try {
+    const res = await api.get(`/Items/${it.Id}/RemoteSearch/Subtitles/${code}?IsPerfectMatch=false`);
+    // Subtitles made for this exact file (hash match) go first.
+    list = (Array.isArray(res) ? res : []).map((r, n) => ({ r, n }))
+      .sort((a, b) => (b.r.IsHashMatch ? 1 : 0) - (a.r.IsHashMatch ? 1 : 0) || a.n - b.n).map((x) => x.r).slice(0, 30);
+  } catch (e) {
+    if (run === dlRun) out.innerHTML = `<div class="p-dl-empty">${esc(String(e))}</div>`;
+    return;
+  }
+  if (run !== dlRun) return;
+  out.innerHTML = list.length ? list.map((r, i) => `
+    <div class="p-dl-row">
+      <div class="p-dl-text">${r.IsHashMatch ? '<span class="p-dl-match" title="Made for this exact file, so the timing should line up">MATCHES YOUR FILE</span>' : ''}<b>${esc(r.Name || r.Id)}</b><span>${[r.ProviderName, (r.Format || "").toUpperCase(), r.DownloadCount ? `${r.DownloadCount.toLocaleString()} downloads` : ''].filter(Boolean).map(esc).join(' · ')}</span></div>
+      <button class="p-dl-get" data-get="${i}">Download</button>
+    </div>`).join('') : '<div class="p-dl-empty">Nothing found in that language.</div>';
+  out.querySelectorAll('[data-get]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    downloadSub(it, list[Number(b.dataset.get)], b, code);
+  }));
+}
+
+const subStreams = (item) => (item?.MediaSources?.[0]?.MediaStreams || item?.MediaStreams || []).filter((s) => s.Type === 'Subtitle');
+
+async function downloadSub(it, r, b, code) {
+  if (b.classList.contains('busy') || b.classList.contains('done')) return;
+  b.classList.add('busy');
+  b.textContent = 'Downloading…';
+  try {
+    // What subtitles the server knows about before, so the new one can be spotted after.
+    const before = new Set(subStreams(await api.get(`/Users/{userId}/Items/${it.Id}`)).map((s) => s.Index));
+    await api.post(`/Items/${it.Id}/RemoteSearch/Subtitles/${encodeURIComponent(r.Id)}`);
+    // The server can take a moment to list the new file.
+    let added = null;
+    for (let i = 0; i < 8 && !added; i++) {
+      await new Promise((ok) => setTimeout(ok, i ? 1500 : 600));
+      const fresh = await api.get(`/Users/{userId}/Items/${it.Id}`).catch(() => null);
+      added = subStreams(fresh).find((s) => s.IsExternal && !before.has(s.Index)) || null;
+    }
+    if (S.item?.Id !== it.Id) return; // moved on to another video meanwhile
+    if (!added) throw new Error('Downloaded, but the server hasn\'t listed the new subtitles yet. Try reopening the video in a moment.');
+    letGoOfSubs();
+    const title = added.DisplayTitle || added.Title || 'Downloaded';
+    const lang = added.Language || code;
+    await invoke('player_add_sub', { index: added.Index, codec: added.Codec || r.Format || 'srt', title, lang });
+    saveTrackPrefs({ sub: { lang, title, forced: false } });
+    b.classList.remove('busy');
+    b.classList.add('done');
+    b.textContent = '✓ Turned on';
+    toast(`${langName(lang) || 'New'} subtitles added and turned on`);
+    setTimeout(() => { if (S.settingsOpen) { showDlPage(false); drawSettings(); } }, 900);
+  } catch (e) {
+    b.classList.remove('busy');
+    b.textContent = 'Download';
+    toast(String(e?.message || e), true);
+  }
 }
 
 // ---------- Opening and closing ----------
@@ -891,6 +1019,9 @@ el.addEventListener('click', (e) => {
     case 'cc': toggleSubs(); break;
     case 'speed': cycleSpeed(); break;
     case 'settings': toggleEps(false); toggleSettings(); break;
+    case 'sub-dl': showDlPage(true); break;
+    case 'sub-dl-back': showDlPage(false); break;
+    case 'sub-dl-search': searchSubs(); break;
     case 'eps': toggleSettings(false); toggleEps(); break;
     case 'still-yes': {
       const n = S.stillNext;
