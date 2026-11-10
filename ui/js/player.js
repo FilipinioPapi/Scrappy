@@ -410,19 +410,22 @@ function checkMarkers() {
   }
   if (S.intro && p < S.intro.start) S.introDismissed = false;
 
-  // Credits
-  if (S.credits != null) {
-    if (p < S.credits - 2 && S.creditsHandled) {
+  // Credits. Many episodes have no credits marker from Emby, so then Up next
+  // shows for the last 40 seconds of an episode instead.
+  const d = dur();
+  const guess = S.credits == null && S.next && S.item?.Type === 'Episode' && d > 300 ? d - 40 : null;
+  const cs = S.credits ?? guess;
+  if (cs != null) {
+    if (p < cs - 2 && S.creditsHandled) {
       // Seeked back before the credits: reset.
       S.creditsHandled = false;
       if (S.upNextMode === 'credits') hideUpNext();
       if (skipMode === 'credits') showSkip(null);
     }
-    if (p >= S.credits && !S.creditsHandled) {
+    if (p >= cs && !S.creditsHandled) {
       S.creditsHandled = true;
       const autoplay = ls.get('autoplay', 'on') !== 'off';
       if (S.next && autoplay) showUpNext('credits');
-      else if (S.next) showSkip('credits');
       else showSkip('credits');
     }
   }
