@@ -7,6 +7,7 @@ mod servers;
 use emby::Config;
 use serde_json::{json, Value};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -1071,26 +1072,67 @@ async fn serve_nd_cover(state: &AppState, id: &str, parsed: &reqwest::Url) -> Re
     if !cfg.nd_logged_in() {
         return not_found();
     }
-    let url = servers::nd_url(&cfg, "getCoverArt", &format!("id={}&size={}", servers::enc(id), servers::enc(&size)));
-    match state.http.get(url).send().await {
-        Ok(r) if r.status().is_success() && r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false) => match r.bytes().await {
-            Ok(b) => {
-                let b = b.to_vec();
-                if let Some(d) = file.parent() {
-                    let _ = std::fs::create_dir_all(d);
-                }
-                let _ = std::fs::write(&file, &b);
-                // Navidrome picture ids end in a version stamp ("al-123_65a1b2c3"): drop older versions.
-                if let Some((base, ver)) = id.rsplit_once('_') {
-                    if ver != "0" && !base.is_empty() {
-                        prune_siblings(&file, &format!("nd_{}_", sanitize(base)), &format!("_{}", sanitize(&size)));
-                    }
-                }
-                img_response(StatusCode::OK, sniff_mime(&b), b)
+    let got = nd_cover_bytes(&state.http, &cfg, id, &size).await;
+    let got = if id.starts_with("ar-") { artist_fallback(state, &cfg, id, &size, got).await } else { got };
+    match got {
+        Some(b) => {
+            if let Some(d) = file.parent() {
+                let _ = std::fs::create_dir_all(d);
             }
-            Err(_) => not_found(),
-        },
-        _ => not_found(),
+            let _ = std::fs::write(&file, &b);
+            // Navidrome picture ids end in a version stamp ("al-123_65a1b2c3"): drop older versions.
+            if let Some((base, ver)) = id.rsplit_once('_') {
+                if ver != "0" && !base.is_empty() {
+                    prune_siblings(&file, &format!("nd_{}_", sanitize(base)), &format!("_{}", sanitize(&size)));
+                }
+            }
+            img_response(StatusCode::OK, sniff_mime(&b), b)
+        }
+        None => not_found(),
+    }
+}
+
+/// One picture from Navidrome, or None when it doesn't send an image.
+async fn nd_cover_bytes(http: &reqwest::Client, cfg: &Config, id: &str, size: &str) -> Option<Vec<u8>> {
+    let url = servers::nd_url(cfg, "getCoverArt", &format!("id={}&size={}", servers::enc(id), servers::enc(size)));
+    let r = http.get(url).timeout(std::time::Duration::from_secs(20)).send().await.ok()?;
+    let is_img = r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false);
+    if !r.status().is_success() || !is_img { return None; }
+    r.bytes().await.ok().map(|b| b.to_vec())
+}
+
+/// Navidrome's "no artist picture" placeholder at a given size, fetched once by asking
+/// for an artist that doesn't exist.
+async fn nd_artist_placeholder(http: &reqwest::Client, cfg: &Config, size: &str) -> Option<Vec<u8>> {
+    static SEEN: std::sync::OnceLock<Mutex<HashMap<String, Option<Vec<u8>>>>> = std::sync::OnceLock::new();
+    let seen = SEEN.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = format!("{}|{}", cfg.nd_server, size);
+    if let Some(v) = seen.lock().unwrap().get(&key) { return v.clone(); }
+    let v = nd_cover_bytes(http, cfg, "ar-scrappy-no-such-artist", size).await;
+    seen.lock().unwrap().insert(key, v.clone());
+    v
+}
+
+/// When an artist has no picture of its own (Navidrome sends nothing or its grey placeholder),
+/// use the cover of the artist's most played album instead.
+async fn artist_fallback(state: &AppState, cfg: &Config, id: &str, size: &str, got: Option<Vec<u8>>) -> Option<Vec<u8>> {
+    let placeholder = nd_artist_placeholder(&state.http, cfg, size).await;
+    let missing = match (&got, &placeholder) {
+        (None, _) => true,
+        (Some(b), Some(p)) => b == p,
+        _ => false,
+    };
+    if !missing { return got; }
+    let artist_id = id.trim_start_matches("ar-").split('_').next().unwrap_or("");
+    if artist_id.is_empty() { return got; }
+    let Ok(v) = servers::nd_get(&state.http, cfg, "getArtist", &format!("id={}", servers::enc(artist_id))).await else { return got };
+    let albums = v["artist"]["album"].as_array().cloned().unwrap_or_default();
+    let best = albums.iter()
+        .filter(|a| a["coverArt"].as_str().map(|c| !c.is_empty()).unwrap_or(false))
+        .max_by_key(|a| (a["playCount"].as_i64().unwrap_or(0), a["songCount"].as_i64().unwrap_or(0)));
+    match best.and_then(|a| a["coverArt"].as_str()) {
+        Some(cv) => nd_cover_bytes(&state.http, cfg, cv, size).await.or(got),
+        None => got,
     }
 }
 
@@ -1126,8 +1168,11 @@ async fn refresh_covers(state: State<'_, AppState>, kind: String) -> Result<u32,
         if r.status() == StatusCode::NOT_MODIFIED || !r.status().is_success() { continue; }
         if !r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false) { continue; }
         let Ok(b) = r.bytes().await else { continue };
+        let b = if id.starts_with("ar-") {
+            match artist_fallback(&state, &cfg, &id, &size, Some(b.to_vec())).await { Some(x) => x, None => continue }
+        } else { b.to_vec() };
         let old = std::fs::read(&path).unwrap_or_default();
-        if old != b.as_ref() {
+        if old != b {
             let _ = std::fs::write(&path, &b);
             changed += 1;
         } else {
