@@ -94,7 +94,7 @@ export async function statsPage(main, kind, alive) {
   main.innerHTML = `<div class="stx${kind === 'tv' ? ' full' : ''}">${secBar(kind)}<div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
     <div class="seg" id="stxWho" hidden title="Only admins see this"><button type="button" data-w="me" class="on">Me</button><button type="button" data-w="all">Everyone</button></div>
     <div class="seg" id="stxSeg">${PERIODS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === per ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-    <div id="stxBody"><div class="stx-load t2">Adding up your stats…</div></div></div>`;
+    <div id="yirSlot"></div><div id="stxBody"><div class="stx-load t2">Adding up your stats…</div></div></div>`;
   const body = main.querySelector('#stxBody');
   const src = SOURCES[kind], raws = {};
   let token = 0, who = 'me';
@@ -102,7 +102,7 @@ export async function statsPage(main, kind, alive) {
     const my = ++token;
     try {
       const w = who;
-      if (!raws[w]) { if (w === 'all') body.innerHTML = '<div class="stx-load t2">Adding up everyone\'s stats…</div>'; raws[w] = await (w === 'all' ? src.loadAll() : src.load()); }
+      if (!raws[w]) { if (w === 'all') body.innerHTML = '<div class="stx-load t2">Adding up everyone\'s stats…</div>'; raws[w] = await (w === 'all' ? src.loadAll() : loadRaw(kind)); }
       if (!alive() || my !== token) return;
       const m = (w === 'all' ? src.buildAll || src.build : src.build)(raws[w], per);
       main.querySelector('#stxSub').textContent = m.sub || '';
@@ -132,8 +132,22 @@ export async function statsPage(main, kind, alive) {
       draw();
     });
   }).catch(() => {});
+  // Your Year in Review banner (from Dec 1) and Past years chips.
+  import('./yir.js').then((m) => m.yirBanner(main.querySelector('#yirSlot'), kind, alive)).catch(() => {});
   await draw();
 }
+
+// One copy of each tab's raw data for a few minutes, shared with Your Year in Review.
+const RAW = {};
+export function loadRaw(kind) {
+  const c = RAW[kind];
+  if (c && Date.now() - c.t < 5 * 60000) return c.p;
+  const p = SOURCES[kind].load();
+  RAW[kind] = { t: Date.now(), p };
+  p.catch(() => { if (RAW[kind]?.p === p) delete RAW[kind]; });
+  return p;
+}
+export { absImg, ndImg, hue, hm, n0, plural, dkey, streaks };
 
 function html(m) {
   const card = (c) => `<div class="stx-card${c.hot ? ' hot' : ''}"><div class="k">${esc(c.k)}</div><div class="v disp">${esc(c.v)}<small>${esc(c.u || '')}</small></div>${c.d ? `<div class="d ${c.d.c || 'n'}">${esc(c.d.t)}</div>` : ''}<span class="gl" aria-hidden="true">${c.g || ''}</span></div>`;
@@ -373,7 +387,7 @@ async function tvModel_load() {
     const cols = (r?.colums || r?.columns || []).map((c) => String(c).toLowerCase());
     if (Array.isArray(r?.results)) {
       const ix = (n) => cols.indexOf(n.toLowerCase());
-      pr = r.results.map((x) => ({ t: Date.parse(String(x[ix('DateCreated')]).replace(' ', 'T')), d: Number(x[ix('PlayDuration')]) || 0, type: x[ix('ItemType')], name: x[ix('ItemName')] })).filter((x) => x.t);
+      pr = r.results.map((x) => ({ t: Date.parse(String(x[ix('DateCreated')]).replace(' ', 'T')), d: Number(x[ix('PlayDuration')]) || 0, type: x[ix('ItemType')], name: x[ix('ItemName')], id: x[ix('ItemId')] })).filter((x) => x.t);
     }
   } catch {}
   return { eps: eps.Items || [], movies: movies.Items || [], series: series.Items || [], favCount: favs.TotalRecordCount || 0, resume: resume.Items || [], pr };

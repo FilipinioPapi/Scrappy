@@ -232,6 +232,41 @@ async fn api_upload_image(state: State<'_, AppState>, path: String, base64: Stri
     emby::send_raw(&state.http, &cfg, reqwest::Method::POST, &path, base64, &content_type).await
 }
 
+/// Save a picture (PNG bytes) in Pictures\Scrappy, e.g. a Year in Review card,
+/// then show it in the file manager. Returns where it went.
+#[tauri::command]
+fn save_png(app: AppHandle, name: String, data: Vec<u8>) -> Result<String, String> {
+    if !data.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Err("Not a picture".into());
+    }
+    let base = app
+        .path()
+        .picture_dir()
+        .or_else(|_| app.path().download_dir())
+        .map_err(|e| e.to_string())?;
+    let dir = base.join("Scrappy");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stem: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' })
+        .collect();
+    let stem = stem.trim().to_string();
+    let mut path = dir.join(format!("{stem}.png"));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{stem} ({n}).png"));
+        n += 1;
+    }
+    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path.display()))
+            .spawn();
+    }
+    Ok(path.display().to_string())
+}
+
 /// Return the last saved copy of a request, or null.
 #[tauri::command]
 fn api_cached(state: State<'_, AppState>, path: String) -> Value {
@@ -1148,6 +1183,7 @@ pub fn run() {
             api_cached,
             api_send,
             api_upload_image,
+            save_png,
             load_previews,
             play,
             player_command,

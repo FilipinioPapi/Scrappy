@@ -313,6 +313,10 @@ autoplayToggle.checked = localStorage.getItem('autoplay') !== 'off';
 windowModeToggle.checked = localStorage.getItem('playerMode') === 'window';
 autoplayToggle.addEventListener('change', () => localStorage.setItem('autoplay', autoplayToggle.checked ? 'on' : 'off'));
 windowModeToggle.addEventListener('change', () => localStorage.setItem('playerMode', windowModeToggle.checked ? 'window' : 'embedded'));
+// Your Year in Review normally appears on December 1; this shows it any time (for trying it out).
+const yirEarlyToggle = document.getElementById('yirEarlyToggle');
+yirEarlyToggle.checked = localStorage.getItem('yirEarly') === 'on';
+yirEarlyToggle.addEventListener('change', () => { localStorage.setItem('yirEarly', yirEarlyToggle.checked ? 'on' : 'off'); if (/stats/.test(location.hash)) route({ keepScroll: true }); });
 document.querySelector('.menu').addEventListener('click', (e) => { if (e.target.closest('label')) e.stopPropagation(); });
 
 // After playback, refresh the page so Continue Watching and progress bars update.
