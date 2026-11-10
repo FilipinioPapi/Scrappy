@@ -395,7 +395,11 @@ function drawSettings() {
   $('[data-set=skipFwd]').value = String(skipFwd());
   const name = S.item?.SeriesName || S.item?.Name || 'this title';
   $('.p-set-scope').textContent = S.item?.SeriesName ? 'for this show' : 'for this title';
-  $('.p-set-note').textContent = `Audio, subtitles and speed are remembered for ${name}. Skip lengths and quality apply everywhere.${S.subWhy ? ` Subtitles started from ${S.subWhy}.` : ''}`;
+  // Where the subtitles came from, spelled out, so a wrong pick can be traced.
+  const ed = S.defaults?.sub;
+  const emby = !S.defaults ? 'unknown' : ed ? (ed.displayTitle || langName(ed.lang) || 'a track') + ` (#${ed.index})` : (S.defaults.subKnown ? 'Off' : 'none given');
+  const fd = S.tracks.filter((t) => t.type === 'sub' && t.default).map(trackLabel).join(', ') || 'none';
+  $('.p-set-note').textContent = `Audio, subtitles and speed are remembered for ${name}. Skip lengths and quality apply everywhere.${S.subWhy ? ` Subtitles started from ${S.subWhy}.` : ''} Emby's default subtitles: ${emby}. The video marks as default: ${fd}.`;
 }
 
 // ---------- Skip Intro / credits ----------
