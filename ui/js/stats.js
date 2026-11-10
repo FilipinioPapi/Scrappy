@@ -87,14 +87,35 @@ const secBar = (kind) => `<nav class="stx-secs">${SECS.map(([k, href, t, d]) => 
 const TITLES = { abs: 'Your listening', music: 'Your music', tv: 'Your watching' };
 const EVERYONE = { abs: "Everyone's listening", tv: "Everyone's watching" };
 
+// Tags like "Hip-Hop", "Hip Hop" and "hiphop" count as one genre. The most used spelling is shown.
+export const genreKey = (g) => String(g || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
+export function mergeGenres(m) {
+  const by = new Map();
+  m.forEach((v, name) => { const k = genreKey(name); if (!k) return; const o = by.get(k) || { name, best: -1, t: 0 }; if (v > o.best) { o.name = name; o.best = v; } o.t += v; by.set(k, o); });
+  return new Map([...by.values()].map((o) => [o.name, o.t]));
+}
+
 /** Draws the stats page for 'abs', 'music' or 'tv' into `main`. */
 export async function statsPage(main, kind, alive) {
-  let per = localStorage.getItem('statsPer:' + kind) || 'month';
-  if (!PERIODS.some(([k]) => k === per)) per = 'month';
-  main.innerHTML = `<div class="stx full">${secBar(kind)}<div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
+  // One time period for every category, so Movies → Music keeps "This year" (or whatever's picked).
+  // Coming into Stats from elsewhere starts on This year.
+  let per = window.__statsPer || 'year';
+  if (!PERIODS.some(([k]) => k === per)) per = 'year';
+  window.__statsPer = per;
+  const head = `${secBar(kind)}<div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
     <div class="seg" id="stxWho" hidden title="Only admins see this"><button type="button" data-w="me" class="on">Me</button><button type="button" data-w="all">Everyone</button></div>
-    <div class="seg" id="stxSeg">${PERIODS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === per ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-    <div id="yirSlot"></div><div id="stxBody"><div class="stx-load t2">Adding up your stats…</div></div></div>`;
+    <div class="seg" id="stxSeg">${PERIODS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === per ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
+  const prev = main.querySelector(':scope > .stx');
+  if (prev) {
+    // Switching category inside Stats: keep the page and fade the old numbers out while the new ones load.
+    const fresh = document.createElement('div'); fresh.innerHTML = head;
+    prev.querySelector('.stx-secs').replaceWith(fresh.querySelector('.stx-secs'));
+    prev.querySelector('.stx-h').replaceWith(fresh.querySelector('.stx-h'));
+    ['#yirSlot', '#stxBody'].forEach((q) => { const n = prev.querySelector(q); n.classList.remove('stx-in'); n.classList.add('stx-old'); });
+  } else {
+    main.innerHTML = `<div class="stx full">${head}<div id="yirSlot"></div><div id="stxBody"><div class="stx-load t2">Adding up your stats…</div></div></div>`;
+  }
+  const show = (n, h) => { n.innerHTML = h; if (n.classList.contains('stx-old')) { n.classList.remove('stx-old'); void n.offsetWidth; n.classList.add('stx-in'); } };
   const body = main.querySelector('#stxBody');
   const src = SOURCES[kind], raws = {};
   let token = 0, who = 'me';
@@ -107,16 +128,16 @@ export async function statsPage(main, kind, alive) {
       const m = (w === 'all' ? src.buildAll || src.build : src.build)(raws[w], per);
       main.querySelector('#stxSub').textContent = m.sub || '';
       main.querySelector('.stx-h h1').textContent = w === 'all' ? EVERYONE[kind] : TITLES[kind];
-      body.innerHTML = html(m);
+      show(body, html(m));
       if (m.year) yearHover(body, m.year);
     } catch (e) {
       if (!alive()) return;
-      body.innerHTML = `<div class="empty">Couldn't load your stats: ${esc(e.message || String(e))}</div>`;
+      show(body, `<div class="empty">Couldn't load your stats: ${esc(e.message || String(e))}</div>`);
     }
   };
   main.querySelector('#stxSeg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-k]'); if (!b || b.dataset.k === per) return;
-    per = b.dataset.k; try { localStorage.setItem('statsPer:' + kind, per); } catch {}
+    per = window.__statsPer = b.dataset.k;
     main.querySelectorAll('#stxSeg button').forEach((x) => x.classList.toggle('on', x === b));
     draw();
   });
@@ -134,7 +155,8 @@ export async function statsPage(main, kind, alive) {
     });
   }).catch(() => {});
   // Your Year in Review banner (from Dec 1) and Past years chips.
-  import('./yir.js').then((m) => m.yirBanner(main.querySelector('#yirSlot'), kind, alive)).catch(() => {});
+  const slot = main.querySelector('#yirSlot');
+  import('./yir.js').then((m) => m.yirBanner(slot, kind, alive)).then(() => { if (alive() && slot.classList.contains('stx-old')) show(slot, ''); }).catch(() => {});
   await draw();
 }
 
@@ -219,8 +241,9 @@ function absModel_build({ stats, me, sessions }, p) {
   if (p === 'all' && stats.items) Object.values(stats.items).forEach((it) => { const b = books.get(it.id); if (b) b.t = Math.max(b.t, it.timeListening || 0); else books.set(it.id, { id: it.id, title: it.mediaMetadata?.title || '', author: it.mediaMetadata?.authorName || '', t: it.timeListening || 0 }); });
   const topB = [...books.values()].sort((a, b) => b.t - a.t).slice(0, 6);
   const topA = [...authors.values()].sort((a, b) => b.t - a.t).slice(0, 6);
-  const gTot = [...genres.values()].reduce((a, b) => a + b, 0) || 1;
-  const topG = [...genres.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const gM = mergeGenres(genres);
+  const gTot = [...gM.values()].reduce((a, b) => a + b, 0) || 1;
+  const topG = [...gM.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   const pts = ses.map((x) => [x.startedAt || x.updatedAt, x.timeListening || 0]);
   const longest = ses.reduce((a, x) => ((x.timeListening || 0) > (a?.timeListening || 0) ? x : a), null);
   const bz = busiest(days.filter(([t]) => t >= s0));
@@ -403,7 +426,7 @@ function musicModel_build({ songs, log, histErr }, p) {
   const artists = sum('ar', (x) => ({ id: x.arId, cv: x.cv }));
   const albums = sum('alId', (x) => ({ name: x.al, ar: x.ar, cv: x.cv }));
   const top = plays.slice().sort((a, b) => b.n - a.n);
-  const gen = sum('g', () => ({}));
+  const gen = [...mergeGenres(sum('g', () => ({})).reduce((m, g) => m.set(g.k, g.n), new Map())).entries()].map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n);
   const gTot = gen.reduce((a, g) => a + g.n, 0) || 1;
   const pts = all ? [] : log.map((x) => [x.t, x.d]);
   const firstLog = log[0]?.t;
@@ -448,18 +471,23 @@ async function tvModel_load() {
     api.get('/Users/{userId}/Items/Resume?Limit=50&MediaTypes=Video').catch(() => ({})),
   ]);
   // Playback Reporting plugin: real watch sessions with dates and durations.
-  let pr = null;
+  // The app only fills in {userId} in the address, so put the real id into the query here.
+  let pr = null, admin = false;
   try {
-    const r = await api.post('/user_usage_stats/submit_custom_query', { CustomQueryString: "SELECT DateCreated, PlayDuration, ItemType, ItemName, ItemId FROM PlaybackActivity WHERE UserId = '{userId}' ORDER BY DateCreated DESC LIMIT 50000", ReplaceUserId: false });
+    const [ses, me] = await Promise.all([api.session(), api.get('/Users/{userId}').catch(() => null)]);
+    admin = !!me?.Policy?.IsAdministrator;
+    const uid = String(ses?.userId || me?.Id || '').replace(/[^0-9a-fA-F-]/g, '');
+    if (!uid) throw new Error('no user');
+    const r = await api.post('/user_usage_stats/submit_custom_query', { CustomQueryString: `SELECT DateCreated, PlayDuration, ItemType, ItemName, ItemId FROM PlaybackActivity WHERE UserId IN ('${uid}', '${uid.replace(/-/g, '')}') ORDER BY DateCreated DESC LIMIT 50000`, ReplaceUserId: false });
     const cols = (r?.colums || r?.columns || []).map((c) => String(c).toLowerCase());
     if (Array.isArray(r?.results)) {
       const ix = (n) => cols.indexOf(n.toLowerCase());
       pr = r.results.map((x) => ({ t: Date.parse(String(x[ix('DateCreated')]).replace(' ', 'T')), d: Number(x[ix('PlayDuration')]) || 0, type: x[ix('ItemType')], name: x[ix('ItemName')], id: x[ix('ItemId')] })).filter((x) => x.t);
     }
   } catch {}
-  return { eps: eps.Items || [], movies: movies.Items || [], series: series.Items || [], favCount: favs.TotalRecordCount || 0, resume: resume.Items || [], pr };
+  return { eps: eps.Items || [], movies: movies.Items || [], series: series.Items || [], favCount: favs.TotalRecordCount || 0, resume: resume.Items || [], pr, admin };
 }
-function tvModel_build({ eps, movies, series, favCount, resume, pr }, p) {
+function tvModel_build({ eps, movies, series, favCount, resume, pr, admin }, p) {
   const s0 = startOf(p), [ps, pe] = prevRange(p);
   const when = (it) => Date.parse(it.UserData?.LastPlayedDate || '') || 0;
   const epsP = eps.filter((e) => when(e) >= s0), movP = movies.filter((m) => when(m) >= s0);
@@ -471,7 +499,8 @@ function tvModel_build({ eps, movies, series, favCount, resume, pr }, p) {
   const gen = new Map(); const addG = (gs, w) => (gs || []).forEach((g) => gen.set(g, (gen.get(g) || 0) + w));
   epsP.forEach((e) => addG(byId.get(e.SeriesId)?.Genres || e.Genres, (e.RunTimeTicks || 0) / 1e7));
   movP.forEach((m) => addG(m.Genres, (m.RunTimeTicks || 0) / 1e7));
-  const gList = [...gen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6), gTot = [...gen.values()].reduce((a, b) => a + b, 0) || 1;
+  const gM = mergeGenres(gen);
+  const gList = [...gM.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6), gTot = [...gM.values()].reduce((a, b) => a + b, 0) || 1;
   const binge = new Map(); epsP.forEach((e) => { const k = dkey(when(e)) + '|' + (e.SeriesName || ''); binge.set(k, (binge.get(k) || 0) + 1); });
   const bg = [...binge.entries()].sort((a, b) => b[1] - a[1])[0];
   const rew = [...eps, ...movies].filter((x) => (x.UserData?.PlayCount || 0) > 1).sort((a, b) => b.UserData.PlayCount - a.UserData.PlayCount)[0];
@@ -492,7 +521,8 @@ function tvModel_build({ eps, movies, series, favCount, resume, pr }, p) {
   const days = p === 'all' ? Math.max(1, new Set(pr ? pr.map((x) => dkey(x.t)) : []).size) : Math.max(1, Math.ceil((Date.now() - s0) / DAY));
   return {
     sub: pr ? 'From Emby + Playback Reporting' : 'From Emby',
-    callout: pr ? null : { t: 'Want charts of when you watch?', d: 'Emby only keeps play counts on its own. Install the free Playback Reporting plugin (Emby dashboard › Plugins › Catalog) and this page adds watch time per day, your busiest days and hours, and time per show. If it\'s installed and this still shows, your Emby account may need permission to read its reports.' },
+    // Only admins can install the plugin, so only they see how to turn the charts on.
+    callout: pr || !admin ? null : { t: 'Want charts of when you watch?', d: 'Emby only keeps play counts on its own. Install the free Playback Reporting plugin (Emby dashboard › Plugins › Catalog) and this page adds watch time per day, your busiest days and hours, and time per show.' },
     cards: [
       pr ? { hot: true, k: 'TIME WATCHED', v: hm(watch), d: vs(watch, prev, p), g: '📺' } : { hot: true, k: 'EPISODES WATCHED', v: n0(epsP.length), d: vs(epsP.length, epsPrev, p) || { t: `across ${plural(shows.size, 'show')}`, c: 'n' }, g: '📺' },
       { k: 'MOVIES', v: n0(movP.length), d: { t: 'finished', c: 'n' }, g: '🎬' },

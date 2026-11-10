@@ -107,6 +107,9 @@ async function route(opts = {}) {
   // and the small player shows in the top bar instead.
   const audioTab = name === 'music' || name === 'audiobooks';
   const swapped = document.body.classList.contains('tab-music') !== audioTab && !!lastRouteName;
+  // Moving between Stats categories keeps the page and only swaps the numbers.
+  const statsSwitch = !!statsKind && lastRouteName === 'stats' && !!viewEl.querySelector(':scope > .stx-page > .stx');
+  if (!statsKind) window.__statsPer = '';
   lastRouteName = name;
   document.body.classList.toggle('tab-music', audioTab);
   // Stats act as their own section: no side bars, no bottom bar, no tab lit up.
@@ -119,7 +122,7 @@ async function route(opts = {}) {
   const ctx = makeCtx();
   if (opts.keepScroll) quiet();
   const id = arg ? decodeURIComponent(arg) : '';
-  if (!opts.keepScroll) {
+  if (!opts.keepScroll && !statsSwitch) {
     window.scrollTo(0, 0);
     viewEl.classList.remove('quiet');
     // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
@@ -142,7 +145,7 @@ async function route(opts = {}) {
     case 'search': return searchPage(viewEl, ctx);
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return booksView(viewEl, ctx);
-    case 'stats': viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
+    case 'stats': if (!statsSwitch) viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
     default: return homeView(viewEl, ctx);
   }
 }
@@ -194,7 +197,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let scanning = false;
 async function quickScan(sec = curSection(), quietToast = false) {
   if (scanning) return;
-  scanning = true; refreshBtn.classList.add('spin'); refMenu.hidden = true;
+  scanning = true; refreshBtn.classList.add('scanning'); refMenu.hidden = true;
   try {
     const [covers] = await Promise.all([
       api.refreshCovers(sec).catch(() => 0),
@@ -206,12 +209,12 @@ async function quickScan(sec = curSection(), quietToast = false) {
     lastRefresh[sec] = Date.now();
     if (!quietToast) toast(`${SECTIONS[sec].name} is up to date${covers ? ` · ${covers} new ${covers === 1 ? 'picture' : 'pictures'}` : ''}`);
   } catch (e) { toast(String(e), true); }
-  finally { scanning = false; refreshBtn.classList.remove('spin'); }
+  finally { scanning = false; refreshBtn.classList.remove('scanning'); }
 }
 async function deepScan(sec = curSection()) {
   if (scanning) return;
   const S = SECTIONS[sec];
-  scanning = true; refreshBtn.classList.add('spin'); refMenu.hidden = true;
+  scanning = true; refreshBtn.classList.add('scanning'); refMenu.hidden = true;
   toast(`Asking ${S.server} to scan for new files…`);
   const started = Date.now(), until = started + 15 * 60 * 1000;
   try {
@@ -243,7 +246,7 @@ async function deepScan(sec = curSection()) {
     toast(`${S.server} scan finished · ${S.name} is up to date`);
   } catch (e) {
     toast(`${S.server} scan didn't start: ${String(e).replace(/^Error:\s*/, '')}`, true);
-  } finally { scanning = false; refreshBtn.classList.remove('spin'); }
+  } finally { scanning = false; refreshBtn.classList.remove('scanning'); }
 }
 const ago = (t) => { if (!t) return 'not yet this session'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m === 1 ? '1 min ago' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
 async function openRefMenu() {
