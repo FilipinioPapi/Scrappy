@@ -125,6 +125,7 @@ el.innerHTML = `
       <button class="p-pill" data-act="rew" title="Skip back (←)"></button>
       <button class="p-play" data-act="pause" title="Play/Pause (Space)" aria-label="Play or pause"><span class="i-pause">${ICONS.pause}</span><span class="i-play">${ICONS.play}</span></button>
       <button class="p-pill" data-act="fwd" title="Skip forward (→)"></button>
+      <div class="p-ends" aria-live="off"><b></b><small></small></div>
       <div class="p-spacer"></div>
       <button class="p-btn p-epsbtn" data-act="eps" title="Episodes (E)" hidden>${ICONS.eps}<span>Episodes</span></button>
       <button class="p-btn p-next" data-act="next" title="Next episode (N)" hidden>${ICONS.next}<span>Next episode</span></button>
@@ -320,6 +321,21 @@ function drawTime() {
   if (!S.dragging) drawBar(livePos());
   setStyle('.p-buf', 'width', d ? Math.min(100, (S.cache / d) * 100).toFixed(2) + '%' : '0');
   setText('.p-dur', fmt(d));
+  drawEnds();
+}
+
+// "Ends at 10:42 PM" and the time left, counting playback speed.
+// While paused the clock still moves, so refresh it now and then.
+setInterval(() => { if (S.open) drawEnds(); }, 10000);
+function drawEnds() {
+  const d = dur();
+  if (!d) { setText('.p-ends b', ''); setText('.p-ends small', ''); return; }
+  const left = Math.max(0, d - livePos()) / (S.speed || 1);
+  const ends = new Date(Date.now() + left * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const mins = Math.ceil(left / 60);
+  const h = Math.floor(mins / 60), m = mins % 60;
+  setText('.p-ends b', `Ends at ${ends}`);
+  setText('.p-ends small', `${h ? `${h} h ${m} min` : `${mins} min`} left`);
 }
 let glideRaf = 0;
 function glide() {
@@ -703,7 +719,7 @@ listen('mpv-prop', ({ payload: { name, value } }) => {
     case 'paused-for-cache': case 'seeking': S.pos = livePos(); markPos(); S.buffering = !!value; drawButtons(); break;
     case 'volume': if (value != null) { S.volume = Math.round(value); drawButtons(); } break;
     case 'mute': S.muted = !!value; drawButtons(); break;
-    case 'speed': if (value != null) { S.pos = livePos(); markPos(); S.speed = Math.round(value * 100) / 100; drawButtons(); } break;
+    case 'speed': if (value != null) { S.pos = livePos(); markPos(); S.speed = Math.round(value * 100) / 100; drawButtons(); drawTime(); } break;
     case 'track-list': {
       S.tracks = Array.isArray(value) ? value : [];
       const a = S.tracks.find((t) => t.type === 'audio' && t.selected);

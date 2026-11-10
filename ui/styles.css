@@ -2618,3 +2618,13 @@ body #topbar .tsearch { min-width: 220px;
 #topbar.f6 .tabs a { padding: 0 14px; }
 #topbar.f6 .tabs a .tab-ic { width: 20px; opacity: 1; }
 #topbar.f6 .tabs a .tx { max-width: 0; opacity: 0; }
+
+/* Player: "Ends at" next to the skip buttons; play button a rounded square like
+   the rest; every player button a hair smaller. */
+#player .p-ends { display: flex; flex-direction: column; line-height: 1.2; margin-left: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#player .p-ends b { font-size: 15px; font-weight: 700; color: #fff; }
+#player .p-ends small { font-size: 12px; font-weight: 500; color: var(--muted); }
+#player .p-btn, #player .p-pill, #player .p-speed { height: 41px; min-width: 41px; border-radius: 11px; }
+#player .p-btn svg { width: 20px; height: 20px; }
+#player .p-play { width: 50px; height: 50px; border-radius: 14px; }
+#player .p-play svg { width: 24px; height: 24px; }
