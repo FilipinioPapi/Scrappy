@@ -70,6 +70,16 @@ function first(scope) {
 
 const isText = (el) => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range'].includes(el.type)));
 
+// The remote's media buttons act like the PC's keyboard shortcuts.
+const MEDIA = { MediaPlayPause: ' ', MediaPlay: ' ', MediaPause: ' ', MediaFastForward: 'ArrowRight', MediaRewind: 'ArrowLeft', MediaTrackNext: 'n' };
+addEventListener('keydown', (e) => {
+  const to = MEDIA[e.key];
+  if (!to) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  dispatchEvent(new KeyboardEvent('keydown', { key: to, bubbles: true, cancelable: true }));
+}, true);
+
 addEventListener('keydown', (e) => {
   const k = e.key;
   const cur = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;

@@ -1,5 +1,10 @@
 mod emby;
 mod follow;
+#[cfg(not(target_os = "android"))]
+mod mpv;
+// On Android TV the TV's own player stands in for mpv.
+#[cfg(target_os = "android")]
+#[path = "mpv_android.rs"]
 mod mpv;
 mod music;
 mod servers;
@@ -435,7 +440,7 @@ fn on_mpv_event(app: &AppHandle, player_id: usize, last_emit: &Mutex<std::time::
         mpv::Event::FileLoaded => {
             // Add the server's external subtitle files (without switching to them).
             let subs = state.now.lock().unwrap().as_ref().map(|n| n.external_subs.clone()).unwrap_or_default();
-            if !subs.is_empty() {
+            if !subs.is_empty() && cfg!(not(target_os = "android")) {
                 let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
                 if let Some(p) = p {
                     for (url, title, lang) in subs {
@@ -485,6 +490,7 @@ fn on_mpv_event(app: &AppHandle, player_id: usize, last_emit: &Mutex<std::time::
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn main_hwnd(app: &AppHandle) -> Option<i64> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     let w = app.get_webview_window("main")?;
@@ -527,8 +533,12 @@ fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String>
         ("input-default-bindings", "yes".into()),
     ];
     if embedded {
-        let wid = main_hwnd(app).ok_or("Couldn't find the Scrappy window to play in.")?;
-        opts.push(("wid", wid.to_string()));
+        // On the TV the video always sits behind the page, so there's no window to find.
+        #[cfg(not(target_os = "android"))]
+        {
+            let wid = main_hwnd(app).ok_or("Couldn't find the Scrappy window to play in.")?;
+            opts.push(("wid", wid.to_string()));
+        }
         opts.push(("osc", "no".into()));
         opts.push(("osd-level", "0".into()));
         opts.push(("input-vo-keyboard", "no".into()));
@@ -628,6 +638,11 @@ async fn play(
     let _ = player.set_property("force-media-title", &title);
     let _ = player.set_property("title", &format!("{title} - Scrappy Media Center"));
     let _ = player.set_property("pause", "no");
+    // The TV player needs subtitle files up front, with the video.
+    #[cfg(target_os = "android")]
+    for s in &target.external_subs {
+        let _ = player.command(&["sub-add", &s.url, "auto", &s.title, &s.lang]);
+    }
     player.command(&["loadfile", &target.url, "replace"])?;
 
     Ok(json!({
@@ -1041,7 +1056,10 @@ async fn tokio_sleep(secs: u64) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(mpv::plugin());
+    builder
         .register_asynchronous_uri_scheme_protocol("img", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let uri = request.uri().to_string();

@@ -1,0 +1,271 @@
+package app.scrappy.player
+
+import android.app.Activity
+import android.graphics.Color
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.widget.FrameLayout
+import androidx.annotation.OptIn
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.PlayerView
+import app.tauri.annotation.Command
+import app.tauri.annotation.TauriPlugin
+import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
+import app.tauri.plugin.JSObject
+import app.tauri.plugin.Plugin
+
+/**
+ * The TV's own video player (Android Media3 / ExoPlayer).
+ * Rust drives it with a few simple commands and asks for its state about four
+ * times a second, so the rest of Scrappy works the same as with mpv on the PC.
+ * The video sits behind the (see-through) web page, exactly like on the PC.
+ */
+@OptIn(UnstableApi::class)
+@TauriPlugin
+class ExoPlugin(private val activity: Activity) : Plugin(activity) {
+  private val main = Handler(Looper.getMainLooper())
+  private var webView: WebView? = null
+  private var player: ExoPlayer? = null
+  private var view: PlayerView? = null
+
+  private var loadSeq = 0
+  private var readySeq = 0
+  private var ended = false
+  private var error: String? = null
+  private var muted = false
+  private var volume = 100f
+  // mpv-style track numbers (1, 2, 3… per type) -> where the track lives in Media3.
+  private val trackMap = HashMap<String, Pair<Int, Int>>()
+
+  override fun load(webView: WebView) {
+    this.webView = webView
+  }
+
+  private fun ui(invoke: Invoke, block: () -> JSObject?) {
+    main.post {
+      try {
+        val r = block()
+        if (r != null) invoke.resolve(r) else invoke.resolve()
+      } catch (e: Exception) {
+        invoke.reject(e.message ?: e.toString())
+      }
+    }
+  }
+
+  private fun ensure(): ExoPlayer {
+    player?.let { return it }
+    val renderers = DefaultRenderersFactory(activity)
+      .setEnableDecoderFallback(true)
+    val p = ExoPlayer.Builder(activity, renderers)
+      .setSeekBackIncrementMs(10_000)
+      .setSeekForwardIncrementMs(30_000)
+      .build()
+    p.addListener(object : Player.Listener {
+      override fun onPlaybackStateChanged(state: Int) {
+        if (state == Player.STATE_READY && readySeq != loadSeq) readySeq = loadSeq
+        if (state == Player.STATE_ENDED) ended = true
+      }
+      override fun onPlayerError(e: PlaybackException) {
+        error = "The TV couldn't play this (${e.errorCodeName})."
+      }
+    })
+    val v = PlayerView(activity)
+    v.useController = false
+    v.setShutterBackgroundColor(Color.BLACK)
+    v.setKeepContentOnPlayerReset(false)
+    v.isFocusable = false
+    v.isFocusableInTouchMode = false
+    v.subtitleView?.setStyle(
+      CaptionStyleCompat(Color.WHITE, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, null)
+    )
+    v.player = p
+    // Put the video behind the web page.
+    val wv = webView
+    val parent = (wv?.parent as? ViewGroup) ?: activity.findViewById<ViewGroup>(android.R.id.content)
+    parent.addView(v, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    wv?.setBackgroundColor(Color.TRANSPARENT)
+    player = p
+    view = v
+    return p
+  }
+
+  @Command
+  fun open(invoke: Invoke) {
+    val a = invoke.getArgs()
+    val url = a.getString("url")
+    val start = a.optDouble("start", 0.0)
+    val subs = a.optJSONArray("subs")
+    ui(invoke) {
+      val p = ensure()
+      val configs = ArrayList<MediaItem.SubtitleConfiguration>()
+      if (subs != null) {
+        for (i in 0 until subs.length()) {
+          val s = subs.getJSONObject(i)
+          val su = s.optString("url")
+          val mime = when {
+            su.contains(".vtt", true) -> MimeTypes.TEXT_VTT
+            su.contains(".ass", true) || su.contains(".ssa", true) -> MimeTypes.TEXT_SSA
+            else -> MimeTypes.APPLICATION_SUBRIP
+          }
+          configs.add(
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(su))
+              .setMimeType(mime)
+              .setLanguage(s.optString("lang").ifEmpty { null })
+              .setLabel(s.optString("title").ifEmpty { null })
+              .setId("ext$i")
+              .build()
+          )
+        }
+      }
+      val item = MediaItem.Builder().setUri(url).setSubtitleConfigurations(configs).build()
+      loadSeq++
+      ended = false
+      error = null
+      trackMap.clear()
+      // Start with no text track picked; Scrappy picks subtitles itself.
+      p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+        .clearOverrides()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .setPreferredTextLanguage(null)
+        .setSelectUndeterminedTextLanguage(false)
+        .build()
+      p.setMediaItem(item, (start * 1000).toLong())
+      p.prepare()
+      p.playWhenReady = true
+      view?.visibility = android.view.View.VISIBLE
+      JSObject().put("seq", loadSeq)
+    }
+  }
+
+  @Command
+  fun control(invoke: Invoke) {
+    val a = invoke.getArgs()
+    val what = a.getString("what")
+    ui(invoke) {
+      val p = player ?: return@ui null
+      when (what) {
+        "pause" -> p.playWhenReady = !a.optBoolean("on", true)
+        "toggle" -> p.playWhenReady = !p.playWhenReady
+        "seek" -> {
+          val t = a.optDouble("value", 0.0)
+          val target = if (a.optBoolean("relative", false)) p.currentPosition + (t * 1000).toLong() else (t * 1000).toLong()
+          p.seekTo(target.coerceAtLeast(0))
+        }
+        "speed" -> p.playbackParameters = PlaybackParameters(a.optDouble("value", 1.0).toFloat())
+        "volume" -> { volume = a.optDouble("value", 100.0).toFloat(); p.volume = if (muted) 0f else (volume / 100f).coerceIn(0f, 1f) }
+        "mute" -> { muted = a.optBoolean("on", false); p.volume = if (muted) 0f else (volume / 100f).coerceIn(0f, 1f) }
+        "aspect" -> view?.resizeMode = when (a.optString("value")) {
+          "fill" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+          "stretch" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+          else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+        "subScale" -> view?.subtitleView?.setFractionalTextSize(0.0533f * a.optDouble("value", 1.0).toFloat())
+        "track" -> selectTrack(p, a.optString("type"), a.optString("id"))
+        "stop" -> {
+          p.stop()
+          p.clearMediaItems()
+          view?.visibility = android.view.View.GONE
+        }
+      }
+      null
+    }
+  }
+
+  private fun selectTrack(p: ExoPlayer, type: String, id: String) {
+    val cType = if (type == "audio") C.TRACK_TYPE_AUDIO else C.TRACK_TYPE_TEXT
+    val b = p.trackSelectionParameters.buildUpon().clearOverridesOfType(cType)
+    if (id == "no" || id.isEmpty()) {
+      if (cType == C.TRACK_TYPE_TEXT) b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+    } else {
+      val loc = trackMap["$type:$id"] ?: return
+      val group = p.currentTracks.groups.getOrNull(loc.first) ?: return
+      b.setTrackTypeDisabled(cType, false)
+      b.addOverride(TrackSelectionOverride(group.mediaTrackGroup, loc.second))
+    }
+    p.trackSelectionParameters = b.build()
+  }
+
+  @Command
+  fun state(invoke: Invoke) {
+    ui(invoke) {
+      val o = JSObject()
+      val p = player
+      o.put("seq", loadSeq)
+      o.put("ready", readySeq)
+      o.put("ended", ended)
+      if (error != null) o.put("error", error)
+      if (p == null) return@ui o
+      val dur = p.duration
+      o.put("pos", p.currentPosition / 1000.0)
+      o.put("dur", if (dur == C.TIME_UNSET) 0.0 else dur / 1000.0)
+      o.put("cached", p.bufferedPosition / 1000.0)
+      o.put("paused", !p.playWhenReady)
+      o.put("buffering", p.playbackState == Player.STATE_BUFFERING)
+      o.put("speed", p.playbackParameters.speed.toDouble())
+      o.put("volume", volume.toDouble())
+      o.put("mute", muted)
+      o.put("video", p.videoSize.width > 0)
+      o.put("tracks", tracks(p.currentTracks))
+      o
+    }
+  }
+
+  private fun tracks(t: Tracks): JSArray {
+    val out = JSArray()
+    trackMap.clear()
+    val counters = HashMap<String, Int>()
+    t.groups.forEachIndexed { gi, g ->
+      val type = when (g.type) {
+        C.TRACK_TYPE_AUDIO -> "audio"
+        C.TRACK_TYPE_TEXT -> "sub"
+        C.TRACK_TYPE_VIDEO -> "video"
+        else -> return@forEachIndexed
+      }
+      for (ti in 0 until g.length) {
+        if (!g.isTrackSupported(ti, true) && type != "sub") continue
+        val f = g.getTrackFormat(ti)
+        val n = (counters[type] ?: 0) + 1
+        counters[type] = n
+        trackMap["$type:$n"] = Pair(gi, ti)
+        val o = JSObject()
+        val ext = f.id?.contains("ext") == true
+        o.put("id", n)
+        o.put("type", type)
+        o.put("selected", g.isTrackSelected(ti))
+        f.language?.let { o.put("lang", it) }
+        f.label?.let { o.put("title", it) }
+        o.put("external", ext)
+        o.put("default", (f.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0)
+        o.put("forced", (f.selectionFlags and C.SELECTION_FLAG_FORCED) != 0)
+        val codec = (f.sampleMimeType ?: f.codecs ?: "").substringAfter('/').lowercase()
+        o.put("codec", codec)
+        if (f.channelCount > 0) o.put("demux-channel-count", f.channelCount)
+        // The stream's number inside the file, counted from 0 like Emby does.
+        if (!ext) f.id?.substringAfterLast(':')?.toIntOrNull()?.let { o.put("ff-index", it - 1) }
+        out.put(o)
+      }
+    }
+    return out
+  }
+
+  override fun onDestroy() {
+    player?.release()
+    player = null
+  }
+}
