@@ -9,7 +9,7 @@ import { mountSearch, setSearchSession, searchPage } from './search.js';
 import './menu.js';
 import './topfit.js';
 import { toast } from './components.js';
-import { loginView, firstTab, homeView, libraryView, itemView, personView, searchView, comingSoonView, connectView } from './views.js';
+import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView } from './views.js';
 
 const viewEl = document.getElementById('view');
 

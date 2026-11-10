@@ -1386,44 +1386,6 @@ export async function personView(root, ctx, id) {
   draw();
 }
 
-// ---------------- Search ----------------
-
-export function searchView(root, ctx) {
-  root.innerHTML = `
-    <section class="section">
-      <div class="search-box"><input type="search" id="q" placeholder="Search movies, shows and episodes" spellcheck="false"></div>
-      <div id="results"></div>
-    </section>`;
-  const q = root.querySelector('#q');
-  const out = root.querySelector('#results');
-  q.value = sessionStorage.getItem('lastSearch') || '';
-  q.focus();
-  let timer, seq = 0;
-  const run = async () => {
-    const term = q.value.trim();
-    sessionStorage.setItem('lastSearch', term);
-    if (term.length < 2) { out.innerHTML = ''; return; }
-    const my = ++seq;
-    try {
-      const data = await api.get(`/Users/{userId}/Items?SearchTerm=${encodeURIComponent(term)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode,BoxSet&Limit=80&Fields=${FIELDS}&${IMG_OPTS}`);
-      if (my !== seq || !ctx.alive()) return;
-      const items = data.Items || [];
-      if (!items.length) { out.innerHTML = `<div class="empty">Nothing found for “${esc(term)}”.</div>`; return; }
-      const groups = [['Movie', 'Movies'], ['Series', 'Shows'], ['BoxSet', 'Collections'], ['Episode', 'Episodes']];
-      out.innerHTML = groups.map(([type, label]) => {
-        const g = items.filter((i) => i.Type === type);
-        if (!g.length) return '';
-        return `<div class="section-head" style="margin-top:10px"><h2>${label}</h2><span class="count">${g.length}</span></div>
-          <div class="grid ${type === 'Episode' ? 'wide' : ''}" style="margin-bottom:28px">${g.map((i) => card(i)).join('')}</div>`;
-      }).join('');
-    } catch (e) {
-      ctx.fail(e, true);
-    }
-  };
-  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 250); });
-  if (q.value) run();
-}
-
 // ---------------- Music / Audiobooks (later) ----------------
 
 export function comingSoonView(root, text) {

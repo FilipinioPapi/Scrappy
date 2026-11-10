@@ -1413,6 +1413,18 @@ body:not(.tab-music) #mbar { transform: translateY(110%); opacity: 0; pointer-ev
 .sr-play svg { width: 18px; height: 18px; }
 .sr:hover .sr-play { opacity: 1; }
 .sr-txt { min-width: 0; flex: 1; }
+.sgrp + .sgrp { margin-top: 14px; padding-top: 2px; border-top: 1px solid var(--line); }
+.sgrp + .sgrp > .sk:first-child { margin-top: 12px; }
+.schips-p { display: flex; gap: 10px; overflow-x: auto; padding: 2px 4px 6px; scrollbar-width: thin; }
+.sp-chip { flex: none; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 2px; border-radius: 10px; text-align: center; transition: background .18s var(--ease); }
+.sp-chip:hover, .sp-chip.kb { background: rgba(255,255,255,.07); }
+.sp-chip .sr-th { width: 60px; height: 60px; display: grid; place-items: center; }
+.sp-chip .sr-th b { position: absolute; font-size: 15px; color: rgba(255,255,255,.85); }
+.sp-chip .sr-th img { position: relative; }
+.sp-chip .t2 { font-size: 12.5px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sfail { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; padding: 8px 10px; border-radius: 10px; background: rgba(255,181,71,.08); border: 1px solid rgba(255,181,71,.35); color: #F5D9A8; font-size: 13px; }
+.sfail svg { flex: none; }
+.spage .sfail { margin: 0 0 18px; max-width: 640px; }
 .sload { padding: 10px; } .sload .loading { min-height: 0; padding: 12px; }
 .sempty { padding: 18px 8px; color: var(--muted); }
 .sfoot { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 4px 0; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
