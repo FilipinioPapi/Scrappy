@@ -2122,7 +2122,7 @@ body.bnow-open #bbar { display: none; }
 
 /* ---------- Top bar: refresh button + settings cog ---------- */
 .refresh-wrap { position: relative; }
-#refreshBtn.spin svg { animation: refSpin 1s cubic-bezier(.4,0,.2,1) infinite; }
+#refreshBtn.scanning svg { animation: refSpin 1s cubic-bezier(.4,0,.2,1) infinite; }
 @keyframes refSpin { to { transform: rotate(360deg); } }
 .menu-h { padding: 8px 10px 2px; font-size: 15px; font-weight: 800; color: var(--text); }
 .ref-menu { position: absolute; right: 0; top: calc(100% + 8px); width: 340px; padding: 6px; z-index: 60; animation: dropOpen .22s var(--ease); }
