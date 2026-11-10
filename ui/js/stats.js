@@ -439,7 +439,6 @@ function tvModel_build({ eps, movies, series, favCount, resume, pr }, p) {
     facts: [
       { k: 'Biggest binge', v: bg && bg[1] > 1 ? plural(bg[1], 'episode') : '', s: bg ? `${bg[0].split('|')[1]}, ${new Date(bg[0].split('|')[0] + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : '' },
       { k: 'Rewatched most', v: rew ? (rew.SeriesName ? `${rew.SeriesName}` : rew.Name) : '', s: rew ? `${rew.SeriesName ? rew.Name + ', ' : ''}played ${rew.UserData.PlayCount} times` : '' },
-      { k: 'Favorites', v: favCount ? plural(favCount, 'title') : '', s: 'in Emby' },
       { k: 'Time in episodes', v: epsP.length ? hm(epsP.reduce((a, e) => a + (e.RunTimeTicks || 0) / 1e7, 0)) : '', s: perWord(p) },
     ],
     shelf: { title: 'Recently watched', sub: 'shows and movies', none: `Nothing watched ${perWord(p)}.`, items: [...[...shows.values()].map((s) => ({ last: s.last, it: byId.get(s.id), t: s.name, m: plural(s.n, 'episode') })), ...movP.map((m) => ({ last: when(m), it: m, t: m.Name, m: 'Movie' }))].sort((a, b) => b.last - a.last).slice(0, 20).map((x) => ({ wide: true, t: x.t, m: x.m, hue: hue(x.t), img: x.it ? img(x.it.Id, 'Thumb', x.it.ImageTags?.Thumb, 300) || img(x.it.Id, 'Backdrop', x.it.BackdropImageTags?.[0], 300) || embyImg(x.it, 300) : '', href: x.it ? `#/item/${encodeURIComponent(x.it.Id)}` : '' })) },
