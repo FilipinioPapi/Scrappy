@@ -108,6 +108,7 @@ export async function statsPage(main, kind, alive) {
       main.querySelector('#stxSub').textContent = m.sub || '';
       main.querySelector('.stx-h h1').textContent = w === 'all' ? EVERYONE[kind] : TITLES[kind];
       body.innerHTML = html(m);
+      if (m.year) yearHover(body, m.year);
     } catch (e) {
       if (!alive()) return;
       body.innerHTML = `<div class="empty">Couldn't load your stats: ${esc(e.message || String(e))}</div>`;
@@ -161,7 +162,7 @@ function html(m) {
     m.people ? box(m.people.title, m.people.sub, m.people.items.length ? list(m.people, true) : empty('Nobody yet.'), 'stx-ppl') : '',
     `<div class="stx-cards">${m.cards.map(card).join('')}</div>`,
     m.bars ? box(m.bars.title, m.bars.sub, m.bars.list.some((b) => b.v) ? bars(m.bars.list) : empty('Nothing played in this stretch yet.')) : '',
-    m.heat ? box('Every day this year', m.heat.sub, `<div class="stx-heat">${m.heat.cells.map((c) => `<i class="l${c.l}" title="${esc(c.t)}"></i>`).join('')}</div><div class="stx-hleg">Less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> More</div>`) : '',
+    m.year ? box('Every day this year', 'Hover a square to see what you listened to', yearHtml(m.year), 'stx-yg') : '',
     m.wk ? box(m.wk.title || 'When you watch', m.wk.sub, `<div class="stx-wk"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hl">${h % 3 ? '' : (h % 12 || 12) + (h < 12 ? 'a' : 'p')}</span>`).join('')}${m.wk.rows.map((r) => `<span class="dl">${r.d}</span>${r.c.map((v) => `<i style="${v > 0.04 ? `background:rgba(236,40,46,${(0.15 + v * 0.85).toFixed(2)})` : ''}"></i>`).join('')}`).join('')}</div>`) : '',
     `<div class="stx-g2">${box(m.top.title, m.top.by, m.top.items.length ? list(m.top, true) : empty(m.top.none || 'Nothing yet.'))}${box(m.top2.title, '', m.top2.items.length ? list(m.top2, false) : empty(m.top2.none || 'Nothing yet.'))}</div>`,
     m.genres === null ? `${box('Fun facts', '', `<div class="stx-fun wide">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Nothing yet.')}</div>`)}` : `<div class="stx-g2">${box('Top genres', m.genres.sub, m.genres.items.length ? `<div class="stx-gen">${m.genres.items.map((g) => `<div class="gr"><span class="nm">${esc(g.n)}</span><div class="tr"><i style="width:${Math.max(14, g.w * 100).toFixed(1)}%;${gStyle(g.n)}">${esc(g.v)}</i></div></div>`).join('')}</div>` : empty('No genres to show yet.'))}${box('Fun facts', '', `<div class="stx-fun">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Play a bit more and these fill in.')}</div>`)}</div>`,
@@ -223,12 +224,6 @@ function absModel_build({ stats, me, sessions }, p) {
   const pts = ses.map((x) => [x.startedAt || x.updatedAt, x.timeListening || 0]);
   const longest = ses.reduce((a, x) => ((x.timeListening || 0) > (a?.timeListening || 0) ? x : a), null);
   const bz = busiest(days.filter(([t]) => t >= s0));
-  // Year heat map: Mondays down the side, weeks across.
-  const y = new Date().getFullYear(), jan1 = new Date(y, 0, 1), pad = (jan1.getDay() + 6) % 7;
-  const vals = Object.entries(stats.days || {}).filter(([k]) => k.startsWith(String(y))).map(([, v]) => v).filter(Boolean).sort((a, b) => a - b);
-  const q = (f) => vals[Math.floor(f * (vals.length - 1))] || 0;
-  const cells = Array.from({ length: pad }, () => ({ l: 'x', t: '' }));
-  for (let d = new Date(jan1); d <= new Date(); d.setDate(d.getDate() + 1)) { const v = stats.days?.[dkey(d)] || 0; cells.push({ l: !v ? 0 : v <= q(0.25) ? 1 : v <= q(0.5) ? 2 : v <= q(0.8) ? 3 : 4, t: `${MONTHS[d.getMonth()]} ${d.getDate()}: ${v ? hm(v) : 'nothing'}` }); }
   return {
     sub: 'From Audiobookshelf',
     cards: [
@@ -238,7 +233,7 @@ function absModel_build({ stats, me, sessions }, p) {
       { k: 'AVERAGE A DAY', v: hm(avg), d: vs(avg, prevAvg, p), g: '⏱' },
     ],
     bars: { title: 'Listening time', sub: chartSub(p), list: buckets(days, p, hm) },
-    heat: { sub: `Darker red means more listening · longest streak ${plural(st.best, 'day')}`, cells },
+    year: p === 'year' ? yearGrid(stats, sessions, me) : null,
     top: { title: 'Most listened books', by: 'by time', none: `No listening ${perWord(p)}.`, items: topB.map((b) => ({ a: b.title, b: b.author, img: absImg(b.id), hue: hue(b.title), w: b.t / (topB[0]?.t || 1), v: hm(b.t), href: `#/audiobooks/book/${encodeURIComponent(b.id)}` })) },
     top2: { title: 'Top authors', items: topA.map((a) => ({ a: a.n, b: plural(a.b.size, 'book'), shape: 'rd', hue: hue(a.n), v: hm(a.t) })) },
     genres: { sub: 'share of your listening', items: topG.map(([g, t]) => ({ n: g, w: t / (topG[0][1] || 1), v: Math.round((t / gTot) * 100) + '%' })) },
@@ -251,6 +246,78 @@ function absModel_build({ stats, me, sessions }, p) {
     shelf: { title: 'Finished ' + perWord(p), sub: 'newest first', none: `No books finished ${perWord(p)}.`, items: fin.slice(0, 20).map((x) => ({ t: '', img: absImg(x.libraryItemId, 200), hue: hue(x.libraryItemId), m: x.finishedAt ? new Date(x.finishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '', href: `#/audiobooks/book/${encodeURIComponent(x.libraryItemId)}` })) },
   };
 }
+// "Every day this year" (This year only): a row per month, days 1-31 across, hover for that day's books.
+function yearGrid(stats, sessions, me) {
+  const y = new Date().getFullYear(), today = dkey(Date.now()), days = stats.days || {};
+  const vals = Object.entries(days).filter(([k, v]) => k.startsWith(y + '-') && v > 0).map(([, v]) => v).sort((a, b) => a - b);
+  const q = (f) => vals[Math.floor(f * (vals.length - 1))] || 0;
+  // Books per day from the listening sessions, and books finished per day.
+  const per = new Map();
+  sessions.forEach((x) => {
+    const t = x.startedAt || x.updatedAt; if (!t || new Date(t).getFullYear() !== y || !(x.timeListening > 0)) return;
+    const k = dkey(t), m = per.get(k) || new Map(); per.set(k, m);
+    const b = m.get(x.libraryItemId) || { id: x.libraryItemId, title: x.displayTitle || x.mediaMetadata?.title || '', author: x.displayAuthor || x.mediaMetadata?.authorName || '', t: 0 };
+    b.t += x.timeListening; m.set(x.libraryItemId, b);
+  });
+  const fin = new Map();
+  (me.mediaProgress || []).forEach((x) => { if (!x.episodeId && x.isFinished && x.finishedAt && new Date(x.finishedAt).getFullYear() === y) { const k = dkey(x.finishedAt); fin.set(k, (fin.get(k) || new Set()).add(x.libraryItemId)); } });
+  const info = {};
+  const months = MONTHS.map((name, mi) => {
+    const n = new Date(y, mi + 1, 0).getDate(); let total = 0;
+    const cells = Array.from({ length: 31 }, (_, i) => {
+      if (i >= n) return { cls: 'x' };
+      const k = `${y}-${String(mi + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`, v = days[k] || 0;
+      total += v;
+      if (k > today) return { cls: 'fu' };
+      info[k] = { v, books: [...(per.get(k)?.values() || [])].sort((a, b) => b.t - a.t), fin: fin.get(k) };
+      return { k, cls: (!v ? '' : v <= q(0.25) ? 'l1' : v <= q(0.5) ? 'l2' : v <= q(0.8) ? 'l3' : 'l4') + (k === today ? ' td' : '') };
+    });
+    return { name, cells, total };
+  });
+  const mx = Math.max(1, ...months.map((m) => m.total));
+  // Summary tiles
+  const keys = Object.keys(days).filter((k) => k.startsWith(y + '-') && days[k] > 0).sort();
+  let best = { n: 0 }, run = null;
+  keys.forEach((k) => { const t = Date.parse(k + 'T12:00:00'); if (run && t - run.last < DAY * 1.5) { run.n++; run.last = t; run.end = k; } else run = { n: 1, start: k, end: k, last: t }; if (run.n > best.n) best = { ...run }; });
+  const big = keys.reduce((a, k) => (days[k] > (days[a] || 0) ? k : a), '');
+  const bm = months.reduce((a, m, i) => (m.total > months[a].total ? i : a), 0);
+  const elapsed = Math.max(1, Math.round((Date.parse(today + 'T12:00:00') - new Date(y, 0, 1, 12).getTime()) / DAY) + 1);
+  const md = (k) => new Date(k + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const sum = [
+    { k: 'DAYS LISTENED', v: `${n0(keys.length)} of ${n0(elapsed)}`, s: `${Math.round((keys.length / elapsed) * 100)}% of the year so far` },
+    { k: 'LONGEST STREAK', v: plural(best.n, 'day'), s: best.n > 1 ? `${md(best.start)} to ${md(best.end)}` : '' },
+    { k: 'BIGGEST DAY', v: big ? hm(days[big]) : '—', s: big ? `${new Date(big + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${info[big]?.books.length ? ' · ' + plural(info[big].books.length, 'book') : ''}` : '' },
+    { k: 'BEST MONTH', v: months[bm].total ? new Date(y, bm, 1).toLocaleDateString(undefined, { month: 'long' }) : '—', s: months[bm].total ? `${plural(months[bm].total / 3600, 'hour')} listened` : '' },
+  ];
+  return { months: months.map((m) => ({ ...m, w: (m.total / mx) * 100 })), info, sum };
+}
+function yearHtml(g) {
+  return `<div class="yg-sum">${g.sum.map((t) => `<div><span>${esc(t.k)}</span><strong>${esc(t.v)}</strong><small>${esc(t.s)}</small></div>`).join('')}</div>
+    <div class="yg-wrap"><div class="yg-dn"><span></span>${Array.from({ length: 31 }, (_, i) => `<span>${i + 1}</span>`).join('')}</div>
+    ${g.months.map((m) => `<div class="yg-r"><span class="ml">${m.name}</span>${m.cells.map((c) => `<i class="${c.cls}"${c.k ? ` data-d="${c.k}"` : ''}></i>`).join('')}<span class="mt">${m.total ? n0(m.total / 3600) + 'h' : '—'}</span><span class="mbar"><b style="width:${m.w.toFixed(1)}%"></b></span></div>`).join('')}</div>
+    <div class="yg-leg"><span>Less</span><i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><span>More</span><span class="sp"></span><i class="td"></i><span>Today</span></div>`;
+}
+function yearHover(body, g) {
+  const wrap = body.querySelector('.yg-wrap'); if (!wrap) return;
+  const tip = document.createElement('div'); tip.className = 'yg-tip'; tip.hidden = true; wrap.appendChild(tip);
+  let cur = null;
+  wrap.addEventListener('mouseover', (e) => {
+    const c = e.target.closest('i[data-d]'); if (!c || c === cur) return;
+    cur?.classList.remove('hv'); cur = c; c.classList.add('hv');
+    const d = g.info[c.dataset.d] || { v: 0, books: [] };
+    const date = new Date(c.dataset.d + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+    tip.innerHTML = `<div class="d">${esc(date)}</div><div class="tt disp">${d.v ? esc(hm(d.v)) + ' listened' : 'Nothing'}</div>${d.books.slice(0, 4).map((b) => `<div class="bk"><span class="cv" style="--h:${hue(b.title)}"><img src="${absImg(b.id, 120)}" alt="" onload="this.style.opacity=1" onerror="this.remove()"></span><div><b>${esc(b.title)}</b><span>${esc([b.author, hm(b.t)].filter(Boolean).join(' · '))}${d.fin?.has(b.id) ? '<em>FINISHED</em>' : ''}</span></div></div>`).join('')}${d.v && !d.books.length ? '<div class="no">Listened on another device. Book details aren\'t in Audiobookshelf\'s log for this day.</div>' : ''}${!d.v ? '<div class="no">No listening this day.</div>' : ''}`;
+    tip.hidden = false;
+    const wr = wrap.getBoundingClientRect(), r = c.getBoundingClientRect(), k = wr.width / wrap.offsetWidth || 1;
+    const x = (r.left + r.width / 2 - wr.left) / k, top = (r.top - wr.top) / k;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(w / 2, Math.min(wrap.offsetWidth - w / 2, x)) + 'px';
+    tip.classList.toggle('below', top - h - 14 < -60);
+    tip.style.top = (tip.classList.contains('below') ? top + r.height / k + 12 : top - h - 12) + 'px';
+  });
+  wrap.addEventListener('mouseleave', () => { cur?.classList.remove('hv'); cur = null; tip.hidden = true; });
+}
+
 // Everyone (admins): every user's sessions, added up the same way as one person's.
 async function absModel_canAll() { const me = await api.abs('/api/me'); return me?.type === 'admin' || me?.type === 'root'; }
 async function absModel_loadAll() {

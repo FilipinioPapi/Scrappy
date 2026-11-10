@@ -2473,3 +2473,41 @@ html.tv .yb-ok{display:inline-flex;align-items:center;gap:10px;margin-top:14px;h
 html.tv .yb-fan{right:60px}
 html.tv .yb-chip:focus{outline:3px solid #fff;outline-offset:3px}
 .tabs .tab-pill.gone { opacity: 0; transition: opacity .25s; }
+
+/* Stats: "Every day this year" (This year only) */
+.yg-sum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 10px 0 22px; }
+.yg-sum div { padding: 14px 18px; border-radius: 12px; background: rgba(255,255,255,.04); box-shadow: inset 0 1px 0 rgba(255,255,255,.04); min-width: 0; }
+.yg-sum span { display: block; font-size: 11px; font-weight: 800; letter-spacing: 1.3px; color: var(--muted); }
+.yg-sum strong { display: block; font-size: 22px; font-weight: 800; color: #fff; margin: 4px 0 3px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.yg-sum small { display: block; font-size: 12px; color: #8F7778; font-weight: 600; min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.yg-wrap { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.yg-dn, .yg-r { display: grid; grid-template-columns: 44px repeat(31, minmax(10px, 26px)) 60px minmax(60px, 1fr); align-items: center; column-gap: 8px; }
+.yg-dn span { font-size: 11px; color: #8F7778; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.yg-r .ml { font-size: 13px; font-weight: 800; color: #E9DADB; }
+.yg-r i, .yg-leg i { display: block; aspect-ratio: 1; border-radius: 6px; background: rgba(255,255,255,.06); transition: box-shadow .15s; }
+.yg-r i.l1, .yg-leg i.l1 { background: #5A1416; } .yg-r i.l2, .yg-leg i.l2 { background: #8E1A1E; } .yg-r i.l3, .yg-leg i.l3 { background: #C52126; } .yg-r i.l4, .yg-leg i.l4 { background: #FF4A4F; }
+.yg-r i.fu { background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }
+.yg-r i.x { visibility: hidden; }
+.yg-r i.td, .yg-leg i.td { box-shadow: 0 0 0 2px #fff; }
+.yg-r i[data-d] { cursor: default; }
+.yg-r i.hv { position: relative; z-index: 2; box-shadow: 0 0 0 2px #fff, 0 6px 14px rgba(0,0,0,.6); }
+.yg-r .mt { font-size: 13px; font-weight: 700; color: #E9DADB; text-align: right; font-variant-numeric: tabular-nums; }
+.yg-r .mbar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.05); overflow: hidden; }
+.yg-r .mbar b { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #9E1418, #FF4A4F); }
+.yg-leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #8F7778; margin-top: 18px; }
+.yg-leg i { width: 13px; border-radius: 3px; }
+.yg-leg .sp { flex: 1; }
+.yg-tip { position: absolute; z-index: 20; width: 280px; transform: translateX(-50%); padding: 14px 14px 12px; border-radius: 14px; background: rgba(30,20,21,.98); border: 1px solid #3A2526; box-shadow: 0 18px 40px rgba(0,0,0,.6); pointer-events: none; animation: ygTip .15s ease-out; }
+@keyframes ygTip { from { opacity: 0; } }
+.yg-tip .d { font-size: 12px; font-weight: 800; letter-spacing: 1px; color: var(--muted); }
+.yg-tip .tt { font-size: 24px; color: #fff; margin: 4px 0 10px; }
+.yg-tip .bk { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid rgba(255,255,255,.07); }
+.yg-tip .cv { position: relative; width: 38px; height: 38px; border-radius: 6px; flex: none; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,.4); background: linear-gradient(135deg, hsl(var(--h) 45% 38%), hsl(var(--h) 45% 16%)); }
+.yg-tip .cv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .2s; }
+.yg-tip .bk div { min-width: 0; flex: 1; }
+.yg-tip .bk b { display: block; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.yg-tip .bk span { font-size: 12px; color: var(--muted); }
+.yg-tip em { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: rgba(123,224,138,.16); color: #7BE08A; font-size: 10.5px; font-weight: 800; letter-spacing: .5px; font-style: normal; }
+.yg-tip .no { font-size: 13px; color: var(--muted); line-height: 1.4; }
+.stx-card .d { white-space: nowrap; }
+
