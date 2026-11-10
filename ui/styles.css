@@ -1839,30 +1839,17 @@ html, body { overflow-x: clip; }
 #topbar { min-width: 0; }
 #topbar .tsearch { min-width: 0; }
 @media (max-width: 1240px) {
-  body.has-tp #topbar { gap: 12px; }
-  body.has-tp .tp-r2 .tp-vol, body.has-tp .tp-v { display: none; }
-  body.has-tp .tp-mid { width: 180px; }
-  body.has-tp .tsearch { flex-basis: 260px; min-width: 120px; }
   #mbar { gap: 14px; padding: 0 18px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, .9fr); }
   .mb-right { gap: 4px; }
   .mseek.vol { width: 72px; }
 }
 @media (max-width: 1080px) {
-  /* Top bar: search becomes a round button-sized box; the small player keeps play controls only */
-  body.has-tp .brand > div { display: none; }
-  body.has-tp .tsearch { flex: 0 1 200px; }
-  body.has-tp .tsearch .tfilt, body.has-tp .tsearch button:not(:first-child) { display: none; }
-  body.has-tp .tp-mid { width: 150px; }
-  body.has-tp .tp-r2 { display: none !important; }
   /* Bottom bar: drop the extra buttons into the Now playing screen */
   #mbLyr, #mbViz, #mbVol { display: none; }
   .mb-ctl { gap: 10px; }
   .mb-cover { width: 50px; height: 50px; }
 }
 @media (max-width: 960px) {
-  #topbar { gap: 14px; }
-  .brand > div { display: none; }
-  .tsearch { flex: 1 1 160px; }
   .mb-sub { display: none; }
 }
 @media (max-height: 640px) {
@@ -2377,3 +2364,56 @@ body.bnow-open #bbar { display: none; }
 }
 #player .p-settings { transform-origin: bottom right; }
 #player .p-settings.show, #player .p-eps.show { opacity: 1; transform: none; transition: transform .36s var(--pe), opacity .24s var(--pe), visibility 0s; }
+
+/* ---------- Top bar fits any window size, Ctrl +/- zoom or Windows display scaling (approved board C) ----------
+   topfit.js checks how much room the bar really has and adds f1…f6 to #topbar, one small change per step:
+   f1 words beside the logo hide · f2 small player drops its right side · f3 search folds into a round button
+   f4 player keeps cover, name and play · f5 player is just its cover · f6 tabs show icons only. */
+#topbar { padding: 0 clamp(24px, 3vw, var(--gutter)); }
+#topbar .actions { flex: none; }
+#topbar.fit-measure, #topbar.fit-measure * { transition: none !important; animation: none !important; }
+#topbar .brand { transition: gap .45s var(--ease); }
+#topbar .brand > div { max-width: 240px; overflow: hidden; white-space: nowrap; transition: max-width .45s var(--ease), opacity .3s var(--ease); }
+#topbar.f1 .brand { gap: 0; }
+#topbar.f1 .brand > div { max-width: 0; opacity: 0; }
+/* Search: a real box (never squashed) until there's no room, then a round button that opens out over the tabs */
+body #topbar .tsearch { min-width: 220px;
+  transition: border-color .28s var(--ease), background .28s var(--ease), flex-basis .45s var(--ease), min-width .45s var(--ease), max-width .45s var(--ease), margin-left .45s var(--ease), padding .45s var(--ease); }
+#topbar .tsearch > svg { flex: none; }
+#topbar .tsearch input, #topbar .tsearch .tadv { transition: opacity .25s var(--ease); }
+#topbar.f3 .tsearch:not(.sx) { flex: 0 0 44px; min-width: 44px; max-width: 44px; padding: 0 0 0 12px; cursor: pointer; overflow: hidden; }
+#topbar.f3 .tsearch:not(.sx):hover { background: rgba(255,255,255,.1); }
+#topbar.f3 .tsearch:not(.sx) input, #topbar.f3 .tsearch:not(.sx) .tadv { opacity: 0; pointer-events: none; }
+#topbar.f3 .tsearch.sx { flex: 0 0 var(--sxw); min-width: var(--sxw); max-width: var(--sxw); margin-left: calc(44px - var(--sxw)); z-index: 4; background: var(--bg-2); }
+#topbar .tabs { transition: opacity .3s var(--ease), transform .45s var(--ease); }
+#topbar.sx-open .tabs { opacity: 0; transform: translateX(-10px); pointer-events: none; }
+/* Small player: gives up room in steps, each one glides */
+#topbar .tp.off { margin-left: 0; }
+#topbar .tp:not(.off) { max-width: 430px; }
+#topbar .tp-v, #topbar .tp-mid { transition: opacity .3s var(--ease), width .45s var(--ease); }
+#topbar .tp-sk { transition: opacity .25s var(--ease), height .45s var(--ease); }
+#topbar .tp-r1 .gb { transition: width .45s var(--ease), opacity .25s var(--ease), background .2s var(--ease); }
+#topbar.f2 .tp:not(.off) { max-width: 300px; }
+#topbar.f2 .tp-v { opacity: 0; pointer-events: none; }
+#topbar.f4 .tp:not(.off) { max-width: 214px; }
+#topbar.f4 .tp-mid { width: 140px; }
+#topbar.f4 .tp-sk { opacity: 0; height: 0; overflow: hidden; pointer-events: none; }
+#topbar.f4 .tp-r1 .gb { width: 0; opacity: 0; pointer-events: none; overflow: hidden; }
+#topbar.f5 .tp:not(.off) { max-width: 60px; padding: 0 7px; }
+#topbar.f5 .tp-mid { opacity: 0; pointer-events: none; }
+#topbar.f5 .tp-cv { box-shadow: 0 0 0 2px var(--red); }
+/* Just the cover: click it and the full player opens out to the left, over the bar */
+#topbar .tp::before { content: ''; position: absolute; top: -1px; bottom: -1px; right: -1px; width: 0; border-radius: 14px; background: var(--bg-2); border: 1px solid var(--line); box-shadow: 0 14px 34px rgba(0,0,0,.55); opacity: 0; z-index: -1; pointer-events: none; transition: width .45s var(--ease), opacity .2s var(--ease); }
+#topbar.f5 .tp.pop { position: relative; z-index: 5; overflow: visible; justify-content: flex-end; padding: 0 10px 0 7px; }
+#topbar.f5 .tp.pop::before { width: 424px; opacity: 1; }
+#topbar .tp.pop .tp-mid { width: 226px; opacity: 1; pointer-events: auto; }
+#topbar .tp.pop .tp-v { opacity: 1; pointer-events: auto; }
+#topbar .tp.pop .tp-sk { opacity: 1; height: auto; pointer-events: auto; }
+#topbar .tp.pop .tp-r1 .gb { width: 30px; opacity: 1; pointer-events: auto; }
+/* Tabs: icons only, as the very last step */
+#topbar .tabs a { display: inline-flex; align-items: center; justify-content: center; transition: color .3s var(--ease), background .3s var(--ease), padding .45s var(--ease); }
+#topbar .tabs a .tab-ic { flex: none; width: 0; height: 20px; opacity: 0; transition: width .45s var(--ease), opacity .3s var(--ease); }
+#topbar .tabs a .tx { display: inline-block; max-width: 160px; overflow: hidden; white-space: nowrap; transition: max-width .45s var(--ease), opacity .25s var(--ease); }
+#topbar.f6 .tabs a { padding: 0 14px; }
+#topbar.f6 .tabs a .tab-ic { width: 20px; opacity: 1; }
+#topbar.f6 .tabs a .tx { max-width: 0; opacity: 0; }
