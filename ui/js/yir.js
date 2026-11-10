@@ -6,7 +6,7 @@
 //  - Google TV: the same slideshow, driven by the remote. tv.js adds class "tv" on <html>.
 import { esc } from './components.js';
 import { img, IMG_BASE } from './api.js';
-import { loadRaw, absImg, ndImg, hue, hm, n0, plural, dkey, streaks } from './stats.js';
+import { loadRaw, absImg, ndImg, hue, hm, n0, plural, dkey, streaks, mergeGenres } from './stats.js';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MON1 = 'JFMAMJJASOND'.split('');
@@ -45,7 +45,7 @@ function peak(h24) {
 }
 const clockWord = (h, tv) => (h >= 5 && h < 12 ? 'EARLY BIRD' : h >= 12 && h < 17 ? 'AFTERNOONS' : h >= 17 && h < 21 ? (tv ? 'PRIME TIME' : 'EVENINGS') : 'AFTER DARK');
 const collage = (urls) => { const pos = [[0, 40, -8], [150, 0, 4], [300, 50, -3], [60, 220, 6], [250, 230, -6]]; return urls.slice(0, 5).map((u, j) => `${u};left:${pos[j][0]}px;top:${pos[j][1]}px;transform:rotate(${pos[j][2]}deg)`); };
-const share = (m, n = 5) => { const l = [...m.entries()].sort((a, b) => b[1] - a[1]); const tot = l.reduce((a, x) => a + x[1], 0) || 1; return l.slice(0, n).map(([g, t]) => [g, Math.round((t / tot) * 100)]); };
+const share = (m, n = 5) => { const l = [...mergeGenres(m).entries()].sort((a, b) => b[1] - a[1]); const tot = l.reduce((a, x) => a + x[1], 0) || 1; return l.slice(0, n).map(([g, t]) => [g, Math.round((t / tot) * 100)]); };
 const genreLine = (g) => {
   const s = String(g || '').toLowerCase();
   if (/fantasy/.test(s)) return 'Dragons, magic and swords. Excellent taste.';
@@ -295,7 +295,7 @@ const SUBS = { abs: 'audiobook', music: 'music', tv: 'movie and TV' };
 
 /** Fills `slot` with the Year in Review banner and Past years chips for this tab. */
 export async function yirBanner(slot, kind, alive) {
-  let raw; try { raw = await loadRaw(kind); } catch { return; }
+  let raw; try { raw = await loadRaw(kind); } catch { if (alive()) slot.innerHTML = ''; return; }
   if (!alive()) return;
   const by = bannerYear();
   const years = yearsOf(kind, raw).filter((y) => y < new Date().getFullYear() || y === by);

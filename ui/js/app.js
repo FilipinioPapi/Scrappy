@@ -107,6 +107,9 @@ async function route(opts = {}) {
   // and the small player shows in the top bar instead.
   const audioTab = name === 'music' || name === 'audiobooks';
   const swapped = document.body.classList.contains('tab-music') !== audioTab && !!lastRouteName;
+  // Moving between Stats categories keeps the page and only swaps the numbers.
+  const statsSwitch = !!statsKind && lastRouteName === 'stats' && !!viewEl.querySelector(':scope > .stx-page > .stx');
+  if (!statsKind) window.__statsPer = '';
   lastRouteName = name;
   document.body.classList.toggle('tab-music', audioTab);
   // Stats act as their own section: no side bars, no bottom bar, no tab lit up.
@@ -119,7 +122,7 @@ async function route(opts = {}) {
   const ctx = makeCtx();
   if (opts.keepScroll) quiet();
   const id = arg ? decodeURIComponent(arg) : '';
-  if (!opts.keepScroll) {
+  if (!opts.keepScroll && !statsSwitch) {
     window.scrollTo(0, 0);
     viewEl.classList.remove('quiet');
     // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
@@ -142,7 +145,7 @@ async function route(opts = {}) {
     case 'search': return searchPage(viewEl, ctx);
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return booksView(viewEl, ctx);
-    case 'stats': viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
+    case 'stats': if (!statsSwitch) viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
     default: return homeView(viewEl, ctx);
   }
 }
