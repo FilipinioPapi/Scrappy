@@ -506,9 +506,13 @@ function liftSubs(up, instant = false) {
   if (!S.embedded) return;
   let goal = 100;
   if (up && S.open) {
-    const top = $('.p-seek-row').getBoundingClientRect().top;
-    const h = window.innerHeight || 1;
-    goal = Math.max(50, Math.round(100 - ((h - top) / h) * 100));
+    // Measure where the bar sits when shown, ignoring its slide animation: while it
+    // slides back in it is still pushed off screen, and measuring that left the
+    // subtitles down under the bar.
+    const bar = $('.p-bottom'), row = $('.p-seek-row');
+    const h = el.clientHeight || window.innerHeight || 1;
+    const top = h - bar.offsetHeight + row.offsetTop;
+    goal = Math.min(100, Math.max(50, Math.round(100 - ((h - top) / h) * 100)));
   }
   if (goal === subGoal && subRaf) return;
   subGoal = goal;
