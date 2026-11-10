@@ -3,15 +3,62 @@ name: Build Windows app
 on:
   push:
   workflow_dispatch:
+    inputs:
+      allow_rewind:
+        description: "Let this build replace a download it doesn't contain (only to undo a bad build on purpose)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+
+# Where downloads come from:
+#   main          -> "Latest build"
+#   preview-build -> "Preview build" (every feature branch merges in here to be tested)
+#   anything else -> builds as a check only, never replaces a download.
+env:
+  PREVIEW_BRANCH: preview-build
+
+# One build at a time per branch, so an older build can never finish last and win.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/preview-build' }}
 
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Gatekeeper: work out which download this build would replace (if any), and stop
+      # right away if this code is missing anything that download was built from.
+      - name: Gatekeeper
+        id: gate
+        shell: bash
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/main) tag=latest ;;
+            refs/heads/$PREVIEW_BRANCH) tag=preview ;;
+            *) tag="" ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -z "$tag" ]; then
+            echo "::notice::$GITHUB_REF_NAME builds as a check only. Merge it into $PREVIEW_BRANCH to put it in the Preview download."
+            exit 0
+          fi
+          old=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
+          if [ -z "$old" ]; then echo "No current '$tag' download, nothing to protect."; exit 0; fi
+          if git merge-base --is-ancestor "$old" HEAD 2>/dev/null; then
+            echo "OK: this build contains $old, which the current '$tag' download was built from."
+          elif [ "${{ inputs.allow_rewind }}" = "true" ]; then
+            echo "::warning::Replacing '$tag' with a build that doesn't contain $old (allowed by hand)."
+          else
+            echo "::error::Blocked: the current '$tag' download was built from $old, and this code doesn't contain it. Publishing would remove work. Merge that work into $GITHUB_REF_NAME first."
+            echo "Missing commits:"; git log --oneline "HEAD..$old" 2>/dev/null | head -50 || echo "(commit $old not found in this repository)"
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -122,13 +169,20 @@ jobs:
             Scrappy-setup.exe
             Scrappy-portable.zip
 
-      # main -> "Latest build"; any other branch -> "Preview build" (for testing before merging).
+      # Check again just before publishing, in case the download changed during the build.
       - name: Publish build
+        if: steps.gate.outputs.tag != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ("${{ github.ref }}" -eq "refs/heads/main") { $tag = "latest"; $title = "Latest build" } else { $tag = "preview"; $title = "Preview build (${{ github.ref_name }})" }
+          $tag = "${{ steps.gate.outputs.tag }}"
+          if ($tag -eq "latest") { $title = "Latest build" } else { $title = "Preview build" }
+          $old = (git ls-remote origin "refs/tags/$tag") -split "\s+" | Select-Object -First 1
+          if ($old -and "${{ inputs.allow_rewind }}" -ne "true") {
+            git merge-base --is-ancestor $old HEAD
+            if ($LASTEXITCODE -ne 0) { throw "Blocked: '$tag' changed to $old during this build and this code doesn't contain it." }
+          }
           gh release delete $tag --yes --cleanup-tag 2>$null
           $notes = "Built from ${{ github.ref_name }} at commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
           gh release create $tag Scrappy-setup.exe Scrappy-portable.zip --title $title --notes $notes --prerelease --target ${{ github.sha }}
