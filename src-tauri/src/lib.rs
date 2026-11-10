@@ -434,7 +434,13 @@ fn finish_current(app: &AppHandle) -> Option<NowPlaying> {
     Some(np)
 }
 
-fn on_mpv_event(app: &AppHandle, player_id: usize, last_emit: &Mutex<std::time::Instant>, ev: mpv::Event) {
+fn on_mpv_event(
+    app: &AppHandle,
+    player_id: usize,
+    last_emit: &Mutex<std::time::Instant>,
+    last_cache: &Mutex<std::time::Instant>,
+    ev: mpv::Event,
+) {
     let state = app.state::<AppState>();
     match ev {
         mpv::Event::Property(name, value) => {
@@ -444,9 +450,17 @@ fn on_mpv_event(app: &AppHandle, player_id: usize, last_emit: &Mutex<std::time::
                         np.pos_ticks = (secs * 10_000_000.0) as i64;
                     }
                 }
-                // Only update the UI about 4 times a second.
+                // Only update the UI about 4 times a second (the page glides the bar in between).
                 let mut last = last_emit.lock().unwrap();
                 if last.elapsed().as_millis() < 250 {
+                    return;
+                }
+                *last = std::time::Instant::now();
+            }
+            if name == "demuxer-cache-time" {
+                // The buffered bar doesn't need more than one update a second.
+                let mut last = last_cache.lock().unwrap();
+                if last.elapsed().as_millis() < 1000 {
                     return;
                 }
                 *last = std::time::Instant::now();
@@ -555,6 +569,13 @@ fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String>
         ("force-window", "yes".into()),
         ("hwdec", "auto-safe".into()),
         ("vo", "gpu".into()),
+        // Smooth motion: match the video to the screen's refresh rate and blend
+        // frames, so 24fps films don't judder on 60/120/144Hz screens.
+        ("video-sync", "display-resample".into()),
+        ("interpolation", "yes".into()),
+        ("tscale", "oversample".into()),
+        // Arrow-key skips land exactly where you asked, not on the nearest keyframe.
+        ("hr-seek", "yes".into()),
         ("sub-auto", "fuzzy".into()),
         ("cache", "yes".into()),
         ("demuxer-max-bytes", "150MiB".into()),
@@ -580,8 +601,9 @@ fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String>
     let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let app2 = app.clone();
     let last_emit = Mutex::new(std::time::Instant::now());
+    let last_cache = Mutex::new(std::time::Instant::now());
     let player = mpv::Player::create(&state.mpv_dirs, &opts, OBSERVED, move |ev| {
-        on_mpv_event(&app2, id, &last_emit, ev)
+        on_mpv_event(&app2, id, &last_emit, &last_cache, ev)
     })?;
     *state.player.lock().unwrap() = Some((id, embedded, player.clone()));
     Ok(player)
@@ -619,7 +641,15 @@ async fn play(
 ) -> Result<Value, String> {
     let embedded = embedded.unwrap_or(true);
     let cfg = state.cfg();
-    let item = emby::get(&state.http, &cfg, &format!("/Users/{{userId}}/Items/{item_id}?Fields=Chapters")).await?;
+    // Fetch the item and the stream details at the same time.
+    let item_path = format!("/Users/{{userId}}/Items/{item_id}?Fields=Chapters");
+    let (item, target) = tokio::join!(
+        emby::get(&state.http, &cfg, &item_path),
+        // mpv seeks to the start point itself, so the stream always starts at 0 and
+        // positions stay true to the file even when Emby transcodes.
+        emby::playback_target(&state.http, &cfg, &item_id, 0, max_bitrate),
+    );
+    let (item, target) = (item?, target?);
     let start_ticks = if let Some(s) = start_secs {
         (s * 10_000_000.0) as i64
     } else if from_start.unwrap_or(false) {
@@ -627,9 +657,6 @@ async fn play(
     } else {
         item["UserData"]["PlaybackPositionTicks"].as_i64().unwrap_or(0)
     };
-    // mpv seeks to the start point itself, so the stream always starts at 0 and
-    // positions stay true to the file even when Emby transcodes.
-    let target = emby::playback_target(&state.http, &cfg, &item_id, 0, max_bitrate).await?;
 
     // Save the resume point of whatever was playing before.
     finish_current(&app);
@@ -663,6 +690,10 @@ async fn play(
     let _ = player.set_property("force-media-title", &title);
     let _ = player.set_property("title", &format!("{title} - Scrappy Media Center"));
     let _ = player.set_property("pause", "no");
+    // Track picks from the last video must not carry over to this one (a subtitle
+    // number that was English there can be German here). The page picks again.
+    let _ = player.set_property("sid", "auto");
+    let _ = player.set_property("aid", "auto");
     player.command(&["loadfile", &target.url, "replace"])?;
 
     Ok(json!({
@@ -767,7 +798,15 @@ fn player_get(state: State<'_, AppState>, name: String) -> Value {
 #[tauri::command]
 fn stop_playback(app: AppHandle, state: State<'_, AppState>) {
     finish_current(&app);
-    if let Some((_, _, p)) = state.player.lock().unwrap().take() {
+    let mut slot = state.player.lock().unwrap();
+    // The in-app player stays running (idle, hidden behind the page) so the next
+    // video starts without booting mpv again. A pop-out window is closed.
+    let keep = slot.as_ref().map(|(_, embedded, p)| *embedded && p.alive()).unwrap_or(false);
+    if keep {
+        if let Some((_, _, p)) = slot.as_ref() {
+            let _ = p.command(&["stop"]);
+        }
+    } else if let Some((_, _, p)) = slot.take() {
         p.quit();
     }
 }

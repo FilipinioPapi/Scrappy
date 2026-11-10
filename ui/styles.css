@@ -1839,30 +1839,17 @@ html, body { overflow-x: clip; }
 #topbar { min-width: 0; }
 #topbar .tsearch { min-width: 0; }
 @media (max-width: 1240px) {
-  body.has-tp #topbar { gap: 12px; }
-  body.has-tp .tp-r2 .tp-vol, body.has-tp .tp-v { display: none; }
-  body.has-tp .tp-mid { width: 180px; }
-  body.has-tp .tsearch { flex-basis: 260px; min-width: 120px; }
   #mbar { gap: 14px; padding: 0 18px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, .9fr); }
   .mb-right { gap: 4px; }
   .mseek.vol { width: 72px; }
 }
 @media (max-width: 1080px) {
-  /* Top bar: search becomes a round button-sized box; the small player keeps play controls only */
-  body.has-tp .brand > div { display: none; }
-  body.has-tp .tsearch { flex: 0 1 200px; }
-  body.has-tp .tsearch .tfilt, body.has-tp .tsearch button:not(:first-child) { display: none; }
-  body.has-tp .tp-mid { width: 150px; }
-  body.has-tp .tp-r2 { display: none !important; }
   /* Bottom bar: drop the extra buttons into the Now playing screen */
   #mbLyr, #mbViz, #mbVol { display: none; }
   .mb-ctl { gap: 10px; }
   .mb-cover { width: 50px; height: 50px; }
 }
 @media (max-width: 960px) {
-  #topbar { gap: 14px; }
-  .brand > div { display: none; }
-  .tsearch { flex: 1 1 160px; }
   .mb-sub { display: none; }
 }
 @media (max-height: 640px) {
@@ -2511,3 +2498,123 @@ html.tv .yb-chip:focus{outline:3px solid #fff;outline-offset:3px}
 .yg-tip .no { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .stx-card .d { white-space: nowrap; }
 
+/* =====================================================================
+   Video player polish (approved mock-up, PcPlayer on the canvas).
+   Soft rounded-square buttons with a silky press and a faint red ring,
+   bars that slide fully off screen, pop-ups that slide in and back out.
+   No see-through blur over the video: it costs a lot on every frame.
+   ===================================================================== */
+#player { --pe: cubic-bezier(.2,.8,.2,1); }
+#player .p-top, #player .p-bottom { transition: transform .42s var(--pe), opacity .32s var(--pe); will-change: transform, opacity; }
+#player.idle .p-top { transform: translateY(-100%); }
+#player.idle .p-bottom { transform: translateY(100%); }
+
+#player .p-btn, #player .p-pill, #player .p-speed {
+  position: relative; border-radius: 12px; background: rgba(255,255,255,.08); backdrop-filter: none;
+  transition: background .28s var(--pe), color .2s var(--pe), transform .28s var(--pe);
+}
+#player .p-btn:hover, #player .p-pill:hover, #player .p-speed:hover { background: rgba(255,255,255,.16); transform: scale(1.05); }
+#player .p-btn:active, #player .p-pill:active, #player .p-speed:active { transform: scale(.94); transition-duration: .1s; }
+#player .p-btn:hover svg { transform: none; }
+#player .p-cc.on, #player .p-cog.on, #player .p-epsbtn.on { background: rgba(236,40,46,.9) !important; animation: none; }
+#player .p-cc.on:hover, #player .p-cog.on:hover, #player .p-epsbtn.on:hover { background: var(--red) !important; }
+#player .p-cog svg { transition: transform .5s var(--pe); }
+#player .p-cog.on svg { transform: rotate(60deg); }
+
+/* Faint red ring that fades out after a click. */
+#player .p-btn::after, #player .p-pill::after, #player .p-speed::after, #player .p-play::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 12px rgba(236,40,46,0); opacity: 0;
+  transition: box-shadow .5s var(--pe), opacity .5s var(--pe);
+}
+#player .p-btn:active::after, #player .p-pill:active::after, #player .p-speed:active::after, #player .p-play:active::after {
+  box-shadow: 0 0 0 0 rgba(236,40,46,.55); opacity: 1; transition: none;
+}
+
+/* Round red play button; play and pause icons morph into each other. */
+#player .p-play {
+  position: relative; width: 56px; height: 56px; box-shadow: 0 6px 18px rgba(236,40,46,.35) !important;
+  transition: transform .28s var(--pe), box-shadow .28s var(--pe), background .2s;
+}
+#player .p-play:hover { transform: scale(1.07); box-shadow: 0 8px 24px rgba(236,40,46,.5) !important; }
+#player .p-play:active { transform: scale(.92); transition-duration: .1s; background: var(--red-deep, #CC1921) !important; }
+#player .p-play span { position: absolute; inset: 0; display: grid; place-items: center; transition: opacity .22s var(--pe), transform .32s var(--pe); }
+#player .p-play .i-play { opacity: 0; transform: scale(.4) rotate(-90deg); }
+#player .p-play.is-paused .i-play { opacity: 1; transform: none; }
+#player .p-play.is-paused .i-pause { opacity: 0; transform: scale(.4) rotate(90deg); }
+
+/* Seek bar: soft red glow. */
+#player .p-track { background: rgba(255,255,255,.18); }
+#player .p-fill { border-radius: 3px; box-shadow: 0 0 10px rgba(236,40,46,.6); }
+
+/* Pop-ups: always in the page, slid out of view until shown. */
+#player .p-skip, #player .p-upnext, #player .p-settings, #player .p-eps { animation: none; visibility: hidden; pointer-events: none; }
+#player .p-skip.show, #player .p-upnext.show, #player .p-settings.show, #player .p-eps.show { visibility: visible; pointer-events: auto; }
+#player .p-skip, #player .p-upnext {
+  opacity: 0; transform: translateX(calc(100% + 40px)); backdrop-filter: none; background: rgba(20,13,14,.9);
+  transition: transform .48s var(--pe), opacity .32s var(--pe), bottom .42s var(--pe), background .2s, visibility 0s linear .48s;
+}
+#player .p-skip { border-radius: 12px; border: 1px solid rgba(255,255,255,.18); }
+#player .p-skip.show, #player .p-upnext.show { opacity: 1; transform: none; transition: transform .48s var(--pe), opacity .32s var(--pe), bottom .42s var(--pe), background .2s, visibility 0s; }
+#player .p-skip.show:hover { background: rgba(44,28,29,.96); }
+#player .p-skip.show:active { transform: scale(.95); transition-duration: .1s; }
+#player.idle .p-skip, #player.idle .p-upnext { bottom: 56px; }
+#player .p-settings, #player .p-eps {
+  opacity: 0; transform: translateY(16px) scale(.97);
+  transition: transform .36s var(--pe), opacity .24s var(--pe), visibility 0s linear .36s;
+}
+#player .p-settings { transform-origin: bottom right; }
+#player .p-settings.show, #player .p-eps.show { opacity: 1; transform: none; transition: transform .36s var(--pe), opacity .24s var(--pe), visibility 0s; }
+
+/* ---------- Top bar fits any window size, Ctrl +/- zoom or Windows display scaling (approved board C) ----------
+   topfit.js checks how much room the bar really has and adds f1…f6 to #topbar, one small change per step:
+   f1 words beside the logo hide · f2 small player drops its right side · f3 search folds into a round button
+   f4 player keeps cover, name and play · f5 player is just its cover · f6 tabs show icons only. */
+#topbar { padding: 0 clamp(24px, 3vw, var(--gutter)); }
+#topbar .actions { flex: none; }
+#topbar.fit-measure, #topbar.fit-measure * { transition: none !important; animation: none !important; }
+#topbar .brand { transition: gap .45s var(--ease); }
+#topbar .brand > div { max-width: 240px; overflow: hidden; white-space: nowrap; transition: max-width .45s var(--ease), opacity .3s var(--ease); }
+#topbar.f1 .brand { gap: 0; }
+#topbar.f1 .brand > div { max-width: 0; opacity: 0; }
+/* Search: a real box (never squashed) until there's no room, then a round button that opens out over the tabs */
+body #topbar .tsearch { min-width: 220px;
+  transition: border-color .28s var(--ease), background .28s var(--ease), flex-basis .45s var(--ease), min-width .45s var(--ease), max-width .45s var(--ease), margin-left .45s var(--ease), padding .45s var(--ease); }
+#topbar .tsearch > svg { flex: none; }
+#topbar .tsearch input, #topbar .tsearch .tadv { transition: opacity .25s var(--ease); }
+#topbar.f3 .tsearch:not(.sx) { flex: 0 0 44px; min-width: 44px; max-width: 44px; padding: 0 0 0 12px; cursor: pointer; overflow: hidden; }
+#topbar.f3 .tsearch:not(.sx):hover { background: rgba(255,255,255,.1); }
+#topbar.f3 .tsearch:not(.sx) input, #topbar.f3 .tsearch:not(.sx) .tadv { opacity: 0; pointer-events: none; }
+#topbar.f3 .tsearch.sx { flex: 0 0 var(--sxw); min-width: var(--sxw); max-width: var(--sxw); margin-left: calc(44px - var(--sxw)); z-index: 4; background: var(--bg-2); }
+#topbar .tabs { transition: opacity .3s var(--ease), transform .45s var(--ease); }
+#topbar.sx-open .tabs { opacity: 0; transform: translateX(-10px); pointer-events: none; }
+/* Small player: gives up room in steps, each one glides */
+#topbar .tp.off { margin-left: 0; }
+#topbar .tp:not(.off) { max-width: 430px; }
+#topbar .tp-v, #topbar .tp-mid { transition: opacity .3s var(--ease), width .45s var(--ease); }
+#topbar .tp-sk { transition: opacity .25s var(--ease), height .45s var(--ease); }
+#topbar .tp-r1 .gb { transition: width .45s var(--ease), opacity .25s var(--ease), background .2s var(--ease); }
+#topbar.f2 .tp:not(.off) { max-width: 300px; }
+#topbar.f2 .tp-v { opacity: 0; pointer-events: none; }
+#topbar.f4 .tp:not(.off) { max-width: 214px; }
+#topbar.f4 .tp-mid { width: 140px; }
+#topbar.f4 .tp-sk { opacity: 0; height: 0; overflow: hidden; pointer-events: none; }
+#topbar.f4 .tp-r1 .gb { width: 0; opacity: 0; pointer-events: none; overflow: hidden; }
+#topbar.f5 .tp:not(.off) { max-width: 60px; padding: 0 7px; }
+#topbar.f5 .tp-mid { opacity: 0; pointer-events: none; }
+#topbar.f5 .tp-cv { box-shadow: 0 0 0 2px var(--red); }
+/* Just the cover: click it and the full player opens out to the left, over the bar */
+#topbar .tp::before { content: ''; position: absolute; top: -1px; bottom: -1px; right: -1px; width: 0; border-radius: 14px; background: var(--bg-2); border: 1px solid var(--line); box-shadow: 0 14px 34px rgba(0,0,0,.55); opacity: 0; z-index: -1; pointer-events: none; transition: width .45s var(--ease), opacity .2s var(--ease); }
+#topbar.f5 .tp.pop { position: relative; z-index: 5; overflow: visible; justify-content: flex-end; padding: 0 10px 0 7px; }
+#topbar.f5 .tp.pop::before { width: 424px; opacity: 1; }
+#topbar .tp.pop .tp-mid { width: 226px; opacity: 1; pointer-events: auto; }
+#topbar .tp.pop .tp-v { opacity: 1; pointer-events: auto; }
+#topbar .tp.pop .tp-sk { opacity: 1; height: auto; pointer-events: auto; }
+#topbar .tp.pop .tp-r1 .gb { width: 30px; opacity: 1; pointer-events: auto; }
+/* Tabs: icons only, as the very last step */
+#topbar .tabs a { display: inline-flex; align-items: center; justify-content: center; transition: color .3s var(--ease), background .3s var(--ease), padding .45s var(--ease); }
+#topbar .tabs a .tab-ic { flex: none; width: 0; height: 20px; opacity: 0; transition: width .45s var(--ease), opacity .3s var(--ease); }
+#topbar .tabs a .tx { display: inline-block; max-width: 160px; overflow: hidden; white-space: nowrap; transition: max-width .45s var(--ease), opacity .25s var(--ease); }
+#topbar.f6 .tabs a { padding: 0 14px; }
+#topbar.f6 .tabs a .tab-ic { width: 20px; opacity: 1; }
+#topbar.f6 .tabs a .tx { max-width: 0; opacity: 0; }
