@@ -262,17 +262,48 @@ function stopPicking() { S.pick = null; }
 
 // ---------- Drawing ----------
 
+// Only touch the page when a value really changed.
+const shown = {};
+function put(sel, key, value, apply) {
+  if (shown[sel + key] === value) return;
+  shown[sel + key] = value;
+  apply($(sel), value);
+}
+const setText = (sel, v) => put(sel, 'text', v, (n, x) => { n.textContent = x; });
+const setStyle = (sel, prop, v) => put(sel, prop, v, (n, x) => { n.style[prop] = x; });
+const setHTML = (sel, v) => put(sel, 'html', v, (n, x) => { n.innerHTML = x; });
+
+// mpv reports the position 4 times a second. In between, the bar glides on its own
+// so it moves smoothly instead of in steps.
+let posAt = 0; // when S.pos was last set
+const markPos = () => { posAt = performance.now(); };
+function livePos() {
+  if (S.paused || S.buffering || !S.frameSeen || S.starting) return S.pos;
+  const p = S.pos + Math.min(1, (performance.now() - posAt) / 1000) * (S.speed || 1);
+  const d = dur();
+  return d ? Math.min(p, d) : p;
+}
+function drawBar(pos) {
+  const d = dur();
+  const pct = (d ? Math.min(100, (pos / d) * 100) : 0).toFixed(3) + '%';
+  setStyle('.p-fill', 'width', pct);
+  setStyle('.p-knob', 'left', pct);
+  setText('.p-cur', fmt(pos));
+}
 function drawTime() {
   const d = dur();
-  const pct = d ? Math.min(100, (S.pos / d) * 100) : 0;
-  if (!S.dragging) {
-    $('.p-fill').style.width = pct + '%';
-    $('.p-knob').style.left = pct + '%';
-    $('.p-cur').textContent = fmt(S.pos);
-  }
-  $('.p-buf').style.width = d ? Math.min(100, (S.cache / d) * 100) + '%' : '0';
-  $('.p-dur').textContent = fmt(d);
+  if (!S.dragging) drawBar(livePos());
+  setStyle('.p-buf', 'width', d ? Math.min(100, (S.cache / d) * 100).toFixed(2) + '%' : '0');
+  setText('.p-dur', fmt(d));
 }
+let glideRaf = 0;
+function glide() {
+  glideRaf = 0;
+  if (!S.open) return;
+  if (!S.dragging && !el.classList.contains('idle')) drawBar(livePos());
+  glideRaf = requestAnimationFrame(glide);
+}
+const startGlide = () => { if (!glideRaf) glideRaf = requestAnimationFrame(glide); };
 
 // Replay the little "tick" pop on a button.
 function bounce(b) {
@@ -289,10 +320,10 @@ function drawButtons() {
     playBtn.dataset.icon = playIcon;
     playBtn.innerHTML = playIcon;
   }
-  $('[data-act=mute]').innerHTML = S.muted || S.volume === 0 ? ICONS.muted : ICONS.vol;
-  $('[data-act=fs]').innerHTML = S.fullscreen ? ICONS.fsExit : ICONS.fs;
-  $('[data-act=rew]').textContent = `−${skipBack()}`;
-  $('[data-act=fwd]').textContent = `+${skipFwd()}`;
+  setHTML('[data-act=mute]', S.muted || S.volume === 0 ? ICONS.muted : ICONS.vol);
+  setHTML('[data-act=fs]', S.fullscreen ? ICONS.fsExit : ICONS.fs);
+  setText('[data-act=rew]', `−${skipBack()}`);
+  setText('[data-act=fwd]', `+${skipFwd()}`);
   const speedBtn = $('[data-act=speed]');
   if (speedBtn.textContent !== `${S.speed}×`) {
     if (speedBtn.textContent) bounce(speedBtn);
@@ -301,8 +332,11 @@ function drawButtons() {
   $('.p-cc').classList.toggle('on', S.sid != null);
   $('.p-cc').setAttribute('aria-pressed', String(S.sid != null));
   $('.p-cog').classList.toggle('on', S.settingsOpen);
-  $('.p-vol').value = S.volume;
-  $('.p-vol').style.setProperty('--v', S.volume + '%');
+  if (shown.vol !== S.volume) {
+    shown.vol = S.volume;
+    $('.p-vol').value = S.volume;
+    $('.p-vol').style.setProperty('--v', S.volume + '%');
+  }
   $('.p-next').hidden = !S.next;
   $('.p-epsbtn').hidden = !(S.item?.Type === 'Episode' && S.item?.SeriesId);
   $('.p-epsbtn').classList.toggle('on', !!S.epsOpen);
@@ -408,12 +442,46 @@ function doSkip() {
 
 // ---------- Show / hide controls ----------
 
+// Controls shown or hidden. Subtitles move up above the player bar while it shows.
+function setIdle(idle) {
+  if (el.classList.contains('idle') === idle) return;
+  el.classList.toggle('idle', idle);
+  liftSubs(!idle);
+}
+
+// mpv's sub-pos: 100 = normal spot at the bottom, lower numbers sit higher up.
+let subPos = 100, subGoal = 100, subRaf = 0;
+function liftSubs(up, instant = false) {
+  if (!S.embedded) return;
+  let goal = 100;
+  if (up && S.open) {
+    const top = $('.p-seek-row').getBoundingClientRect().top;
+    const h = window.innerHeight || 1;
+    goal = Math.max(50, Math.round(100 - ((h - top) / h) * 100));
+  }
+  if (goal === subGoal && subRaf) return;
+  subGoal = goal;
+  cancelAnimationFrame(subRaf); subRaf = 0;
+  if (instant) { subPos = goal; setProp('sub-pos', goal); return; }
+  const from = subPos, t0 = performance.now(), len = 260;
+  cancelAnimationFrame(subRaf);
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / len);
+    const e = 1 - Math.pow(1 - k, 3);
+    const v = Math.round(from + (goal - from) * e);
+    if (v !== subPos) { subPos = v; setProp('sub-pos', v); }
+    subRaf = k < 1 ? requestAnimationFrame(step) : 0;
+  };
+  subRaf = requestAnimationFrame(step);
+}
+window.addEventListener('resize', () => { if (S.open && !el.classList.contains('idle')) { subGoal = -1; liftSubs(true); } });
+
 let idleTimer;
 function wake() {
-  el.classList.remove('idle');
+  setIdle(false);
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (!S.paused && !S.dragging && !S.settingsOpen && !S.epsOpen && !S.stillOpen && !el.querySelector('.p-bottom:hover, .p-top:hover, .p-eps:hover')) el.classList.add('idle');
+    if (!S.paused && !S.dragging && !S.settingsOpen && !S.epsOpen && !S.stillOpen && !el.querySelector('.p-bottom:hover, .p-top:hover, .p-eps:hover')) setIdle(true);
   }, 3000);
   schedulePauseInfo();
 }
@@ -434,6 +502,7 @@ function showOverlay() {
   S.open = true;
   el.hidden = false;
   document.documentElement.classList.add('playing');
+  startGlide();
   wake();
 }
 
@@ -451,6 +520,8 @@ async function hideOverlay() {
   hideStill();
   clearTimeout(pauseInfoTimer);
   el.classList.remove('pause-info');
+  cancelAnimationFrame(subRaf); subRaf = 0; subGoal = 100;
+  if (subPos !== 100) { subPos = 100; setProp('sub-pos', 100); }
   if (S.fullscreen) await setFullscreen(false);
   if (wasOpen) window.dispatchEvent(new Event('scrappy:refresh'));
 }
@@ -467,7 +538,7 @@ export async function startPlayback(id, opts = {}) {
     S.item = null; S.next = null; S.intro = null; S.credits = null;
     S.aspect = 'auto';
   }
-  S.pos = opts.startSecs || 0; S.duration = 0; S.cache = 0; S.buffering = true;
+  S.pos = opts.startSecs || 0; markPos(); S.duration = 0; S.cache = 0; S.buffering = true;
   S.tracks = []; S.aid = null; S.sid = null; S.prefsApplied = false;
   S.defaults = undefined; S.playMethod = ''; S.pick = { audio: true, sub: true }; S.wantAid = null;
   clearTimeout(S.pickTimer);
@@ -590,17 +661,17 @@ function setVideoOn(on) {
 listen('mpv-prop', ({ payload: { name, value } }) => {
   switch (name) {
     case 'time-pos':
-      S.pos = value ?? 0; drawTime(); checkMarkers();
+      S.pos = value ?? 0; markPos(); drawTime(); checkMarkers();
       if (value != null && !S.frameSeen) { S.frameSeen = true; updateVideoOn(); }
       break;
     case 'vo-configured': S.vo = !!value; updateVideoOn(); break;
     case 'duration': S.duration = value ?? 0; drawTime(); break;
     case 'demuxer-cache-time': S.cache = value ?? 0; drawTime(); break;
-    case 'pause': S.paused = !!value; drawButtons(); wake(); break;
-    case 'paused-for-cache': case 'seeking': S.buffering = !!value; drawButtons(); break;
+    case 'pause': S.pos = livePos(); markPos(); S.paused = !!value; drawButtons(); wake(); break;
+    case 'paused-for-cache': case 'seeking': S.pos = livePos(); markPos(); S.buffering = !!value; drawButtons(); break;
     case 'volume': if (value != null) { S.volume = Math.round(value); drawButtons(); } break;
     case 'mute': S.muted = !!value; drawButtons(); break;
-    case 'speed': if (value != null) { S.speed = Math.round(value * 100) / 100; drawButtons(); } break;
+    case 'speed': if (value != null) { S.pos = livePos(); markPos(); S.speed = Math.round(value * 100) / 100; drawButtons(); } break;
     case 'track-list': {
       S.tracks = Array.isArray(value) ? value : [];
       const a = S.tracks.find((t) => t.type === 'audio' && t.selected);
@@ -624,6 +695,7 @@ listen('player-loaded', ({ payload }) => {
   drawButtons();
   setProp('volume', S.volume);
   setProp('sub-scale', S.subScale);
+  liftSubs(!el.classList.contains('idle'), true);
   applyAspect();
   // External subtitles are added just after loading; give them a moment.
   if (!S.prefsApplied) { S.prefsApplied = true; const sp = loadPrefs().speed; if (sp) setProp('speed', sp); }
@@ -661,7 +733,7 @@ async function setFullscreen(on) {
 }
 const toggleFullscreen = () => setFullscreen(!S.fullscreen);
 const togglePause = () => cmd('cycle', 'pause');
-const seekBy = (s) => { cmd('seek', s, 'relative'); S.pos = Math.max(0, S.pos + s); drawTime(); wake(); };
+const seekBy = (s) => { const p = livePos(); cmd('seek', s, 'relative+exact'); S.pos = Math.max(0, p + s); markPos(); drawTime(); wake(); };
 const changeVolume = (d) => {
   S.volume = Math.max(0, Math.min(100, S.volume + d));
   ls.set('volume', S.volume);
@@ -819,19 +891,28 @@ seek.addEventListener('mousemove', (e) => {
 });
 seek.addEventListener('mousedown', (e) => {
   S.dragging = true;
+  // While dragging, the picture follows along (quick keyframe jumps, a few a second).
+  let lastScrub = 0, scrubTimer;
+  const scrub = (t) => {
+    clearTimeout(scrubTimer);
+    const wait = 120 - (performance.now() - lastScrub);
+    if (wait > 0) { scrubTimer = setTimeout(() => scrub(t), wait); return; }
+    lastScrub = performance.now();
+    cmd('seek', t.toFixed(2), 'absolute+keyframes');
+  };
   const move = (ev) => {
-    const r = ratioAt(ev.clientX);
-    $('.p-fill').style.width = r * 100 + '%';
-    $('.p-knob').style.left = r * 100 + '%';
-    $('.p-cur').textContent = fmt(r * dur());
+    const t = ratioAt(ev.clientX) * dur();
+    drawBar(t);
+    if (ev !== e) scrub(t);
   };
   const up = (ev) => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
+    clearTimeout(scrubTimer);
     const t = ratioAt(ev.clientX) * dur();
-    S.pos = t;
+    S.pos = t; markPos();
     S.dragging = false;
-    cmd('seek', t.toFixed(2), 'absolute');
+    cmd('seek', t.toFixed(2), 'absolute+exact');
     drawTime();
   };
   move(e);
@@ -919,7 +1000,7 @@ function showStill(next) {
   setProp('pause', 'yes');
   $('.p-still-sub').textContent = [next.SeriesName, epCode(next), next.Name].filter(Boolean).join(' · ');
   $('.p-still').hidden = false;
-  el.classList.remove('idle');
+  setIdle(false);
 }
 function hideStill() {
   S.stillOpen = false;
@@ -938,7 +1019,8 @@ function schedulePauseInfo() {
   pauseInfoTimer = setTimeout(() => {
     if (!S.open || !S.paused || S.settingsOpen || S.epsOpen || S.stillOpen || S.dragging || S.upNextMode) return;
     drawPauseInfo();
-    el.classList.add('pause-info', 'idle');
+    el.classList.add('pause-info');
+    setIdle(true);
   }, 5000);
 }
 function drawPauseInfo() {
