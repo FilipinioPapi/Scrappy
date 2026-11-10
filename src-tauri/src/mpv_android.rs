@@ -35,6 +35,12 @@ pub fn plugin() -> TauriPlugin<Wry> {
         .build()
 }
 
+/// The video and audio formats this TV plays by itself (asked once).
+pub fn caps() -> Value {
+    static CAPS: OnceLock<Value> = OnceLock::new();
+    CAPS.get_or_init(|| call("caps", json!({})).unwrap_or(Value::Null)).clone()
+}
+
 fn call(cmd: &str, args: Value) -> Result<Value, String> {
     let h = EXO.get().ok_or("The TV player isn't ready.")?;
     h.run_mobile_plugin::<Value>(cmd, args).map_err(|e| e.to_string())

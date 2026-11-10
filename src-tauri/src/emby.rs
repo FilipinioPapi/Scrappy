@@ -303,6 +303,35 @@ pub fn device_profile(max_bitrate: u64) -> Value {
     })
 }
 
+#[cfg(not(target_os = "android"))]
+fn profile_for_this_device(max_bitrate: u64) -> Value {
+    device_profile(max_bitrate)
+}
+
+/// On the TV: direct play only what the TV's own player handles; Emby converts the rest
+/// (usually just the sound, e.g. DTS on a TV without DTS, leaving the picture untouched).
+#[cfg(target_os = "android")]
+fn profile_for_this_device(max_bitrate: u64) -> Value {
+    let caps = crate::mpv::caps();
+    let join = |k: &str, fallback: &str| -> String {
+        caps[k].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(",")).filter(|s| !s.is_empty()).unwrap_or_else(|| fallback.to_string())
+    };
+    let video = join("video", "h264,hevc");
+    let audio = join("audio", "aac,mp3,flac,opus,ac3,eac3");
+    let mut p = device_profile(max_bitrate);
+    p["Name"] = json!("Scrappy (Google TV)");
+    p["DirectPlayProfiles"] = json!([
+        { "Type": "Video", "Container": "mp4,m4v,mkv,webm,mov,ts,mpegts", "VideoCodec": video, "AudioCodec": audio },
+        { "Type": "Audio", "Container": "flac,mp3,aac,m4a,ogg,opus,wav,alac", "AudioCodec": audio }
+    ]);
+    p["TranscodingProfiles"] = json!([{
+        "Container": "ts", "Type": "Video", "VideoCodec": "h264,hevc",
+        "AudioCodec": if audio.contains("eac3") { "aac,ac3,eac3" } else if audio.contains("ac3") { "aac,ac3" } else { "aac" },
+        "Context": "Streaming", "Protocol": "hls", "MaxAudioChannels": "8", "BreakOnNonKeyFrames": true
+    }]);
+    p
+}
+
 pub struct ExternalSub {
     pub url: String,
     pub title: String,
@@ -344,7 +373,7 @@ pub async fn playback_target(
         cfg,
         reqwest::Method::POST,
         &path,
-        Some(json!({ "DeviceProfile": device_profile(max_bitrate) })),
+        Some(json!({ "DeviceProfile": profile_for_this_device(max_bitrate) })),
     )
     .await?;
 

@@ -264,6 +264,35 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     return out
   }
 
+  /** What this TV can play by itself, so Emby only converts what it must. */
+  @Command
+  fun caps(invoke: Invoke) {
+    val o = JSObject()
+    val list = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
+    val types = HashSet<String>()
+    for (info in list.codecInfos) if (!info.isEncoder) info.supportedTypes.forEach { types.add(it.lowercase()) }
+    val video = JSArray()
+    mapOf(
+      "h264" to "video/avc", "hevc" to "video/hevc", "vp9" to "video/x-vnd.on2.vp9", "av1" to "video/av01",
+      "mpeg2video" to "video/mpeg2", "vp8" to "video/x-vnd.on2.vp8", "mpeg4" to "video/mp4v-es"
+    ).forEach { (name, mime) -> if (types.contains(mime)) video.put(name) }
+    val audio = JSArray()
+    // Media3 decodes these itself on any TV.
+    listOf("aac", "mp3", "flac", "opus", "vorbis", "pcm_s16le", "pcm_s24le", "alac").forEach { audio.put(it) }
+    val caps = androidx.media3.exoplayer.audio.AudioCapabilities.getCapabilities(
+      activity, androidx.media3.common.AudioAttributes.DEFAULT, null
+    )
+    fun can(mime: String, enc: Int) = types.contains(mime) || caps.supportsEncoding(enc)
+    if (can("audio/ac3", C.ENCODING_AC3)) audio.put("ac3")
+    if (can("audio/eac3", C.ENCODING_E_AC3)) audio.put("eac3")
+    if (can("audio/vnd.dts", C.ENCODING_DTS)) audio.put("dts")
+    if (caps.supportsEncoding(C.ENCODING_DTS_HD)) audio.put("dtshd")
+    if (can("audio/true-hd", C.ENCODING_DOLBY_TRUEHD)) audio.put("truehd")
+    o.put("video", video)
+    o.put("audio", audio)
+    invoke.resolve(o)
+  }
+
   override fun onDestroy() {
     player?.release()
     player = null

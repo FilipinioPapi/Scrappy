@@ -724,8 +724,10 @@ async fn load_previews(state: State<'_, AppState>, item_id: String) -> Result<Va
 }
 
 /// Run an mpv command, e.g. ["seek", "10"] or ["cycle", "pause"].
+// The player commands are async so they never wait on the app's main thread
+// (the TV player answers on that thread).
 #[tauri::command]
-fn player_command(state: State<'_, AppState>, args: Vec<String>) -> Result<(), String> {
+async fn player_command(state: State<'_, AppState>, args: Vec<String>) -> Result<(), String> {
     let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
     let p = p.ok_or("Nothing is playing.")?;
     let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -733,23 +735,25 @@ fn player_command(state: State<'_, AppState>, args: Vec<String>) -> Result<(), S
 }
 
 #[tauri::command]
-fn player_set(state: State<'_, AppState>, name: String, value: String) -> Result<(), String> {
+async fn player_set(state: State<'_, AppState>, name: String, value: String) -> Result<(), String> {
     let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
     p.ok_or("Nothing is playing.")?.set_property(&name, &value)
 }
 
 #[tauri::command]
-fn player_get(state: State<'_, AppState>, name: String) -> Value {
+async fn player_get(state: State<'_, AppState>, name: String) -> Result<Value, String> {
     let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
-    p.map(|p| p.get_property(&name)).unwrap_or(Value::Null)
+    Ok(p.map(|p| p.get_property(&name)).unwrap_or(Value::Null))
 }
 
 #[tauri::command]
-fn stop_playback(app: AppHandle, state: State<'_, AppState>) {
+async fn stop_playback(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     finish_current(&app);
-    if let Some((_, _, p)) = state.player.lock().unwrap().take() {
+    let p = state.player.lock().unwrap().take();
+    if let Some((_, _, p)) = p {
         p.quit();
     }
+    Ok(())
 }
 
 #[tauri::command]
