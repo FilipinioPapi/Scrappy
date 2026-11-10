@@ -2309,3 +2309,71 @@ body.bnow-open #bbar { display: none; }
 .stx-secs a:hover { background: rgba(255,255,255,.07); color: #fff; }
 .stx-secs a:active { transform: scale(.96); }
 .stx-secs a.on { background: var(--red); color: #fff; box-shadow: 0 6px 16px rgba(236,40,46,.35); }
+
+/* =====================================================================
+   Video player polish (approved mock-up, PcPlayer on the canvas).
+   Soft rounded-square buttons with a silky press and a faint red ring,
+   bars that slide fully off screen, pop-ups that slide in and back out.
+   No see-through blur over the video: it costs a lot on every frame.
+   ===================================================================== */
+#player { --pe: cubic-bezier(.2,.8,.2,1); }
+#player .p-top, #player .p-bottom { transition: transform .42s var(--pe), opacity .32s var(--pe); will-change: transform, opacity; }
+#player.idle .p-top { transform: translateY(-100%); }
+#player.idle .p-bottom { transform: translateY(100%); }
+
+#player .p-btn, #player .p-pill, #player .p-speed {
+  position: relative; border-radius: 12px; background: rgba(255,255,255,.08); backdrop-filter: none;
+  transition: background .28s var(--pe), color .2s var(--pe), transform .28s var(--pe);
+}
+#player .p-btn:hover, #player .p-pill:hover, #player .p-speed:hover { background: rgba(255,255,255,.16); transform: scale(1.05); }
+#player .p-btn:active, #player .p-pill:active, #player .p-speed:active { transform: scale(.94); transition-duration: .1s; }
+#player .p-btn:hover svg { transform: none; }
+#player .p-cc.on, #player .p-cog.on, #player .p-epsbtn.on { background: rgba(236,40,46,.9) !important; animation: none; }
+#player .p-cc.on:hover, #player .p-cog.on:hover, #player .p-epsbtn.on:hover { background: var(--red) !important; }
+#player .p-cog svg { transition: transform .5s var(--pe); }
+#player .p-cog.on svg { transform: rotate(60deg); }
+
+/* Faint red ring that fades out after a click. */
+#player .p-btn::after, #player .p-pill::after, #player .p-speed::after, #player .p-play::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 12px rgba(236,40,46,0); opacity: 0;
+  transition: box-shadow .5s var(--pe), opacity .5s var(--pe);
+}
+#player .p-btn:active::after, #player .p-pill:active::after, #player .p-speed:active::after, #player .p-play:active::after {
+  box-shadow: 0 0 0 0 rgba(236,40,46,.55); opacity: 1; transition: none;
+}
+
+/* Round red play button; play and pause icons morph into each other. */
+#player .p-play {
+  position: relative; width: 56px; height: 56px; box-shadow: 0 6px 18px rgba(236,40,46,.35) !important;
+  transition: transform .28s var(--pe), box-shadow .28s var(--pe), background .2s;
+}
+#player .p-play:hover { transform: scale(1.07); box-shadow: 0 8px 24px rgba(236,40,46,.5) !important; }
+#player .p-play:active { transform: scale(.92); transition-duration: .1s; background: var(--red-deep, #CC1921) !important; }
+#player .p-play span { position: absolute; inset: 0; display: grid; place-items: center; transition: opacity .22s var(--pe), transform .32s var(--pe); }
+#player .p-play .i-play { opacity: 0; transform: scale(.4) rotate(-90deg); }
+#player .p-play.is-paused .i-play { opacity: 1; transform: none; }
+#player .p-play.is-paused .i-pause { opacity: 0; transform: scale(.4) rotate(90deg); }
+
+/* Seek bar: soft red glow. */
+#player .p-track { background: rgba(255,255,255,.18); }
+#player .p-fill { border-radius: 3px; box-shadow: 0 0 10px rgba(236,40,46,.6); }
+
+/* Pop-ups: always in the page, slid out of view until shown. */
+#player .p-skip, #player .p-upnext, #player .p-settings, #player .p-eps { animation: none; visibility: hidden; pointer-events: none; }
+#player .p-skip.show, #player .p-upnext.show, #player .p-settings.show, #player .p-eps.show { visibility: visible; pointer-events: auto; }
+#player .p-skip, #player .p-upnext {
+  opacity: 0; transform: translateX(calc(100% + 40px)); backdrop-filter: none; background: rgba(20,13,14,.9);
+  transition: transform .48s var(--pe), opacity .32s var(--pe), bottom .42s var(--pe), background .2s, visibility 0s linear .48s;
+}
+#player .p-skip { border-radius: 12px; border: 1px solid rgba(255,255,255,.18); }
+#player .p-skip.show, #player .p-upnext.show { opacity: 1; transform: none; transition: transform .48s var(--pe), opacity .32s var(--pe), bottom .42s var(--pe), background .2s, visibility 0s; }
+#player .p-skip.show:hover { background: rgba(44,28,29,.96); }
+#player .p-skip.show:active { transform: scale(.95); transition-duration: .1s; }
+#player.idle .p-skip, #player.idle .p-upnext { bottom: 56px; }
+#player .p-settings, #player .p-eps {
+  opacity: 0; transform: translateY(16px) scale(.97);
+  transition: transform .36s var(--pe), opacity .24s var(--pe), visibility 0s linear .36s;
+}
+#player .p-settings { transform-origin: bottom right; }
+#player .p-settings.show, #player .p-eps.show { opacity: 1; transform: none; transition: transform .36s var(--pe), opacity .24s var(--pe), visibility 0s; }

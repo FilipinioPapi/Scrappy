@@ -55,8 +55,8 @@ el.innerHTML = `
     <button class="p-btn" data-act="exit" title="Back (Esc)" aria-label="Back">${ICONS.back}</button>
     <div class="p-title"><div class="p-t1"></div><div class="p-t2"></div></div>
   </div>
-  <button class="p-skip" data-act="skip" hidden>${ICONS.skip}<span>Skip Intro</span><i class="p-skip-bar"></i></button>
-  <div class="p-upnext" hidden>
+  <button class="p-skip" data-act="skip" aria-hidden="true" tabindex="-1">${ICONS.skip}<span>Skip Intro</span><i class="p-skip-bar"></i></button>
+  <div class="p-upnext" aria-hidden="true">
     <div class="p-up-main">
       <div class="p-up-thumb"></div>
       <div class="p-up-text">
@@ -79,7 +79,7 @@ el.innerHTML = `
       <div class="p-pi-meta"></div>
     </div>
   </div>
-  <div class="p-eps" hidden>
+  <div class="p-eps" aria-hidden="true">
     <div class="p-eps-head"><b class="p-eps-show"></b><div class="p-eps-tabs"></div></div>
     <div class="p-eps-row"></div>
   </div>
@@ -93,7 +93,7 @@ el.innerHTML = `
       </div>
     </div>
   </div>
-  <div class="p-settings" hidden>
+  <div class="p-settings" aria-hidden="true">
     <div class="p-set-head"><b>Playback settings</b><span class="p-set-scope"></span></div>
     <label>Audio<select data-set="audio"></select></label>
     <label>Subtitles<select data-set="sub"></select></label>
@@ -123,7 +123,7 @@ el.innerHTML = `
     </div>
     <div class="p-row">
       <button class="p-pill" data-act="rew" title="Skip back (←)"></button>
-      <button class="p-play" data-act="pause" title="Play/Pause (Space)" aria-label="Play or pause"></button>
+      <button class="p-play" data-act="pause" title="Play/Pause (Space)" aria-label="Play or pause"><span class="i-pause">${ICONS.pause}</span><span class="i-play">${ICONS.play}</span></button>
       <button class="p-pill" data-act="fwd" title="Skip forward (→)"></button>
       <div class="p-spacer"></div>
       <button class="p-btn p-epsbtn" data-act="eps" title="Episodes (E)" hidden>${ICONS.eps}<span>Episodes</span></button>
@@ -138,6 +138,13 @@ el.innerHTML = `
   </div>`;
 document.body.appendChild(el);
 const $ = (s) => el.querySelector(s);
+// Pop-ups slide in and back out (instead of popping on and off).
+function reveal(sel, on) {
+  const n = $(sel);
+  n.classList.toggle('show', !!on);
+  n.setAttribute('aria-hidden', String(!on));
+  n.inert = !on;
+}
 
 const fmt = (t) => {
   t = Math.max(0, Math.floor(t || 0));
@@ -331,13 +338,7 @@ function bounce(b) {
 }
 
 function drawButtons() {
-  const playBtn = $('[data-act=pause]');
-  const playIcon = S.paused ? ICONS.play : ICONS.pause;
-  if (playBtn.dataset.icon !== playIcon) {
-    if (playBtn.dataset.icon) bounce(playBtn);
-    playBtn.dataset.icon = playIcon;
-    playBtn.innerHTML = playIcon;
-  }
+  $('[data-act=pause]').classList.toggle('is-paused', S.paused);
   setHTML('[data-act=mute]', S.muted || S.volume === 0 ? ICONS.muted : ICONS.vol);
   setHTML('[data-act=fs]', S.fullscreen ? ICONS.fsExit : ICONS.fs);
   setText('[data-act=rew]', `−${skipBack()}`);
@@ -412,7 +413,7 @@ function showSkip(mode) {
   if (skipMode === mode) return;
   skipMode = mode;
   $('.p-skip span').textContent = mode === 'intro' ? 'Skip Intro' : 'Skip Credits';
-  $('.p-skip').hidden = !mode;
+  reveal('.p-skip', !!mode);
 }
 
 function checkMarkers() {
@@ -484,7 +485,7 @@ function liftSubs(up, instant = false) {
   subGoal = goal;
   cancelAnimationFrame(subRaf); subRaf = 0;
   if (instant) { subPos = goal; setProp('sub-pos', goal); return; }
-  const from = subPos, t0 = performance.now(), len = 260;
+  const from = subPos, t0 = performance.now(), len = 420;
   cancelAnimationFrame(subRaf);
   const step = () => {
     const k = Math.min(1, (performance.now() - t0) / len);
@@ -503,14 +504,20 @@ function wake() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     if (!S.paused && !S.dragging && !S.settingsOpen && !S.epsOpen && !S.stillOpen && !el.querySelector('.p-bottom:hover, .p-top:hover, .p-eps:hover')) setIdle(true);
-  }, 3000);
+  }, 1500);
   schedulePauseInfo();
 }
 el.addEventListener('mousemove', wake);
+// Mouse left the window: hide the controls straight away.
+document.documentElement.addEventListener('mouseleave', () => {
+  if (!S.open || S.paused || S.dragging || S.settingsOpen || S.epsOpen || S.stillOpen) return;
+  clearTimeout(idleTimer);
+  setIdle(true);
+});
 
 function toggleSettings(force) {
   S.settingsOpen = force ?? !S.settingsOpen;
-  $('.p-settings').hidden = !S.settingsOpen;
+  reveal('.p-settings', S.settingsOpen);
   if (S.settingsOpen) drawSettings();
   drawButtons();
   wake();
@@ -633,7 +640,7 @@ function showUpNext(mode) {
   $('.p-up-count').textContent = count;
   $('[data-act=up-cancel]').textContent = mode === 'credits' ? 'Watch credits' : 'Cancel';
   if (!S.embedded) { playNext(); return true; }
-  $('.p-upnext').hidden = false;
+  reveal('.p-upnext', true);
   S.upNextTimer = setInterval(() => {
     count--;
     $('.p-up-count').textContent = count;
@@ -646,7 +653,7 @@ function hideUpNext() {
   clearInterval(S.upNextTimer);
   S.upNextTimer = null;
   S.upNextMode = null;
-  $('.p-upnext').hidden = true;
+  reveal('.p-upnext', false);
 }
 
 // auto: started by the countdown rather than by you.
@@ -953,7 +960,7 @@ async function loadPreviews(itemId) {
 
 function toggleEps(force) {
   S.epsOpen = force ?? !S.epsOpen;
-  $('.p-eps').hidden = !S.epsOpen;
+  reveal('.p-eps', S.epsOpen);
   if (S.epsOpen) drawEps(S.item?.SeasonId);
   drawButtons();
   if (force === undefined) wake();
