@@ -542,6 +542,9 @@ fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String>
         // Arrow-key skips land exactly where you asked, not on the nearest keyframe.
         ("hr-seek", "yes".into()),
         ("sub-auto", "fuzzy".into()),
+        // mpv's own first choice is English subtitles (the page then makes sure it's
+        // a full English track, or your own pick for the show).
+        ("slang", "en,eng,english".into()),
         ("cache", "yes".into()),
         ("demuxer-max-bytes", "150MiB".into()),
         ("user-agent", "Scrappy/mpv".into()),
@@ -655,6 +658,10 @@ async fn play(
     let _ = player.set_property("force-media-title", &title);
     let _ = player.set_property("title", &format!("{title} - Scrappy Media Center"));
     let _ = player.set_property("pause", "no");
+    // Track picks from the last video must not carry over to this one (a subtitle
+    // number that was English there can be German here). The page picks again.
+    let _ = player.set_property("sid", "auto");
+    let _ = player.set_property("aid", "auto");
     player.command(&["loadfile", &target.url, "replace"])?;
 
     Ok(json!({

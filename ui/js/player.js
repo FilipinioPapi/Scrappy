@@ -222,43 +222,52 @@ function matchTrack(type, ref) {
   }
   return findTrack(type, ref);
 }
+// A subtitle track's language, from its language tag or else the first word of its title.
+const subLang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
 function pickTracks() {
   if (!S.pick || S.defaults === undefined || !S.tracks.length) return;
   const w = wanted();
   const tp = loadTrackPrefs();
-  S.subWhy = tp.sub ? 'your last pick for this show' : (S.defaults?.subKnown ? 'Emby\'s default for you' : 'the video\'s default');
   if (S.pick.audio) {
     if (!w.audio) S.pick.audio = false;
     else { const t = matchTrack('audio', w.audio); if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.wantAid = t.id; S.pick.audio = false; } }
   }
-  if (S.pick.sub) {
-    if (!w.sub) S.pick.sub = false;
-    else if (w.sub === 'off' && (tp.sub || !hasMySubs())) { if (S.sid != null) setProp('sid', 'no'); }
-    else {
-      let t = w.sub === 'off' ? null : matchTrack('sub', w.sub), done = !!t;
-      // Not your own pick: always start on a full English subtitle track when there is one
-      // (never a German or "forced" one). Subtitle files can arrive late, so keep looking
-      // for one until the lookout ends.
-      if (!tp.sub) {
-        const lang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
-        const mine = SUB_LANG;
-        if (!t || lang(t) !== mine || t.forced) {
-          const alt = S.tracks.find((x) => x.type === 'sub' && !x.forced && lang(x) === mine);
-          if (alt) { t = alt; done = true; S.subWhy = 'English subtitles first'; }
-          else done = false;
-        }
-      }
-      if (t) { if (t.id !== S.sid) setProp('sid', t.id); S.lastSid = t.id; }
-      if (done) S.pick.sub = false;
-    }
+  if (!S.pick.sub) return;
+  const use = (t) => { if (t.id !== S.sid) setProp('sid', t.id); S.lastSid = t.id; };
+  const off = () => { if (S.sid != null) setProp('sid', 'no'); };
+  if (tp.sub) {
+    // Your own pick for this show wins. "Off" is held off for the whole lookout.
+    S.subWhy = 'your last pick for this show';
+    if (tp.sub === 'off') { off(); return; }
+    const t = matchTrack('sub', tp.sub);
+    if (t) { use(t); S.pick.sub = false; }
+    return;
   }
-}
-// Is there a full English subtitle track?
-function hasMySubs() {
-  const lang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
-  return S.tracks.some((x) => x.type === 'sub' && !x.forced && lang(x) === SUB_LANG);
+  // Otherwise: a full (not forced) English track, always, whatever the file or Emby
+  // would pick. Subtitle files can arrive a few seconds late, so keep looking.
+  const english = S.tracks.find((x) => x.type === 'sub' && !x.forced && subLang(x) === SUB_LANG);
+  if (english) { use(english); S.subWhy = 'English subtitles first'; S.pick.sub = false; return; }
+  // No full English track (yet): only keep an English one Emby picked (like forced
+  // English for foreign bits), never a German or other-language track.
+  const d = w.sub && w.sub !== 'off' ? matchTrack('sub', w.sub) : null;
+  if (d && subLang(d) === SUB_LANG) { use(d); S.subWhy = 'Emby\'s default for you'; }
+  else { off(); S.subWhy = 'no English subtitles found'; }
 }
 function stopPicking() { S.pick = null; }
+
+// One-time clean-up: forget saved subtitle picks that aren't English, so every show
+// starts on English again. Picks of "Off" and English ones are kept.
+try {
+  if (!ls.get('subFix2')) {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('tracks:')) continue;
+      const v = ls.json(k);
+      if (v?.sub && v.sub !== 'off' && langOf(v.sub.lang) !== SUB_LANG) { delete v.sub; ls.set(k, JSON.stringify(v)); }
+    }
+    ls.set('subFix2', '1');
+  }
+} catch {}
 
 // ---------- Drawing ----------
 
