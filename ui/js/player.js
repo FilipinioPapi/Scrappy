@@ -233,9 +233,14 @@ function wanted() {
     sub: p.sub || (d.subKnown ? (d.sub || 'off') : null),
   };
 }
-// Languages come as 'en', 'eng' or 'English' depending on where they're from.
-const LANGS = { en: 'en', eng: 'en', english: 'en', de: 'de', ger: 'de', deu: 'de', german: 'de', fr: 'fr', fre: 'fr', fra: 'fr', french: 'fr', es: 'es', spa: 'es', spanish: 'es', it: 'it', ita: 'it', ja: 'ja', jpn: 'ja', japanese: 'ja' };
-const langOf = (l) => { const k = String(l || '').toLowerCase().trim(); return LANGS[k] || k; };
+// Languages come as 'en', 'eng', 'English' or with a region like 'en-US' depending on
+// where they're from. Emby says 'eng'; mpv says 'en-US' for newer files (Dark), so the
+// region is dropped before comparing.
+const LANGS = { eng: 'en', english: 'en', ger: 'de', deu: 'de', german: 'de', fre: 'fr', fra: 'fr', french: 'fr', spa: 'es', spanish: 'es', ita: 'it', italian: 'it', jpn: 'ja', japanese: 'ja', por: 'pt', portuguese: 'pt', dut: 'nl', nld: 'nl', dutch: 'nl', swe: 'sv', swedish: 'sv', nor: 'no', nob: 'no', norwegian: 'no', dan: 'da', danish: 'da', fin: 'fi', finnish: 'fi', pol: 'pl', polish: 'pl', rus: 'ru', russian: 'ru', kor: 'ko', korean: 'ko', chi: 'zh', zho: 'zh', chinese: 'zh', ara: 'ar', arabic: 'ar', hin: 'hi', hindi: 'hi', tur: 'tr', turkish: 'tr' };
+const langOf = (l) => {
+  const k = String(l || '').toLowerCase().trim().split(/[-_]/)[0];
+  return LANGS[k] || k;
+};
 const SUB_LANG = 'en'; // your subtitle language
 const sameLang = (a, b) => !a || !b || langOf(a) === langOf(b);
 function matchTrack(type, ref) {
@@ -284,10 +289,14 @@ function pickTracks() {
   if (w.sub && w.sub !== 'off') {
     S.subWhy = 'Emby\'s default';
     const t = matchTrack('sub', w.sub); // an external file can arrive a few seconds late
-    if (t) { use(t); S.pick.sub = false; }
-    return;
+    if (t) { use(t); S.pick.sub = false; return; }
+    // Subtitles inside the video are all there from the start, so if Emby's pick can't be
+    // found among them, fall back to the video's own default now rather than leaving the
+    // choice to the player (which goes for forced subtitles in the audio's language).
+    if (w.sub.external) return;
   }
-  const fileDefault = !w.sub && S.tracks.find((x) => x.type === 'sub' && x.default);
+  const subs = S.tracks.filter((x) => x.type === 'sub');
+  const fileDefault = (!w.sub || w.sub !== 'off') && (subs.find((x) => x.default && !x.forced) || subs.find((x) => x.default));
   if (fileDefault) { use(fileDefault); S.subWhy = 'the video\'s default'; S.pick.sub = false; return; }
   S.subWhy = w.sub === 'off' ? 'Emby\'s default (off)' : 'the video\'s default (none)';
   off();
@@ -302,16 +311,17 @@ function holdSubs() {
 const letGoOfSubs = () => { S.subTarget = null; if (S.pick) S.pick.sub = false; };
 
 // One-time clean-up: forget saved subtitle picks, so every show starts again on
-// its own default subtitles.
+// its own default subtitles. (Run again after the 'en-US' language fix: before it,
+// turning subtitles on with C could save the wrong language as your pick.)
 try {
-  if (!ls.get('subFix3')) {
+  if (!ls.get('subFix4')) {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
       if (!k || !k.startsWith('tracks:')) continue;
       const v = ls.json(k);
       if (v?.sub) { delete v.sub; ls.set(k, JSON.stringify(v)); }
     }
-    ls.set('subFix3', '1');
+    ls.set('subFix4', '1');
   }
 } catch {}
 
