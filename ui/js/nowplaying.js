@@ -206,10 +206,12 @@ function drawQueue() {
 
 // ---------- Lyrics ----------
 let lyr = { id: null, lines: [], synced: false };
+// Scrolling the lyrics yourself stops them following the song; right-click (or the hint) follows again.
+let freeScroll = false;
 async function loadLyrics() {
   const s = current(); const box = el.querySelector('#lyr'); if (!s || !box) return;
   if (lyr.id !== s.id) {
-    lyr = { id: s.id, lines: [], synced: false };
+    lyr = { id: s.id, lines: [], synced: false }; freeScroll = false;
     try {
       const r = await nd('getLyricsBySongId', { id: s.id });
       const list = r.lyricsList?.structuredLyrics || [];
@@ -236,7 +238,23 @@ async function loadLyrics() {
       if (current()?.id === s.id) { lyr = { id: s.id, ...got }; loadLyrics(); }
     } catch (err) { b.disabled = false; b.querySelector('span').textContent = 'Try again'; const m = b2.querySelector('#lyrMsg'); if (m) m.textContent = String(err?.message || err); }
   });
-  b2.onclick = (e) => { const p = e.target.closest('[data-li]'); if (p && lyr.synced) seek(lyr.lines[+p.dataset.li].t); };
+  b2.onclick = (e) => {
+    const p = e.target.closest('[data-li]'); if (p && lyr.synced) { seek(lyr.lines[+p.dataset.li].t); follow(b2); }
+  };
+  if (lyr.synced && lyr.lines.length) {
+    b2.parentElement.querySelector('.lyr-hint')?.remove();
+    b2.insertAdjacentHTML('afterend', '<button type="button" class="lyr-hint" hidden>Right-click to follow the song again</button>');
+    const hint = b2.nextElementSibling;
+    hint.onclick = () => follow(b2);
+    const loose = () => { if (!freeScroll) { freeScroll = true; hint.hidden = false; } };
+    b2.addEventListener('wheel', loose, { passive: true });
+    b2.addEventListener('touchmove', loose, { passive: true });
+    b2.addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) loose(); });
+    // Dragging the scrollbar (a press to the right of the text area).
+    b2.addEventListener('mousedown', (e) => { if (e.offsetX > b2.clientWidth) loose(); });
+    b2.oncontextmenu = (e) => { e.preventDefault(); follow(b2); };
+  }
+  if (freeScroll) b2.parentElement.querySelector('.lyr-hint')?.removeAttribute('hidden');
   lastLi = -1; lyricTick();
 }
 // Lyrics found online are kept on this PC, per song.
@@ -256,6 +274,11 @@ function parseFound(r) {
   const txt = r?.plainLyrics || '';
   return { synced: false, lines: txt.trim() ? txt.split(/\r?\n/).map((v) => ({ t: null, v })) : [] };
 }
+function follow(box) {
+  freeScroll = false;
+  const h = box.parentElement?.querySelector('.lyr-hint'); if (h) h.hidden = true;
+  lastLi = -1; lyricTick();
+}
 let lastLi = -1;
 function lyricTick() {
   if (!lyr.synced || current()?.id !== lyr.id) return;
@@ -267,6 +290,7 @@ function lyricTick() {
   p.classList.add('on');
   // Measure the line inside the lyrics box itself. offsetTop counts from the whole right-hand panel,
   // so with the visualizer above it the current line was scrolled up out of sight.
+  if (freeScroll) return;
   const y = p.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
   box.scrollTo({ top: y - box.clientHeight / 2 + p.offsetHeight / 2, behavior: 'smooth' });
 }

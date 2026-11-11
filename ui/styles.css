@@ -2957,3 +2957,9 @@ a.rq-link { color: var(--text); font-weight: 600; }
   mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.2) 32%, rgba(0,0,0,.85) 65%, #000 100%), linear-gradient(#000 50%, transparent 94%);
   mask-composite: intersect;
 }
+
+/* Lyrics: shown when you've scrolled away from the current line */
+.mn-right { position: relative; }
+.lyr-hint { position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%); z-index: 2; white-space: nowrap; padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: rgba(30,20,21,.92); backdrop-filter: blur(8px); color: var(--text); font: 600 13px Inter, sans-serif; cursor: pointer; box-shadow: 0 8px 20px rgba(0,0,0,.4); }
+.lyr-hint[hidden] { display: none; }
+.lyr-hint:hover { border-color: #5a3a3b; }
