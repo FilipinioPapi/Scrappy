@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 26 · Nov 11, 2:55 AM
+**Home**
+- Edit home: dragging rows to reorder now works
+
+<sub>Built from 9d13aa2 · includes: Home</sub>
+
 ### Preview 25 · Nov 11, 2:20 AM
 **App-wide**
 - Moving between pages (episodes, shows, menus) no longer flashes a blank page or a spinner: the old page stays until the new one is ready
