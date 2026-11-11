@@ -16,10 +16,13 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 - Smart home rows show up instantly when you switch tabs, with no flicker or reshuffling. They refresh every 30 minutes
 - Because you played shows real artist pictures and album counts, and leaves out artists with no albums in your library
 - On repeat shows an album once instead of repeating its cover for each song
-- Smart rows load in the background, so covers and the page you open co<sub>Built from cb15c91 · includes: page changes, Home, Music</sub>icate artists
+- Smart rows load in the background, so covers and the page you open come first
+
+**Music**
+- Because you played no longer shows empty duplicate artists
 - Back on an artist or genre page returns to where you came from
 
-<sub>Built from b19a6b9 · includes: page changes, Home, Music</sub>
+<sub>Built from cb15c91 · includes: page changes, Home, Music</sub>
 
 ### Preview 24 · Nov 11, 1:10 AM
 **Home**
