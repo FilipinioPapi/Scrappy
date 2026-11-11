@@ -335,25 +335,88 @@ EXTRA.playlist = async (v, id) => {
   // ----- Recommended songs: similar-vibe songs to add, 10 at a time -----
   const recBox = main.querySelector('#plRec');
   const REFRESH = line('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>', 15);
-  let recPool = [], recOff = 0;
-  const recShown = () => { const have = new Set(songs.map((x) => x.id)); return recPool.filter((x) => !have.has(x.id)); };
+  let recPool = [], recOff = 0, recF = 'best', favPool = null;
+  const CHIPS = [['best', 'Best match'], ['artists', 'Same artists'], ['genres', 'Same genres'], ['unplayed', 'New to you'], ['fav', 'Your favorites']];
+  const recShown = () => {
+    const have = new Set(songs.map((x) => x.id));
+    const arts = new Set(songs.map((x) => x.artist).filter(Boolean)), gens = new Set(songs.map((x) => x.genre).filter(Boolean));
+    const ok = { best: () => true, artists: (x) => arts.has(x.artist), genres: (x) => gens.has(x.genre), unplayed: (x) => !x.playCount, fav: () => true }[recF];
+    return (recF === 'fav' ? favPool || [] : recPool).filter((x) => !have.has(x.id) && ok(x));
+  };
+  const plays = (x) => (x.playCount ? `${x.playCount.toLocaleString()} play${x.playCount === 1 ? '' : 's'}` : 'New to you');
+  const ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
   const drawRec = (anim) => {
+    if (!recPool.length && recF === 'best') { recBox.innerHTML = ''; return; }
     const left = recShown();
-    if (!left.length) { recBox.innerHTML = ''; return; }
     if (recOff >= left.length) recOff = 0;
     const pick = left.slice(recOff, recOff + 10);
+    const empty = recF === 'fav' && !favPool ? 'Loading your favorites…' : { artists: 'No more songs from these artists right now.', genres: 'No more songs from these genres right now.', unplayed: "You've played everything here. Try Refresh or another filter.", fav: 'No favorites left that aren’t already in this playlist.' }[recF] || 'Nothing to suggest right now.';
     recBox.innerHTML = `<section class="plrec"><div class="plrec-h"><div><h2>Recommended songs</h2><div class="t2">${songs.length ? 'Based on what is in this playlist' : 'Your most played songs, to get you started'}</div></div>
+      ${pick.length ? `<button type="button" class="plrefresh" id="plRecAll">${ADD}<span>Add all ${pick.length}</span></button>` : ''}
       <button type="button" class="plrefresh" id="plRecRefresh">${REFRESH}<span>Refresh</span></button></div>
-      <div class="plrec-l${anim ? ' swap' : ''}">${pick.map((x) => `<div class="plrec-it" data-id="${esc(x.id)}"><button type="button" class="plrec-cv" aria-label="Play">${coverHtml(x.coverArt, '', 100, 'sm')}<span class="pp">${IC.play}</span></button>
-        <div class="qt"><div class="t1">${esc(x.title)}</div><div class="t2">${esc(x.artist || '')}</div></div><span class="t2 plrec-al">${esc(x.album || '')}</span><span class="t2 plrec-d">${fmt(x.duration || 0)}</span>
-        <button type="button" class="plrec-add" title="Add to this playlist">${MI.plus}<span>Add</span></button></div>`).join('')}</div></section>`;
-    recBox.querySelector('#plRecRefresh').onclick = () => { recOff += 10; if (recOff >= recShown().length) { recOff = 0; recPool = shuffleArr(recPool); } drawRec(true); };
+      <div class="plrec-chips">${CHIPS.map(([k, n]) => `<button type="button" class="plchip${k === recF ? ' on' : ''}" data-rf="${k}">${n}</button>`).join('')}</div>
+      <div class="plrec-it plrec-hd"><span></span><span>Title</span><span>Album</span><span>Genre</span><span class="r">Your plays</span><span class="r">Time</span><span></span></div>
+      <div class="plrec-l${anim ? ' swap' : ''}">${pick.length ? pick.map((x) => `<div class="plrec-it" data-id="${esc(x.id)}"><button type="button" class="plrec-cv${prev.id === x.id ? ' on' : ''}" aria-label="Preview" title="Preview">${coverHtml(x.coverArt, '', 100, 'sm')}<span class="pp">${prev.id === x.id ? IC.pause : IC.play}</span></button>
+        <div class="qt"><div class="t1">${esc(x.title)}</div>${x.artistId ? `<a class="t2 lk" href="${href('artist', x.artistId)}">${esc(x.artist || '')}</a>` : `<div class="t2">${esc(x.artist || '')}</div>`}</div>
+        <div class="qt">${x.albumId ? `<a class="lk plrec-al" href="${href('album', x.albumId)}?song=${encodeURIComponent(x.id)}">${esc(x.album || '')}</a>` : `<span class="plrec-al">${esc(x.album || '')}</span>`}${x.year ? `<div class="t2 yr">${x.year}</div>` : ''}</div>
+        <span>${x.genre ? `<a class="lk" href="#/music/genre/${encodeURIComponent(x.genre)}">${esc(x.genre)}</a>` : ''}</span>
+        <span class="r nw">${plays(x)}</span><span class="r plrec-d">${fmt(x.duration || 0)}</span>
+        <button type="button" class="plrec-add" title="Add to this playlist" aria-label="Add to this playlist">${ADD}</button></div>`).join('') : `<div class="t2 plrec-empty">${empty}</div>`}</div></section>`;
+    recBox.querySelector('#plRecRefresh').onclick = () => { recOff += 10; if (recOff >= recShown().length) { recOff = 0; recPool = shuffleArr(recPool); if (favPool) favPool = shuffleArr(favPool); } drawRec(true); };
+    const all = recBox.querySelector('#plRecAll');
+    if (all) all.onclick = () => {
+      recBox.querySelectorAll('.plrec-l .plrec-it').forEach((r) => r.classList.add('gone'));
+      setTimeout(() => { songs.push(...pick); drawTable(); save(); drawRec(true); toast(`Added ${pick.length} song${pick.length === 1 ? '' : 's'}.`); }, 260);
+    };
+    recBox.querySelectorAll('[data-rf]').forEach((b) => (b.onclick = async () => {
+      if (recF === b.dataset.rf) return;
+      recF = b.dataset.rf; recOff = 0; drawRec(true);
+      if (recF === 'fav' && !favPool) {
+        const r = await nd('getStarred2').catch(() => null);
+        favPool = shuffleArr(r?.starred2?.song || []);
+        if (alive() && recF === 'fav') drawRec(true);
+      }
+    }));
   };
+  // Preview: a short bit from the middle of the song, without touching the queue.
+  const prev = { id: null, a: null, unhush: null, to: 0 };
+  const stopPrev = () => {
+    clearTimeout(prev.to);
+    if (prev.a) { prev.a.pause(); prev.a.removeAttribute('src'); prev.a.load(); }
+    prev.unhush?.(); prev.unhush = null;
+    const was = prev.id; prev.id = null;
+    const cv = was && recBox.querySelector(`.plrec-it[data-id="${CSS.escape(was)}"] .plrec-cv`);
+    if (cv) { cv.classList.remove('on'); cv.querySelector('.pp').innerHTML = IC.play; }
+  };
+  const startPrev = async (x, cv) => {
+    stopPrev();
+    const { invoke } = window.__TAURI__.core;
+    prev.id = x.id; cv.classList.add('on'); cv.querySelector('.pp').innerHTML = IC.pause;
+    if (!prev.unhush) {
+      try {
+        const [p, idle] = await Promise.all([invoke('music_get', { name: 'pause' }), invoke('music_get', { name: 'idle-active' })]);
+        if (p === false && idle === false) { await invoke('music_command', { args: ['set', 'pause', 'yes'] }); prev.unhush = () => invoke('music_command', { args: ['set', 'pause', 'no'] }).catch(() => {}); }
+      } catch {}
+    }
+    if (prev.id !== x.id) return;
+    const a = prev.a || (prev.a = new Audio());
+    const at = Math.floor((x.duration || 0) * 0.35);
+    let tried = false;
+    a.onloadedmetadata = () => { if (!tried) { try { a.currentTime = at; } catch {} } };
+    a.onerror = () => { if (tried || prev.id !== x.id) return; tried = true; invoke('nd_snippet_url', { id: x.id, at, raw: false }).then((u) => { if (prev.id === x.id) { a.src = u; a.play().catch(() => {}); } }).catch(stopPrev); };
+    a.onended = stopPrev;
+    try { a.src = await invoke('nd_snippet_url', { id: x.id, at, raw: true }); a.volume = 0.9; await a.play(); } catch {}
+    prev.to = setTimeout(stopPrev, 30000);
+  };
+  const leave = () => { stopPrev(); window.removeEventListener('hashchange', leave); };
+  window.addEventListener('hashchange', leave);
   recBox.addEventListener('click', (e) => {
-    const it = e.target.closest('.plrec-it'); if (!it) return;
-    const x = recPool.find((y) => y.id === it.dataset.id); if (!x) return;
-    if (e.target.closest('.plrec-cv')) { playSongs([x], 0, { shuffle: false }); return; }
+    const it = e.target.closest('.plrec-it'); if (!it || !it.dataset.id) return;
+    const x = recPool.find((y) => y.id === it.dataset.id) || favPool?.find((y) => y.id === it.dataset.id); if (!x) return;
+    const cv = e.target.closest('.plrec-cv');
+    if (cv) { if (prev.id === x.id) stopPrev(); else startPrev(x, cv); return; }
     if (!e.target.closest('.plrec-add')) return;
+    if (prev.id === x.id) stopPrev();
     it.classList.add('gone');
     setTimeout(() => { songs.push(x); drawTable(); save(); drawRec(false); toast(`Added "${x.title}".`); }, 260);
   });
