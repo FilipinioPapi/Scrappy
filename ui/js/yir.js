@@ -44,7 +44,10 @@ function peak(h24) {
   return { from: bi, to: (bi + 3) % 24, hi, lo };
 }
 const clockWord = (h, tv) => (h >= 5 && h < 12 ? 'EARLY BIRD' : h >= 12 && h < 17 ? 'AFTERNOONS' : h >= 17 && h < 21 ? (tv ? 'PRIME TIME' : 'EVENINGS') : 'AFTER DARK');
-const collage = (urls) => { const pos = [[0, 40, -8], [150, 0, 4], [300, 50, -3], [60, 220, 6], [250, 230, -6]]; return urls.slice(0, 5).map((u, j) => `${u};left:${pos[j][0]}px;top:${pos[j][1]}px;transform:rotate(${pos[j][2]}deg)`); };
+// No picture twice: keep the first of each (same album cover, same poster).
+const uniq = (list, key = (x) => x) => { const seen = new Set(); return list.filter((x) => { const k = key(x); if (!k || seen.has(k)) return false; seen.add(k); return true; }); };
+const fan3 = (list) => uniq(list, (f) => f.k || f.url || f.seed).slice(0, 3);
+const collage = (urls) => { urls = uniq(urls); const pos = [[0, 40, -8], [150, 0, 4], [300, 50, -3], [60, 220, 6], [250, 230, -6]]; return urls.slice(0, 5).map((u, j) => `${u};left:${pos[j][0]}px;top:${pos[j][1]}px;transform:rotate(${pos[j][2]}deg)`); };
 const share = (m, n = 5) => { const l = [...mergeGenres(m).entries()].sort((a, b) => b[1] - a[1]); const tot = l.reduce((a, x) => a + x[1], 0) || 1; return l.slice(0, n).map(([g, t]) => [g, Math.round((t / tot) * 100)]); };
 const genreLine = (g) => {
   const s = String(g || '').toLowerCase();
@@ -115,7 +118,7 @@ async function absYear(raw, y) {
     { k: 'LONGEST STREAK', v: plural(streak, 'day') },
   ].filter(Boolean).slice(0, 4), q: genreLine(gs[0][0]) });
   const card = {
-    fan: tb.slice(0, 3).map((b) => ({ url: cover(b.id), seed: b.title })), po: false,
+    fan: fan3(tb.map((b) => ({ url: cover(b.id), seed: b.title }))), po: false,
     av: { url: aImg[ta[0]?.k] || '', seed: ta[0]?.k || '', ini: ini(ta[0]?.k), name: ta[0]?.k || '', pp: false },
     h1: 'TOP BOOKS', L1: rows(tb.map((b) => b.title)), h2: 'TOP AUTHORS', L2: rows(ta.map((a) => a.k)),
     stats: [['HOURS', n0(hrs)], ['FINISHED', plural(fin.length, 'book').toUpperCase()], ['TOP GENRE', (gs[0]?.[0] || '—').toUpperCase()], ['BEST STREAK', plural(streak, 'day').toUpperCase()]],
@@ -151,8 +154,8 @@ function musicYear(raw, y) {
   L.forEach((x) => {
     const d = new Date(x.t); mon[d.getMonth()] += x.d; h24[d.getHours()] += x.d || 180;
     dayT.set(dkey(x.t), (dayT.get(dkey(x.t)) || 0) + x.d);
-    const s = bump(songs, x.id, 1, () => ({ ti: x.ti, ar: x.ar, cv: x.cv, al: x.al, hrs: new Array(24).fill(0) })); s.hrs[d.getHours()]++;
-    bump(albums, x.alId, 1, () => ({ name: x.al, ar: x.ar, cv: x.cv }));
+    const s = bump(songs, x.id, 1, () => ({ ti: x.ti, ar: x.ar, cv: x.cv, al: x.al, alId: x.alId, hrs: new Array(24).fill(0) })); s.hrs[d.getHours()]++;
+    bump(albums, x.alId, 1, () => ({ id: x.alId, name: x.al, ar: x.ar, cv: x.cv }));
     const a = bump(artists, x.ar, 1, () => ({ id: x.arId, secs: 0, days: new Set() })); if (a) { a.secs += x.d; a.days.add(dkey(x.t)); }
     if (x.g) genres.set(x.g, (genres.get(x.g) || 0) + 1);
   });
@@ -189,7 +192,7 @@ function musicYear(raw, y) {
   ], q: 'One more for the road.' });
   s.push({ t: 'sum', bg: 'RED', q: 'What a year of tunes.' });
   const card = {
-    fan: tS.slice(0, 3).map((x) => ({ url: ndImg(x.cv, 300), seed: x.al })), po: false,
+    fan: fan3([...tS.map((x) => ({ k: x.alId, url: x.cv && ndImg(x.cv, 300), seed: x.al })), ...tA.map((x) => ({ k: x.id, url: x.cv && ndImg(x.cv, 300), seed: x.name }))]), po: false,
     av: { url: ndImg(ar.id || ar.cv, 300), seed: ar.k, ini: ini(ar.k), name: ar.k, pp: false },
     h1: 'TOP SONGS', L1: rows(tS.map((x) => x.ti)), h2: 'TOP ARTISTS', L2: rows(tR.map((x) => x.k)),
     stats: [['MINUTES', n0(mins)], ['TOP GENRE', (gs[0]?.[0] || '—').toUpperCase()], late || !before.size ? ['ARTISTS', n0(artists.size)] : ['NEW ARTISTS', n0(fresh.size)], ['BEST STREAK', plural(streak, 'day').toUpperCase()]],
@@ -257,7 +260,7 @@ function tvYear(raw, y) {
   s.push({ t: 'sum', bg: 'BLUE', q: 'Great year of watching. Roll credits.' });
   const tm = tMv[0];
   const card = {
-    fan: (tSh.length >= 3 ? tSh.slice(0, 3).map((x) => ({ url: sPoster(x.id), seed: x.name })) : tMv.slice(0, 3).map((m) => ({ url: poster(m.it), seed: m.name }))), po: true,
+    fan: fan3(tSh.length >= 3 ? tSh.map((x) => ({ url: sPoster(x.id), seed: x.name })) : [...tSh.map((x) => ({ url: sPoster(x.id), seed: x.name })), ...tMv.map((m) => ({ url: poster(m.it), seed: m.name }))]), po: true,
     av: tm ? { url: poster(tm.it), seed: tm.name, ini: ini(tm.name), name: tm.name, pp: true } : { url: sPoster(sh?.id), seed: sh?.name, ini: ini(sh?.name), name: sh?.name || '', pp: true },
     h1: 'TOP SHOWS', L1: rows(tSh.map((x) => x.name)), h2: 'TOP MOVIES', L2: rows(tMv.map((m) => m.name)),
     stats: [['HOURS', n0(hrs)], ['EPISODES', n0(epN)], ['MOVIES', n0(mvN)], ['TOP GENRE', (gs[0]?.[0] || '—').toUpperCase()]],
@@ -305,7 +308,7 @@ export async function yirBanner(slot, kind, alive) {
   const past = years.filter((y) => y !== (m && !m.err ? by : 0));
   if (!m && !past.length) { slot.innerHTML = ''; return; }
   const note = !m ? '' : m.err ? (m.err === 'old' ? 'Needs Navidrome 0.59 or newer, which keeps a dated play history.' : "Couldn't read your play history from Navidrome. Open this page again to sign in.") : `Your ${SUBS[kind]} year in about a minute.${early() && new Date().getMonth() !== 11 ? ' Early preview: it shows up for real on December 1.' : ''}`;
-  const fan = m && !m.err ? m.card.fan.map((f, j) => `<i style="${esc(pic(f.url, f.seed))};left:${j * 60}px;transform:rotate(${[-10, 0, 10][j]}deg)${j === 1 ? ';z-index:2' : ''}"></i>`).join('') : '';
+  const fan = m && !m.err ? m.card.fan.map((f, j, a) => { const L = [[60], [30, 90], [0, 60, 120]][a.length - 1], R = [[0], [-6, 6], [-10, 0, 10]][a.length - 1]; return `<i style="${esc(pic(f.url, f.seed))};left:${L[j]}px;transform:rotate(${R[j]}deg)${a.length === 3 && j === 1 ? ';z-index:2' : ''}"></i>`; }).join('') : '';
   slot.innerHTML = `${m ? `<div class="yb${m.err ? ' off' : ''}"${m.err ? '' : ' data-yir="' + by + '" tabindex="0" role="button" aria-label="Play your ' + by + ' Year in Review"'}>
       <div class="yb-yr">${by}</div>
       <div class="yb-t"><b>YOUR YEAR<br>IN REVIEW</b><span>${esc(note)}</span>${m.err ? '' : `<div class="yb-ok">${PLAY}Press OK to play</div>`}</div>
@@ -352,6 +355,7 @@ function right(s) {
 function cardHtml(kind, y, c) {
   const POS = c.po ? [[0, -8, 8], [92, 8, 8], [46, 0, 2]] : [[0, -8, 14], [106, 8, 14], [53, 0, 4]];
   const order = [c.fan[1], c.fan[2], c.fan[0]];
+  if (c.fan.length === 2) { const w = c.po ? 78 : 100, mid = POS[2][0] + w / 2; POS[0] = [mid - w + 12, -6, POS[0][2]]; POS[1] = [mid - 12, 6, POS[1][2]]; order[1] = c.fan[0]; order[2] = null; }
   const fan = order.map((f, p) => (f ? `<i class="${c.po ? 'y-po' : ''}" data-r="${POS[p][1]}" data-s="${esc(f.seed || '')}" style="${esc(pic(f.url, f.seed))};left:${POS[p][0]}px;top:${POS[p][2]}px;transform:rotate(${POS[p][1]}deg)${p === 2 ? ';z-index:2' : ''}"></i>` : '')).join('');
   const list = (h, l) => `<div><h6>${esc(h)}</h6>${l.map((x) => `<div class="y-li${x.f ? ' y-f' : ''}"><span class="y-rk">${x.n}</span><span class="y-nm">${esc(x.t)}</span></div>`).join('')}</div>`;
   const avImg = !!c.av.url;
