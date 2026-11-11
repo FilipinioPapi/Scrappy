@@ -153,7 +153,7 @@ function drawRight() {
   if (mode === 'viz' && !vizShow) setMode(under);
   el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow : b.dataset.mode === (mode === 'viz' ? '' : mode)));
   const key = (vizShow ? (mode === 'viz' ? 'F' : 'V') : 'N') + mode;
-  if (rightKey === null || key === rightKey || !box.firstElementChild || matchMedia('(prefers-reduced-motion: reduce)').matches) { rightKey = key; renderRight(box); return; }
+  if (rightKey === null || key === rightKey || !box.firstElementChild || matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('calm')) { rightKey = key; renderRight(box); return; }
   rightKey = key;
   rightBusy?.cancel();
   const out = box.animate([{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(-10px) scale(.985)', filter: 'blur(3px)' }], { duration: 160, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
@@ -248,11 +248,12 @@ async function loadLyrics() {
     const p = e.target.closest('[data-li]'); if (p && lyr.synced) { seek(lyr.lines[+p.dataset.li].t); follow(b2); }
   };
   if (lyr.synced && lyr.lines.length) {
-    b2.parentElement.querySelector('.lyr-hint')?.remove();
-    b2.insertAdjacentHTML('afterend', '<button type="button" class="lyr-hint" hidden>Right-click to follow the song again</button>');
-    const hint = b2.nextElementSibling;
+    // The hint sits under the lyrics (never on top of them) and slides open smoothly.
+    let hint = b2.parentElement.querySelector('.lyr-hint');
+    if (!hint) { b2.insertAdjacentHTML('afterend', '<button type="button" class="lyr-hint">Right-click to follow the song again</button>'); hint = b2.nextElementSibling; }
+    hint.classList.toggle('show', freeScroll);
     hint.onclick = () => follow(b2);
-    const loose = () => { if (!freeScroll) { freeScroll = true; hint.hidden = false; } };
+    const loose = () => { if (!freeScroll) { freeScroll = true; hint.classList.add('show'); } };
     b2.addEventListener('wheel', loose, { passive: true });
     b2.addEventListener('touchmove', loose, { passive: true });
     b2.addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) loose(); });
@@ -260,7 +261,7 @@ async function loadLyrics() {
     b2.addEventListener('mousedown', (e) => { if (e.offsetX > b2.clientWidth) loose(); });
     b2.oncontextmenu = (e) => { e.preventDefault(); follow(b2); };
   }
-  if (freeScroll) b2.parentElement.querySelector('.lyr-hint')?.removeAttribute('hidden');
+  if (!lyr.synced || !lyr.lines.length) b2.parentElement.querySelector('.lyr-hint')?.remove();
   lastLi = -1; lyricTick();
 }
 // Lyrics found online are kept on this PC, per song.
@@ -282,7 +283,7 @@ function parseFound(r) {
 }
 function follow(box) {
   freeScroll = false;
-  const h = box.parentElement?.querySelector('.lyr-hint'); if (h) h.hidden = true;
+  box.parentElement?.querySelector('.lyr-hint')?.classList.remove('show');
   lastLi = -1; lyricTick();
 }
 let lastLi = -1;

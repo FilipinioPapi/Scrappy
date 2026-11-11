@@ -2960,8 +2960,8 @@ a.rq-link { color: var(--text); font-weight: 600; }
 
 /* Lyrics: shown when you've scrolled away from the current line */
 .mn-right { position: relative; }
-.lyr-hint { position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%); z-index: 2; white-space: nowrap; padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; background: rgba(30,20,21,.92); backdrop-filter: blur(8px); color: var(--text); font: 600 13px Inter, sans-serif; cursor: pointer; box-shadow: 0 8px 20px rgba(0,0,0,.4); }
-.lyr-hint[hidden] { display: none; }
+.lyr-hint { flex: none; align-self: center; display: block; margin: 0 auto; max-height: 0; padding: 0 14px; margin-top: -18px; opacity: 0; transform: translateY(6px); overflow: hidden; white-space: nowrap; border: 0 solid var(--line); border-radius: 999px; background: rgba(30,20,21,.92); color: var(--text); font: 600 13px Inter, sans-serif; cursor: pointer; pointer-events: none; transition: max-height .28s var(--ease, ease), padding .28s var(--ease, ease), margin .28s var(--ease, ease), opacity .22s ease, transform .28s var(--ease, ease); }
+.lyr-hint.show { max-height: 40px; padding: 8px 14px; margin: -6px auto 4px; border-width: 1px; opacity: 1; transform: none; pointer-events: auto; }
 .lyr-hint:hover { border-color: #5a3a3b; }
 
 /* ---------- Audiobook bookmarks (pop-up, Now playing pane, book page, seek bar ticks) ---------- */

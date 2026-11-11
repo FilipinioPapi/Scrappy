@@ -1089,10 +1089,16 @@ async fn serve_nd_cover(state: &AppState, id: &str, parsed: &reqwest::Url) -> Re
     let not_found = || img_response(StatusCode::NOT_FOUND, "text/plain", Vec::new());
     let size = parsed.query_pairs().find(|(k, _)| k == "w").map(|(_, v)| v.to_string()).unwrap_or_else(|| "300".into());
     let file = state.cache_dir.join("img").join(format!("nd_{}_{}", sanitize(id), sanitize(&size)));
-    if let Ok(bytes) = std::fs::read(&file) {
-        return img_response(StatusCode::OK, sniff_mime(&bytes), bytes);
-    }
+    let cached = std::fs::read(&file).ok();
     let cfg = state.cfg();
+    if let Some(bytes) = cached {
+        // An artist picture saved before the album-cover fallback existed can be Navidrome's
+        // grey placeholder: check it once more (the placeholder is fetched once per session).
+        let stale = id.starts_with("ar-") && cfg.nd_logged_in() && nd_artist_placeholder(&state.http, &cfg, &size).await.as_deref() == Some(&bytes[..]);
+        if !stale {
+            return img_response(StatusCode::OK, sniff_mime(&bytes), bytes);
+        }
+    }
     if !cfg.nd_logged_in() {
         return not_found();
     }
@@ -1141,14 +1147,22 @@ async fn nd_artist_placeholder(http: &reqwest::Client, cfg: &Config, size: &str)
 /// use the cover of the artist's most played album instead.
 async fn artist_fallback(state: &AppState, cfg: &Config, id: &str, size: &str, got: Option<Vec<u8>>) -> Option<Vec<u8>> {
     let placeholder = nd_artist_placeholder(&state.http, cfg, size).await;
-    let missing = match (&got, &placeholder) {
+    let mut missing = match (&got, &placeholder) {
         (None, _) => true,
         (Some(b), Some(p)) => b == p,
         _ => false,
     };
-    if !missing { return got; }
     let artist_id = id.trim_start_matches("ar-").split('_').next().unwrap_or("");
     if artist_id.is_empty() { return got; }
+    if !missing {
+        // Last.fm's grey star counts as no picture too (Navidrome passes it through from Last.fm).
+        const LASTFM_STAR: &str = "2a96cbd8b46e442fc41c2b86b821562f";
+        if let Ok(info) = servers::nd_get(&state.http, cfg, "getArtistInfo2", &format!("id={}", servers::enc(artist_id))).await {
+            let i = &info["artistInfo2"];
+            missing = ["smallImageUrl", "mediumImageUrl", "largeImageUrl"].iter().any(|k| i[*k].as_str().map(|u| u.contains(LASTFM_STAR)).unwrap_or(false));
+        }
+    }
+    if !missing { return got; }
     let Ok(v) = servers::nd_get(&state.http, cfg, "getArtist", &format!("id={}", servers::enc(artist_id))).await else { return got };
     let albums = v["artist"]["album"].as_array().cloned().unwrap_or_default();
     let best = albums.iter()
