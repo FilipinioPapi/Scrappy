@@ -1265,17 +1265,22 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
     // Specials go last.
     seasons = [...seasons.filter((s) => s.IndexNumber !== 0), ...seasons.filter((s) => s.IndexNumber === 0)];
     if (!seasons.length) { el.innerHTML = ''; return; }
+    const many = seasons.length > 1;
     const pick =
       seasons.find((s) => s.Id === (selected || wantSeasonId)) ||
       seasons.find((s) => s.IndexNumber !== 0 && s.UserData?.UnplayedItemCount) ||
       seasons[0];
-    selected = pick.Id;
-    const tabs = seasons.length > 1
-      ? `<div class="season-tabs" role="tablist">${seasons.map((s) => `
+    // Shows with more than one season get an "All" tab at the end: every episode in one
+    // long list. The Grid layout opens on it.
+    selected = many && (selected === 'all' || (!selected && view === 'grid')) ? 'all' : pick.Id;
+    const total = seasons.reduce((n, s) => n + (s.ChildCount || 0), 0);
+    const tabs = many
+      ? `<div class="season-tabs" role="tablist">${[...seasons, { Id: 'all', Name: 'All', ChildCount: total }].map((s) => `
           <button class="season-tab ${s.Id === selected ? 'active' : ''}" role="tab" data-season="${esc(s.Id)}" data-name="${esc(s.Name)}">
             ${esc(s.Name)}${s.ChildCount ? `<span class="n">${s.ChildCount}</span>` : ''}
           </button>`).join('')}</div>`
       : '';
+    const seasonName = (id) => (id === 'all' ? 'All episodes' : (seasons.find((s) => s.Id === id) || pick).Name);
     el.innerHTML = `
       <section class="section">
         <div class="section-head"><h2>${seasons.length > 1 ? 'Episodes' : esc(pick.Name || 'Episodes')}</h2><span class="count" id="epCount"></span><span class="spacer"></span>
@@ -1293,15 +1298,15 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       crumbEl.previousElementSibling?.removeAttribute('hidden');
       if (animate) { crumbEl.style.animation = 'none'; void crumbEl.offsetWidth; crumbEl.style.animation = ''; }
     };
-    setCrumb(pick.Name, false);
+    setCrumb(seasonName(selected), false);
     el.querySelectorAll('.season-tab').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.season === selected) return;
       selected = b.dataset.season;
       el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t === b));
       b.classList.add('live');
-      setCrumb(b.dataset.name, true);
+      setCrumb(seasonName(selected), true);
       // Keep the address in step so Back and refresh land on this season.
-      if (crumbEl) history.replaceState(history.state, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`);
+      if (crumbEl && selected !== 'all') history.replaceState(history.state, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`);
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
     }));
     el.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => {
@@ -1310,6 +1315,12 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       localStorage.setItem(viewKey, view);
       el.querySelectorAll('[data-view]').forEach((x) => x.classList.toggle('on', x === b));
       list.className = `episodes view-${view}`;
+      // Picking Grid opens on All.
+      if (view === 'grid' && many && selected !== 'all') {
+        selected = 'all';
+        el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t.dataset.season === 'all'));
+        setCrumb(seasonName(selected), true);
+      }
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
     }));
     renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, false, view);
@@ -1324,8 +1335,15 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
   const my = ++epListToken;
   const alive = () => ctx.alive() && my === epListToken && list.isConnected;
   list.classList.toggle('live', live);
-  await load(`/Shows/${seriesId}/Episodes?SeasonId=${seasonId}&UserId={userId}&Fields=Overview,PrimaryImageAspectRatio`, (data) => {
-    const eps = data?.Items || [];
+  const all = seasonId === 'all';
+  await load(`/Shows/${seriesId}/Episodes?${all ? '' : `SeasonId=${seasonId}&`}UserId={userId}&Fields=Overview,PrimaryImageAspectRatio`, (data) => {
+    let eps = data?.Items || [];
+    // All: specials go last, like the tabs.
+    if (all) eps = [...eps.filter((e) => e.ParentIndexNumber !== 0), ...eps.filter((e) => e.ParentIndexNumber === 0)];
+    // A small heading where each season starts (All only).
+    const groups = [];
+    for (const e of eps) { const k = e.SeasonId || e.ParentIndexNumber; if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, name: e.SeasonName || (e.ParentIndexNumber ? `Season ${e.ParentIndexNumber}` : 'Specials'), eps: [] }); groups[groups.length - 1].eps.push(e); }
+    const head = (g) => (all ? `<h3 class="ep-season">${esc(g.name)}</h3>` : '');
     count.textContent = `${eps.length} episode${eps.length === 1 ? '' : 's'}`;
     const metaOf = (e) => {
       const ud = e.UserData || {};
@@ -1337,6 +1355,19 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
       // Every episode as a small picture with its number and name; long seasons
       // split into blocks of 100, opening on the block with your next episode.
       const upNext = eps.find((e) => e.UserData?.PlaybackPositionTicks > 0 && !e.UserData?.Played) || eps.find((e) => !e.UserData?.Played);
+      const names = pref('epGridNames') === 'on';
+      const thumb = (e, i) => `
+            <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
+              ${card(e, { shape: 'wide', noTitle: true })}
+              <span class="ep-num">${e.IndexNumber ?? '•'}</span>
+              ${names ? `<div class="ep-name">${esc(e.Name)}</div>` : ''}
+            </div>`;
+      if (all) {
+        // Every episode, season by season, in one long grid.
+        let i = 0;
+        list.innerHTML = groups.map((g) => `<div class="ep-sgroup">${head(g)}<div class="ep-grid">${g.eps.map((e) => thumb(e, i++)).join('')}</div></div>`).join('');
+        return;
+      }
       const blocks = Math.ceil(eps.length / GRID_BLOCK);
       let block = Math.max(0, Math.floor(Math.max(0, eps.indexOf(upNext)) / GRID_BLOCK));
       const draw = () => {
@@ -1346,12 +1377,7 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
             const a = eps[b * GRID_BLOCK], z = eps[Math.min(eps.length, (b + 1) * GRID_BLOCK) - 1];
             return `<button class="ep-block ${b === block ? 'on' : ''}" data-block="${b}">${a?.IndexNumber ?? b * GRID_BLOCK + 1}–${z?.IndexNumber ?? (b + 1) * GRID_BLOCK}</button>`;
           }).join('')}</div>` : ''}
-          <div class="ep-grid">${part.map((e, i) => `
-            <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
-              ${card(e, { shape: 'wide', noTitle: true })}
-              <span class="ep-num">${e.IndexNumber ?? '•'}</span>
-              <div class="ep-name">${esc(e.Name)}</div>
-            </div>`).join('')}</div>`;
+          <div class="ep-grid">${part.map(thumb).join('')}</div>`;
         list.querySelectorAll('[data-block]').forEach((b) => b.addEventListener('click', () => { block = Number(b.dataset.block); draw(); }));
       };
       draw();
@@ -1366,7 +1392,8 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
       const cur = list.querySelector('.ep-card.current') || list.querySelector('.ep-card:has(.progress)');
       cur?.scrollIntoView({ block: 'nearest', inline: 'start' });
     } else {
-      list.innerHTML = eps.map((e, i) => `
+      let n = 0;
+      list.innerHTML = groups.map((g) => head(g) + g.eps.map((e) => [e, n++]).map(([e, i]) => `
         <div class="episode ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" style="animation-delay:${Math.min(i, 10) * 35}ms">
           ${card(e, { shape: 'wide', noTitle: true })}
           <div class="ep-text">
@@ -1374,7 +1401,7 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
             <div class="ep-meta">${metaOf(e)}</div>
             <div class="ep-overview">${esc(e.Overview || '')}</div>
           </div>
-        </div>`).join('');
+        </div>`).join('')).join('');
     }
   }, alive).catch(() => {});
 }

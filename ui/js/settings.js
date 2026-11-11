@@ -73,6 +73,8 @@ const tvHtml = () => card('PLAYING', [
   dd('hwdec', 'Hardware decoding', 'Uses your graphics card for smoother playback. Turn off only if videos show glitches.', [['auto-safe', 'Auto'], ['no', 'Off']]),
 ]) + card('HOME SCREEN', [
   seg('heroMode', 'Home banner', 'What the big banner at the top shows.', [['picks', 'Picks for you'], ['recent', 'Recently added'], ['off', 'Off']]),
+]) + card('EPISODES', [
+  sw('epGridNames', 'Episode names on grid pictures', 'Shows each episode’s name under its picture in the Grid layout.'),
 ]);
 const subsHtml = () => card('SUBTITLES', [
   dd('subStart', 'Which subtitles start', 'A pick you make for a show always wins.', [['default', 'Show’s own default'], ['mine', 'Always my language'], ['off', 'Off unless I turn them on']]),

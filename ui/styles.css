@@ -3244,3 +3244,11 @@ label.set-row { cursor: pointer; }
 /* The page you're leaving stays up until the next one has drawn (no blank flash). */
 .view-ghost { position: fixed; z-index: 5; overflow: hidden; pointer-events: none; background: var(--bg); transition: opacity .16s ease; }
 .view-ghost.out { opacity: 0; }
+
+/* ---------- Episodes: All tab + cleaner grid ---------- */
+/* Grid pictures show the number and the watched tick only; the name behind the picture stays hidden
+   (it only showed through on watched episodes, whose pictures are dimmed). */
+.ep-thumb .art:has(img) .ph { display: none; }
+.ep-season { margin: 22px 0 12px; font-size: 16px; font-weight: 800; color: var(--text); }
+#epList > .ep-season:first-child, .ep-sgroup:first-child .ep-season { margin-top: 4px; }
+.ep-sgroup { content-visibility: auto; contain-intrinsic-size: auto 400px; }
