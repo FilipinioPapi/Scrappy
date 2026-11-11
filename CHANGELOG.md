@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 31 · Nov 11, 4:15 PM
+**Movies & TV**
+- Fixed: after editing a movie's or show's details, the page kept showing the old ones until you left it
+
+<sub>Built from c5d2e03 · includes: Movies & TV</sub>
+
 ### Preview 30 · Nov 11, 1:00 PM
 **Speed**
 - Tiles and their artwork now appear together on every page. Pictures you have already seen show instantly when you come back
