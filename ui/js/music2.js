@@ -4,7 +4,7 @@ import { api } from './api.js';
 import { music, current, playSongs, setFavorite, cover, fmt, IC } from './mplayer.js';
 import {
   EXTRA, nd, ndLoad, coverHtml, songTable, songRow, wireSongs, albumCard, artistCard, row, wireCards, wireMoods, moodTile,
-  bump, listMenu, refreshPlaylists, totalTime, plural, hue, genreHue, href, MI, ready, lib, saveLib, syncNow, variety,
+  bump, backPill, listMenu, refreshPlaylists, totalTime, plural, hue, genreHue, href, MI, ready, lib, saveLib, syncNow, variety,
 } from './music.js';
 
 const line = (d, n = 18) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -112,7 +112,7 @@ EXTRA.genre = async (v, name) => {
   albums.forEach((a) => { if (!a.year) return; const d = Math.floor(a.year / 10) * 10; (decades[d] = decades[d] || []).push(a); });
   main.innerHTML = `
     <div class="ghero" style="--h:${genreHue(name)}">
-      <div class="ghero-in"><a class="back-pill" href="#/music/genres">${MI.back}<span>All genres</span></a>
+      <div class="ghero-in">${backPill('#/music/genres', 'All genres')}
         <div class="kicker">GENRE</div><h1 class="disp mtitle">${esc(name)}</h1>
         <div class="meta">${[plural(songs.length, 'song'), plural(albums.length, 'album'), plural(artists.length, 'artist'), totalTime(total), years.length ? `${Math.min(...years)}–${Math.max(...years)}` : ''].filter(Boolean).join(' · ')}</div>
         <div class="mbtns"><button type="button" class="arplay" id="gPlay" aria-label="Play" data-playctx="genre:${esc(name)}">${IC.play}</button><button type="button" class="gb sq" id="gShuf" aria-label="Shuffle">${IC.shuffle}</button></div></div>

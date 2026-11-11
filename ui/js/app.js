@@ -124,6 +124,8 @@ function holdOldPage() {
 
 let lastRouteName = '';
 async function route(opts = {}) {
+  // Remember where you came from, so Back buttons on pages can return there.
+  if (location.hash !== window.__curHash) { window.__prevHash = window.__curHash || ''; window.__curHash = location.hash; }
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
   const [, rawName, arg, arg2] = hash.split('/');

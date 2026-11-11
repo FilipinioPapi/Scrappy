@@ -506,6 +506,13 @@ export async function addToPlaylist(songs) {
 }
 export function refreshPlaylists() { return nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; playlistsLoaded = true; drawLib(false); return playlistsCache; }).catch(() => playlistsCache); }
 
+// Back pill: returns to the page you came from (home, search, an album...) when there is one,
+// otherwise to the list page it names.
+export function backPill(list, label) {
+  const prev = window.__prevHash || '';
+  const back = prev && prev.split('?')[0] !== list;
+  return `<a class="back-pill" href="${list}"${back ? ' onclick="history.back(); return false;"' : ''}>${MI.back}<span>${back ? 'Back' : label}</span></a>`;
+}
 // ---------- Cards ----------
 export function albumCard(a, sub) {
   return `<a class="mcard" href="${href('album', a.id)}" data-album="${esc(a.id)}">
@@ -752,9 +759,16 @@ function smartMusicRows(main, alive) {
     const a = r.albumList2?.album?.[0]; if (!a?.artistId) return { name: '', list: [] };
     const [info, all] = await Promise.all([nd('getArtistInfo2', { id: a.artistId, count: 30 }), nd('getArtists')]);
     const lib = new Map((all.artists?.index || []).flatMap((g) => g.artist || []).map((x) => [x.id, x]));
-    const list = (info.artistInfo2?.similarArtist || []).map((x) => lib.get(x.id)).filter((x) => x && x.albumCount > 0).slice(0, 16);
+    // Navidrome can list a same-named artist with no albums (e.g. "JAY Z" from a feature credit):
+    // match by name to the one that has your albums, and leave out anyone you have no albums for.
+    const norm = (n) => String(n || '').toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
+    const byName = new Map();
+    lib.forEach((x) => { if (x.albumCount > 0) { const k = norm(x.name); if (!byName.has(k) || byName.get(k).albumCount < x.albumCount) byName.set(k, x); } });
+    const seen = new Set([a.artistId]);
+    const list = (info.artistInfo2?.similarArtist || []).map((x) => { const m = lib.get(x.id); return m?.albumCount > 0 ? m : byName.get(norm(x.name)); })
+      .filter((x) => x && !seen.has(x.id) && seen.add(x.id)).slice(0, 16);
     return { name: a.artist, list };
-  }, (d) => put('#hBecause', d.list?.length ? srow(`Because you played ${d.name}`, 'Similar artists in your library', d.list.map(artistCard).join('')) : ''));
+  }, (d) => put('#hBecause', d.list?.length ? srow(`Because you played ${d.name}`, 'Similar artists in your library', d.list.map(artistCard).join('')) : ''), 'because2');
   // New from artists you love: recently added albums by the artists you play most.
   row_('newfrom', async () => {
     const [f, n] = await Promise.all([nd('getAlbumList2', { type: 'frequent', size: 60 }), nd('getAlbumList2', { type: 'newest', size: 200 })]);
@@ -1016,7 +1030,7 @@ async function artistPage(v, id) {
   bump({ k: 'ar:' + ar.id, t: ar.name, sub: 'Artist', cv: ar.coverArt });
   main.innerHTML = `
     <div class="arhero" style="--h:${hue(ar.name)}"><div class="arhero-bg" id="arBg">${ar.coverArt ? `<img src="${cover(ar.coverArt, 1200)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
-      <a class="back-pill" href="#/music/artists">${MI.back}<span>All artists</span></a>
+      ${backPill('#/music/artists', 'All artists')}
       <div class="arhero-in"><div class="inlib"><span>${MI.check}</span>In your library</div><h1 class="disp arname">${esc(ar.name)}</h1>
       <div class="meta">${plays ? plural(plays, 'play') + ' · ' : ''}${plural(albums.length, 'album')} · ${plural(songCount, 'song')}</div></div></div>
     <div class="arbar"><button type="button" class="arplay" id="arPlay" aria-label="Play ${esc(ar.name)}" data-playctx="artist:${esc(ar.id)}">${IC.play}</button>
