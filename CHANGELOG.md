@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 25 · Nov 11, 2:20 AM
+**App-wide**
+- Moving between pages (episodes, shows, menus) no longer flashes a blank page or a spinner: the old page stays until the new one is ready
+
+<sub>Built from 0127a63 · includes: page changes</sub>
+
 ### Preview 24 · Nov 11, 1:10 AM
 **Home**
 - Smart home rows. Movies & TV: Next Up, Because you watched…, your top genre you haven't seen, and Watch again. Music: On repeat, Because you played…, New from artists you love, Forgotten favorites, and Albums you haven't played. Audiobooks: Because you finished… and Short listens
