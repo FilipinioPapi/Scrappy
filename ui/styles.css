@@ -159,6 +159,11 @@ input[type=text], input[type=password], input[type=search], select {
 }
 input:focus, select:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(236,40,46,.18); }
 select { width: auto; padding: 7px 10px; background: var(--bg-2); cursor: pointer; }
+/* The open list of every dropdown: dark with light text like the rest of the app.
+   Windows draws this list itself, and without these it showed pale text on white. */
+select option, select optgroup { background-color: var(--bg-2); color: var(--text); font-size: 14px; font-weight: 500; }
+select option:checked { background-color: var(--bg-3); color: #fff; }
+select option:disabled { color: var(--muted); }
 
 /* ---------- Login ---------- */
   width: 100%; max-width: 400px; padding: 36px;
@@ -1862,7 +1867,11 @@ body:not(.tab-music) #mbar { transition: transform .4s cubic-bezier(.4,0,.2,1), 
 /* The new screen cross-fades in just after the bar starts to leave, instead of popping in under it. */
 @keyframes tabIn { from { opacity: 0; transform: translateY(10px) scale(.995); } to { opacity: 1; transform: none; } }
 #view.entering.tabswap > * { animation: tabIn .46s cubic-bezier(.2,.8,.2,1) .08s both; }
-#view.entering.tabswap > .mshell { animation: tabIn .46s cubic-bezier(.2,.8,.2,1) .08s both; }
+/* The audio tabs' shell only fades: a moving shell would carry its fixed side menu with it,
+   so the menu showed up lower down and slid into place late. The page inside it rises instead. */
+@keyframes tabFade { from { opacity: 0; } to { opacity: 1; } }
+#view.entering.tabswap > .mshell { animation: tabFade .3s ease both; }
+#view.entering.tabswap .mmain { animation: tabIn .46s cubic-bezier(.2,.8,.2,1) .08s both; }
 #view.entering.tabswap .mmain > * { animation: none; }
 /* Home banner: the fade at the bottom reaches the page colour fully, with no seam underneath. */
 .hero-bg::after { inset: -1px 0 -3px; background: linear-gradient(90deg, var(--bg) 0%, rgba(18,12,12,.8) 32%, rgba(18,12,12,.15) 65%, rgba(18,12,12,0) 100%), linear-gradient(rgba(18,12,12,0) 50%, var(--bg) 94%); }
