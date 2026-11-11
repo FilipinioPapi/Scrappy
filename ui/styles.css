@@ -2915,6 +2915,13 @@ a.rq-link { color: var(--text); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .rq-dim, .rq-sheet, .rq-avail { animation: none; } }
 .rq-hero .rq-badge { white-space: normal; height: auto; min-height: 22px; padding: 4px 8px; }
 
-/* Home banner seam, take 3: fade the picture itself out at the bottom (instead of only covering it),
-   so even if Windows scaling draws one stray row of it below the banner, that row is see-through. */
-.hero-bg img { -webkit-mask-image: linear-gradient(#000 55%, rgba(0,0,0,.35) 80%, transparent 93%); mask-image: linear-gradient(#000 55%, rgba(0,0,0,.35) 80%, transparent 93%); }
+/* Home banner edges: the darkening is done by fading the picture itself (over the page colour)
+   instead of laying a dark layer on top. During the slide animation Windows scaling could draw the
+   picture one pixel past that layer, showing a bright line on the left, top and bottom edges. */
+.hero-bg::after { display: none; }
+.hero-bg img {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.2) 32%, rgba(0,0,0,.85) 65%, #000 100%), linear-gradient(#000 50%, transparent 94%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.2) 32%, rgba(0,0,0,.85) 65%, #000 100%), linear-gradient(#000 50%, transparent 94%);
+  mask-composite: intersect;
+}
