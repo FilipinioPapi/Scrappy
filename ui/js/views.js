@@ -1,4 +1,4 @@
-import { api, load, img, imgAny } from './api.js';
+import { api, load, quiet, img, imgAny } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
@@ -1516,19 +1516,15 @@ export async function personView(root, ctx, id) {
   try { views = ((await api.cached('/Users/{userId}/Views')) || (await api.get('/Users/{userId}/Views')))?.Items || []; } catch {}
   views = views.filter((v) => GENRE_LIBS.has(v.CollectionType) && v.CollectionType !== 'boxsets');
   const q = `PersonIds=${id}&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=PremiereDate,ProductionYear,SortName&SortOrder=Descending&Fields=${FIELDS},People&${IMG_OPTS}&Limit=300`;
-  const groups = (await Promise.all(views.map(async (v) => {
-    try { const d = await api.get(`/Users/{userId}/Items?ParentId=${v.Id}&${q}`); return { v, items: d?.Items || [] }; }
-    catch { return { v, items: [] }; }
-  }))).filter((g) => g.items.length);
-  if (!ctx.alive()) return;
-  const all = groups.flatMap((g) => g.items);
-  if (!all.length) { box.innerHTML = '<div class="empty">Nothing on your server with them in it yet.</div>'; return; }
+  const paths = views.map((v) => `/Users/{userId}/Items?ParentId=${v.Id}&${q}`);
+  let groups = [], all = [], tab = 'all';
+  const use = (answers) => { groups = views.map((v, i) => ({ v, items: answers[i]?.Items || [] })).filter((g) => g.items.length); all = groups.flatMap((g) => g.items); if (tab !== 'all' && !groups.some((g) => g.v.Id === tab)) tab = 'all'; };
   const roleOf = (it) => {
     const me = (it.People || []).find((x) => x.Id === id);
     return me?.Role || (me?.Type && me.Type !== 'Actor' ? me.Type : '') || String(it.ProductionYear || '');
   };
-  let tab = 'all';
   const draw = () => {
+    if (!all.length) { box.innerHTML = '<div class="empty">Nothing on your server with them in it yet.</div>'; return; }
     const items = tab === 'all' ? all : groups.find((g) => g.v.Id === tab)?.items || [];
     box.innerHTML = `
       <div class="section-head"><h2>On your server</h2><span class="count">${all.length} title${all.length === 1 ? '' : 's'}</span></div>
@@ -1536,7 +1532,17 @@ export async function personView(root, ctx, id) {
       <div class="grid">${items.map((it) => card(it, { shape: 'portrait', subtitle: roleOf(it) })).join('')}</div>`;
     box.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; draw(); }));
   };
-  draw();
+  // What they are in: the copy saved last time straight away, then the server's answer
+  // (drawn again only if it differs).
+  const saved = await Promise.all(paths.map((path) => api.cached(path).catch(() => null)));
+  if (!ctx.alive()) return;
+  const had = saved.length > 0 && saved.every(Boolean);
+  if (had) { use(saved); draw(); }
+  const fresh = await Promise.all(paths.map((path, i) => api.get(path).catch(() => saved[i])));
+  if (!ctx.alive()) return;
+  if (had && JSON.stringify(fresh) === JSON.stringify(saved)) return;
+  if (had) quiet();
+  use(fresh); draw();
 }
 
 // ---------------- Music / Audiobooks (later) ----------------

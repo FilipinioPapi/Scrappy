@@ -1,12 +1,12 @@
 // Audiobooks tab (Audiobookshelf): Home, Library, a genre's books, an author's books, and the book page.
 // Playback and the bottom bar live in bplayer.js.
-import { api } from './api.js';
+import { api, quiet } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
 import { homeRows, rowCache } from './homeedit.js';
 import { IC } from './mplayer.js';
 import { MI, hue } from './music.js';
 import { fanTile, fanBanner, learnColors } from './gtiles.js';
-import { loadBookmarks, bookmarksFor, onBookmarks, listHtml, wireList, allBookmarks } from './bookmarks.js';
+import { loadBookmarks, bookmarksFast, bookmarksFor, onBookmarks, listHtml, wireList, allBookmarks } from './bookmarks.js';
 import { shellAttrs, headHtml, navHtml, wireSize, markNav, libStore, libHtml, drawLib as drawSideLib, wireLib } from './sidemenu.js';
 import { book, playBook, toggleBook, seekBook, setFinished, onBook, absCover, absAuthorImg, hm, clock, chapterAt, BI } from './bplayer.js';
 
@@ -32,10 +32,15 @@ const seriesOf = (it) => { const m = md(it); const s = m.series; if (Array.isArr
 
 // ---------- Data ----------
 let LIBS = null;
-async function libraries() {
+const expired = (v) => (e) => { if (String(e) === 'ABS_SESSION_EXPIRED' && v?.alive()) v.ctx.fail(String(e)); };
+async function libraries(v) {
   if (!LIBS) {
-    const r = await api.abs('/api/libraries');
-    LIBS = (r.libraries || []).filter((l) => l.mediaType === 'book');
+    // The list saved last time is enough to start with; the server's follows.
+    const pick = (r) => (r?.libraries || []).filter((l) => l.mediaType === 'book');
+    const fresh = api.abs('/api/libraries').then(pick);
+    const saved = pick(await api.absCached('/api/libraries').catch(() => null));
+    if (saved.length) { LIBS = saved; fresh.then((l) => { if (l.length) LIBS = l; }, expired(v)); }
+    else LIBS = await fresh;
   }
   if (!LIBS.length) throw new Error('No audiobook libraries found on your Audiobookshelf server.');
   return LIBS;
@@ -48,13 +53,44 @@ async function absLoad(path, render, alive) {
   if (cached) { shown = JSON.stringify(cached); if (alive()) render(cached, true); }
   try {
     const fresh = await api.abs(path);
-    if (alive() && JSON.stringify(fresh) !== shown) render(fresh, false);
+    if (alive() && JSON.stringify(fresh) !== shown) { if (shown) quiet(); render(fresh, false); }
     return fresh;
   } catch (e) { if (!cached) throw e; return cached; }
 }
-let PROG = new Map();
-async function loadProgress() {
-  try { const me = await api.abs('/api/me'); PROG = new Map((me.mediaProgress || []).filter((p) => !p.episodeId).map((p) => [p.libraryItemId, p])); } catch {}
+// Pages open from what is already here: this session's copy, else the one saved on this
+// computer last time. Only a first-ever visit waits for the server. The server's answer
+// follows in the background, and if it differs the page is drawn again quietly, once
+// (see booksView). `sig` picks the part of the answer the page actually shows.
+const MEM = new Map(), FLY = new Map(), GOT = new Map();
+const SOON = 15000; // an answer this fresh is not asked for again
+function fetchFresh(path) {
+  if (!FLY.has(path)) FLY.set(path, api.abs(path).then((d) => { MEM.set(path, d); GOT.set(path, Date.now()); return d; }).finally(() => FLY.delete(path)));
+  return FLY.get(path);
+}
+async function fast(path, v, { sig = JSON.stringify, fallback } = {}) {
+  if (MEM.has(path) && (v?.final || (Date.now() - GOT.get(path) < SOON && !FLY.has(path)))) return MEM.get(path);
+  const fresh = fetchFresh(path);
+  let have = MEM.get(path);
+  if (have === undefined) have = await api.absCached(path).catch(() => null);
+  if (have == null) { try { return await fresh; } catch (e) { if (fallback !== undefined && String(e) !== 'ABS_SESSION_EXPIRED') return fallback; throw e; } }
+  const was = sig(have);
+  const differs = fresh.then((d) => sig(d) !== was, (e) => { expired(v)(e); return false; });
+  if (v?.checks) v.checks.push(differs);
+  return have;
+}
+let PROG = new Map(), progReady = false, progFly = null, progAt = 0;
+// Signing out: the next person starts clean.
+window.addEventListener('scrappy:rowcache-clear', () => { MEM.clear(); GOT.clear(); PROG = new Map(); progReady = false; progAt = 0; LIBS = null; sideItems = null; });
+const progSig = () => [...PROG.values()].map((p) => `${p.libraryItemId}|${p.isFinished ? 1 : 0}|${Math.round((p.progress || 0) * 200)}`).sort().join(',');
+async function loadProgress(v) {
+  if (v?.final || (progAt && Date.now() - progAt < SOON && !progFly)) return PROG;
+  const apply = (me) => { PROG = new Map((me?.mediaProgress || []).filter((p) => !p.episodeId).map((p) => [p.libraryItemId, p])); progReady = true; };
+  if (!progFly) progFly = api.abs('/api/me').then((me) => { const was = progSig(); apply(me); progAt = Date.now(); return progSig() !== was; }).finally(() => { progFly = null; });
+  const fresh = progFly;
+  if (!progReady) { const c = await api.absCached('/api/me').catch(() => null); if (c && !progReady) apply(c); }
+  if (!progReady) { try { await fresh; } catch (e) { expired(v)(e); } return PROG; }
+  const differs = fresh.catch((e) => { expired(v)(e); return false; });
+  if (v?.checks) v.checks.push(differs);
   return PROG;
 }
 // Keep the progress bars right while a book plays or gets marked finished.
@@ -67,7 +103,9 @@ window.addEventListener('book:progress', ({ detail: d }) => {
 });
 const progOf = (id) => PROG.get(id);
 const pctOf = (id) => { const p = progOf(id); return p ? (p.isFinished ? 1 : p.progress || 0) : 0; };
-const items = async (lib) => (await api.abs(`/api/libraries/${lib}/items?minified=1&sort=addedAt&desc=1&limit=0`)).results || [];
+const itemsPath = (lib) => `/api/libraries/${lib}/items?minified=1&sort=addedAt&desc=1&limit=0`;
+const items = async (lib, v) => (await fast(itemsPath(lib), v)).results || [];
+const libAuthors = (lib, v) => fast(`/api/libraries/${lib}/authors`, v, { fallback: { authors: [] } });
 
 // ---------- Pieces ----------
 function coverBox(it, w = 300, cls = '') {
@@ -104,7 +142,10 @@ function genreTile(g, list) {
 }
 const section = (title, sub, inner, extra = '', id = '') => `<section class="msec"${id ? ` id="${id}"` : ''}><div class="msec-h"><h2>${esc(title)}${sub ? ` <span class="t2 bk-sub">${esc(sub)}</span>` : ''}</h2>${extra}</div>${inner}</section>`;
 const crumbs = (trail) => `<div class="crumbs"><button type="button" class="gb sq" onclick="history.back()" aria-label="Back">${MI.back}</button>${trail.map(([l, h], i) => (i === trail.length - 1 ? `<b>${esc(l)}</b>` : `<a href="${h}">${esc(l)}</a><span>›</span>`)).join('')}</div>`;
+// The page area outlives its pages: wire it once, or one click would play many times over.
+const wiredPlay = new WeakSet();
 function wirePlay(el) {
+  if (wiredPlay.has(el)) return; wiredPlay.add(el);
   el.addEventListener('click', (e) => {
     const b = e.target.closest('[data-playbook]'); if (!b) return;
     e.preventDefault(); e.stopPropagation();
@@ -157,10 +198,10 @@ function sideRecents() {
 function redrawSide() { const sh = document.querySelector('.bkshell'); if (sh) drawSideLib(sh, SL, sideRecents()); }
 async function loadSideItems() {
   try {
-    const path = `/api/libraries/${libId()}/items?minified=1&sort=addedAt&desc=1&limit=0`;
-    const c = await api.absCached(path).catch(() => null);
+    const path = itemsPath(libId());
+    const c = MEM.get(path) || await api.absCached(path).catch(() => null);
     if (c?.results) { sideItems = c.results; redrawSide(); }
-    sideItems = (await api.abs(path)).results || sideItems; redrawSide();
+    sideItems = (await fetchFresh(path)).results || sideItems; redrawSide();
   } catch {}
 }
 window.addEventListener('book:progress', () => { clearTimeout(redrawSide.t); redrawSide.t = setTimeout(redrawSide, 1500); });
@@ -168,9 +209,9 @@ window.addEventListener('book:progress', () => { clearTimeout(redrawSide.t); red
 // ---------- Bookmarks page: every bookmark, grouped by book ----------
 async function bookmarksPage(v) {
   const { main, alive } = v;
-  await loadBookmarks(true);
-  if (!sideItems) await loadSideItems();
-  const byId = new Map((sideItems || []).map((it) => [it.id, it]));
+  const [all] = await Promise.all([items(libId(), v), bookmarksFast()]);
+  if (!alive()) return;
+  const byId = new Map(all.map((it) => [it.id, it]));
   const edit = {};
   const draw = () => {
     if (!alive()) { off(); return; }
@@ -215,10 +256,8 @@ export async function booksView(root, ctx) {
   const main = root.querySelector('#mmain');
   main.className = 'mmain bk page-' + (page || 'home');
   main.innerHTML = loadingHtml();
-  const v = { main, ctx, alive: ctx.alive, params };
-  try {
-    await libraries(); drawLibs(root);
-    if (!sideItems) loadSideItems();
+  const v = { main, ctx, alive: ctx.alive, params, checks: [], memo: {}, final: false };
+  const draw = async () => {
     switch (page) {
       case 'library': return params.get('genre') ? await libraryPage(v) : await shelfPage(v);
       case 'authors': return await authorsPage(v);
@@ -231,6 +270,24 @@ export async function booksView(root, ctx) {
       case 'stats': return await (await import('./stats.js')).statsPage(main, 'abs', ctx.alive);
       default: return await homePage(v);
     }
+  };
+  try {
+    await libraries(v); drawLibs(root);
+    if (!sideItems) loadSideItems();
+    // Once the page is up: if the server's answers differ from the copies it was drawn
+    // from, draw it again without the entrance, unless it is already being used.
+    let touched = false; const touch = () => { touched = true; };
+    const off = () => ['pointerdown', 'keydown', 'input'].forEach((t) => main.removeEventListener(t, touch, true));
+    ['pointerdown', 'keydown', 'input'].forEach((t) => main.addEventListener(t, touch, true));
+    ctx.onLeave?.(off);
+    await draw();
+    const checks = v.checks; v.checks = null;
+    Promise.all(checks).then(async (r) => {
+      off();
+      if (!r.some(Boolean) || !ctx.alive() || touched || window.scrollY > 400) return;
+      quiet(); v.final = true;
+      try { await draw(); } catch {}
+    });
   } catch (e) {
     if (!ctx.alive()) return;
     if (String(e) === 'ABS_SESSION_EXPIRED') return ctx.fail(String(e));
@@ -242,10 +299,11 @@ export async function booksView(root, ctx) {
 async function homePage(v) {
   const { main, alive, params } = v;
   const lib = libId();
+  const seriesShelf = (r) => JSON.stringify((Array.isArray(r) ? r : []).find((s) => s.id === 'continue-series')?.entities?.map((e) => e?.id) || []);
   const [all, , authorsR, shelves] = await Promise.all([
-    items(lib), loadProgress(),
-    api.abs(`/api/libraries/${lib}/authors`).catch(() => ({ authors: [] })),
-    api.abs(`/api/libraries/${lib}/personalized?limit=12`).catch(() => []),
+    items(lib, v), loadProgress(v),
+    libAuthors(lib, v),
+    fast(`/api/libraries/${lib}/personalized?limit=12`, v, { fallback: [], sig: seriesShelf }),
   ]);
   if (!alive()) return;
   if (!all.length) { main.innerHTML = '<div class="empty">This library has no books yet.</div>'; return; }
@@ -294,7 +352,7 @@ async function homePage(v) {
     W('recent', section('Recently added', '', `<div class="mrow">${recent.map((it) => bookCard(it)).join('')}</div>`, `<a class="seeall" href="${H('library')}">See all</a>`)),
     W('short', short.length ? section('Short listens', 'Under 5 hours', `<div class="mrow">${short.map((it) => bookCard(it)).join('')}</div>`) : ''),
     W('genres', genres.length ? section('Genres', 'From your library', `<div class="bk-genres">${genres.map(([g, l]) => genreTile(g, l)).join('')}</div>`, '', 'row-genres') : ''),
-    W('disc', fresh.length ? section('Discover', "Books you haven't started yet", `<div class="mrow" id="bkDisc">${pick().map((it) => bookCard(it)).join('')}</div>`, '<button type="button" class="btn secondary small" id="bkShuf">Shuffle picks</button>') : ''),
+    W('disc', fresh.length ? section('Discover', "Books you haven't started yet", `<div class="mrow" id="bkDisc">${(v.memo.disc || (v.memo.disc = pick())).map((it) => bookCard(it)).join('')}</div>`, '<button type="button" class="btn secondary small" id="bkShuf">Shuffle picks</button>') : ''),
     W('series', series.length ? section('Continue a series', 'Next book in series you\'ve started', `<div class="bk-conts">${series.map((it) => seriesCard(it, it.series?.name || it.media?.metadata?.series?.name)).join('')}</div>`) : ''),
     W('authors', authors.length ? section('Authors', 'Click one to see all their books', `<div class="mrow">${authors.map(authorCard).join('')}</div>`, '', 'row-authors') : ''),
     W('again', again.length ? section('Listen again', "Books you've finished", `<div class="mrow">${again.map((it) => bookCard(it)).join('')}</div>`) : ''),
@@ -317,7 +375,7 @@ const FILTERS = [['all', 'All'], ['new', 'Not started'], ['prog', 'In progress']
 async function libraryPage(v) {
   const { main, alive, params } = v;
   const genre = params.get('genre') || '';
-  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  const [all] = await Promise.all([items(libId(), v), loadProgress(v)]);
   if (!alive()) return;
   const st = { q: '', sort: localStorage.getItem('bkSort') || 'added', fil: 'all' };
   const base = genre ? all.filter((it) => (md(it).genres || []).includes(genre)) : all;
@@ -355,7 +413,7 @@ async function libraryPage(v) {
 // ---------- One author ----------
 async function authorPage(v, id) {
   const { main, alive } = v;
-  await loadProgress();
+  await loadProgress(v);
   await absLoad(`/api/authors/${encodeURIComponent(id)}?include=items`, (a) => {
     const list = (a.libraryItems || []).slice().sort((x, y) => seriesOf(x).localeCompare(seriesOf(y)) || (md(x).publishedYear || '').localeCompare(md(y).publishedYear || ''));
     const fin = list.filter((it) => progOf(it.id)?.isFinished).length;
@@ -520,8 +578,10 @@ function wireFind(main, fn) { let t; main.querySelector('#bkQ').addEventListener
 const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 /** Big lists draw a screenful first, then the rest as you scroll near the end. */
 function drawChunks(box, parts, after) {
-  let n = 0; const step = 12;
-  const more = () => { box.insertAdjacentHTML('beforeend', parts.slice(n, n + step).join('')); n += step; after?.(); if (n < parts.length) io.observe(box.lastElementChild); };
+  // Up to 12 pieces at a time, fewer when the pieces are big (a genre's shelf can hold a
+  // hundred books), so no single step holds the app up.
+  let n = 0; const step = 12, budget = 70000;
+  const more = () => { let to = n, size = 0; while (to < parts.length && to - n < step && (to === n || size + parts[to].length <= budget)) size += parts[to++].length; box.insertAdjacentHTML('beforeend', parts.slice(n, to).join('')); n = to; after?.(); if (n < parts.length) io.observe(box.lastElementChild); };
   const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); more(); } }, { rootMargin: '800px' });
   box._more = () => { io.disconnect(); if (n < parts.length) more(); else box._more = null; };
   box.innerHTML = ''; if (!parts.length) { box._more = null; return; } more();
@@ -568,7 +628,7 @@ function mountWall(wall, rail, alive, chunked = true) {
 const LSORTS = [['title', 'Title A–Z'], ['author', 'Author'], ['added', 'Recently added'], ['progress', 'Progress']];
 async function shelfPage(v) {
   const { main, alive } = v;
-  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  const [all] = await Promise.all([items(libId(), v), loadProgress(v)]);
   if (!alive()) return;
   const st = { q: '', sort: LSORTS.some(([k]) => k === localStorage.getItem('bkShelfSort')) ? localStorage.getItem('bkShelfSort') : 'title' };
   main.innerHTML = `${pageHead('LIBRARY', 'Find a book')}
@@ -587,7 +647,7 @@ async function shelfPage(v) {
 async function authorsPage(v) {
   const { main, alive } = v;
   const lib = libId();
-  const [all, , ar] = await Promise.all([items(lib), loadProgress(), api.abs(`/api/libraries/${lib}/authors`).catch(() => ({ authors: [] }))]);
+  const [all, , ar] = await Promise.all([items(lib, v), loadProgress(v), libAuthors(lib, v)]);
   if (!alive()) return;
   const byName = new Map();
   all.forEach((it) => authorsOf(it).forEach((n) => { const k = n.toLowerCase(); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(it); }));
@@ -632,7 +692,7 @@ const SVIEWS = [['shelves', 'Shelves', line('<rect x="3" y="4" width="5" height=
   ['grid', 'Collections', line('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', 16)]];
 async function seriesPage(v) {
   const { main, alive, params } = v;
-  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  const [all] = await Promise.all([items(libId(), v), loadProgress(v)]);
   if (!alive()) return;
   const series = seriesGroups(all);
   const st = { q: (params.get('q') || '').toLowerCase(), sort: SSORTS.some(([k]) => k === localStorage.getItem('bkSerSort')) ? localStorage.getItem('bkSerSort') : 'author', view: localStorage.getItem('bkSerView') === 'grid' ? 'grid' : 'shelves' };
@@ -661,7 +721,7 @@ async function seriesPage(v) {
 // ---------- Genres: a shelf per genre ----------
 async function genresPage(v) {
   const { main, alive } = v;
-  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  const [all] = await Promise.all([items(libId(), v), loadProgress(v)]);
   if (!alive()) return;
   const gmap = new Map();
   all.forEach((it) => (md(it).genres || []).forEach((g) => { if (!gmap.has(g)) gmap.set(g, []); gmap.get(g).push(it); }));
@@ -681,15 +741,14 @@ async function genresPage(v) {
 async function genrePage(v, g) {
   const { main, alive } = v;
   const lib = libId();
-  const [all] = await Promise.all([items(lib), loadProgress()]);
+  const [all, , ar] = await Promise.all([items(lib, v), loadProgress(v), libAuthors(lib, v)]);
   if (!alive()) return;
   const mine = all.filter((it) => (md(it).genres || []).includes(g));
   if (!mine.length) { main.innerHTML = crumbs([['Genres', H('genres')], [g]]) + '<div class="empty">No books in this genre.</div>'; return; }
   const cont = mine.filter((it) => !progOf(it.id)?.isFinished && pctOf(it.id) > 0).sort((a, b) => (progOf(b.id)?.lastUpdate || 0) - (progOf(a.id)?.lastUpdate || 0));
   const series = seriesGroups(mine).sort((a, b) => b.list.length - a.list.length);
   const byAuthor = new Map(); mine.forEach((it) => authorsOf(it).forEach((n) => byAuthor.set(n, (byAuthor.get(n) || 0) + 1)));
-  const known = new Map(); try { ((await api.abs(`/api/libraries/${lib}/authors`)).authors || []).forEach((a) => known.set(String(a.name).toLowerCase(), a)); } catch {}
-  if (!alive()) return;
+  const known = new Map(); (ar.authors || []).forEach((a) => known.set(String(a.name).toLowerCase(), a));
   const authors = [...byAuthor.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14).map(([n, c]) => ({ ...(known.get(n.toLowerCase()) || { name: n }), numBooks: c }));
   const hours = mine.reduce((t, it) => t + (it.media?.duration || 0), 0) / 3600;
   const recent = mine.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)).slice(0, 20);

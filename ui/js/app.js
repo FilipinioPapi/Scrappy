@@ -14,6 +14,7 @@ import { toast } from './components.js';
 import { pref, setPref, on, onPref } from './prefs.js';
 import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView, genresView, favoritesView } from './views.js';
 import { tvShell } from './tvside.js';
+import { artPageStart } from './art.js';
 
 const viewEl = document.getElementById('view');
 
@@ -112,14 +113,16 @@ function holdOldPage() {
   inner.append(...[...viewEl.childNodes].map((n) => n.cloneNode(true)));
   // A picture only: no ids, so nothing else in the app can find or update the copy.
   inner.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+  inner.querySelectorAll('[data-hold]').forEach((e) => e.removeAttribute('data-hold'));
   g.inert = true;
   g.appendChild(inner);
   document.body.appendChild(g);
   ghost = g;
   // Real content = anything that isn't just the loading spinner.
-  const ready = () => [...viewEl.children].some((c) => !c.classList.contains('loading') && c.textContent.trim().length + c.querySelectorAll('img,canvas').length > 0 && !c.matches('.mshell:not(:has(.mmain > :not(.loading)))'));
+  // (and isn't still waiting a moment for its pictures: see art.js).
+  const ready = () => !viewEl.querySelector('[data-hold]') && [...viewEl.children].some((c) => !c.classList.contains('loading') && c.textContent.trim().length + c.querySelectorAll('img,canvas').length > 0 && !c.matches('.mshell:not(:has(.mmain > :not(.loading)))'));
   ghostObs = new MutationObserver(() => { if (ready()) dropGhost(); });
-  ghostObs.observe(viewEl, { childList: true, subtree: true });
+  ghostObs.observe(viewEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-hold'] });
   ghostTimer = setTimeout(dropGhost, 1200);
 }
 
@@ -198,6 +201,7 @@ async function route(opts = {}) {
   if (!opts.keepScroll && !statsSwitch) {
     window.scrollTo(0, 0);
     viewEl.classList.remove('quiet');
+    artPageStart();
     if (backTo > 0) restoreScroll(backTo);
     // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
     viewEl.classList.remove('entering', 'tabswap');

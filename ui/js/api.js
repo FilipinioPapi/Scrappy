@@ -25,7 +25,7 @@ export const api = {
   del: (path) => invoke('api_send', { method: 'DELETE', path, body: null }),
   uploadImage: (path, base64, contentType) => invoke('api_upload_image', { path, base64, contentType }),
   play: (itemId, o = {}) => invoke('play', { itemId, fromStart: !!o.fromStart, embedded: o.embedded ?? true, startSecs: o.startSecs ?? null, maxBitrate: o.maxBitrate ?? null }),
-  clearCache: () => invoke('clear_cache'),
+  clearCache: () => { window.dispatchEvent(new Event('scrappy:art-clear')); return invoke('clear_cache'); },
   refreshCovers: (kind) => invoke('refresh_covers', { kind }),
   absSend: (method, path, body = null) => invoke('abs_send', { method, path, body }),
 };

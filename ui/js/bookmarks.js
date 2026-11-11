@@ -8,7 +8,7 @@ const { invoke } = window.__TAURI__.core;
 const send = (method, path, body = null) => invoke('abs_send', { method, path, body });
 
 let all = [];           // [{ libraryItemId, time, title, createdAt }]
-let loaded = 0, loading = null;
+let loaded = 0, loading = null, primed = false;
 const subs = new Set();
 /** Called whenever the list changes. Returns an unsubscribe function. */
 export const onBookmarks = (f) => { subs.add(f); return () => subs.delete(f); };
@@ -19,10 +19,20 @@ export function loadBookmarks(force = false) {
   if (loading) return loading;
   if (!force && loaded && Date.now() - loaded < 30000) return Promise.resolve(all);
   loading = api.abs('/api/me').then((me) => {
-    all = Array.isArray(me?.bookmarks) ? me.bookmarks : [];
-    loaded = Date.now(); changed(); return all;
+    const now = Array.isArray(me?.bookmarks) ? me.bookmarks : [];
+    const same = (loaded || primed) && JSON.stringify(now) === JSON.stringify(all);
+    all = now; loaded = Date.now(); if (!same) changed(); return all;
   }).catch(() => all).finally(() => { loading = null; });
   return loading;
+}
+/** For a page: what we already have (this session's list, else the copy saved on this
+ *  computer), while the server's list follows and redraws through onBookmarks if it differs. */
+export async function bookmarksFast() {
+  const fresh = loadBookmarks(true);
+  if (loaded) return all;
+  const c = await api.absCached('/api/me').catch(() => null);
+  if (!loaded && Array.isArray(c?.bookmarks)) { all = c.bookmarks; primed = true; return all; }
+  return fresh;
 }
 /** Every bookmark, newest first. */
 export const allBookmarks = () => all.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));

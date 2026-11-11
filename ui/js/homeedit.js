@@ -138,17 +138,29 @@ export function rowCache(tab, id, ttl = 30 * 60e3) {
       if (!c) { try { c = JSON.parse(localStorage.getItem(k) || 'null'); } catch {} if (c) MEM.set(k, c); }
       return c && Date.now() - c.t < ttl ? c.d : null;
     },
+    /** The saved copy even when it is out of date. */
+    peek() { this.get(); return MEM.get(k)?.d ?? null; },
     set(d) { const c = { t: Date.now(), d }; MEM.set(k, c); try { localStorage.setItem(k, JSON.stringify(c)); } catch {} },
   };
 }
-/** Draw a smart row from its saved copy if it's fresh, otherwise fetch, save and draw. */
-export async function cachedRow(tab, id, fetcher, render, run = (f) => f()) {
+/** Draw a smart row from its saved copy if it's fresh, otherwise fetch, save and draw.
+ *  An out-of-date copy is still drawn straight away, so the row is there with the rest of the
+ *  page instead of popping in a second later; the new one replaces it only where that can't
+ *  be seen (the row is below the screen), and otherwise shows on the next visit.
+ *  rowId = the row's data-hrow, when it differs from the cache id. */
+export async function cachedRow(tab, id, fetcher, render, run = (f) => f(), rowId = id) {
   const c = rowCache(tab, id);
   const d = c.get();
   if (d != null) { render(d); return; }
+  const old = c.peek();
+  if (old != null) render(old);
   const fresh = await run(fetcher);
   if (fresh == null) return;
-  c.set(fresh); render(fresh);
+  c.set(fresh);
+  if (old == null) { render(fresh); return; }
+  if (JSON.stringify(fresh) === JSON.stringify(old)) return;
+  const el = document.querySelector(`#view [data-hrow="${CSS.escape(rowId)}"]`);
+  if (!el || el.getBoundingClientRect().top > innerHeight) render(fresh);
 }
 
 /** A one-at-a-time queue that starts once the page has settled and stops when you leave,

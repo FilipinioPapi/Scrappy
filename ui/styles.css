@@ -1189,14 +1189,20 @@ body.has-mbar.tab-music .mpanel { bottom: var(--mbar); }
 .ag-a { display: flex; align-items: center; gap: 14px; }
 .ag-a .mcv { width: 46px; height: 46px; box-shadow: none; }
 .ag-a .disp { font-size: 26px; }
-.ab { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: 28px; margin-bottom: 34px; }
+.ab { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: 28px; }
 .ab-cover { position: relative; display: block; }
 .ab-cover .mcv { width: 184px; }
 .ab-t { font-size: 26px; display: block; }
 .ab-body > .t2 { margin-top: 8px; }
 .ab-btns { display: flex; gap: 8px; margin: 14px 0 12px; }
 .ab-btns .btn { height: 36px; padding: 0 16px; font-size: 13px; }
-.ab-songs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; min-height: 40px; }
+/* Each album keeps its full height from the start (--s2 / --s1 = its song list in two columns
+   or one), and albums off screen are skipped by the browser, so the long list scrolls freely. */
+/* (The padding with matching negative margins leaves room for cover shadows; spacing is unchanged.) */
+.ab { --sh: var(--s2, 40px); content-visibility: auto; contain-intrinsic-size: auto 184px auto max(184px, calc(122px + var(--sh))); padding: 40px; margin: -40px -40px -46px; }
+.ag .ab:last-child { margin-bottom: -40px; }
+#aList > .ab:last-child { margin-bottom: -6px; }
+.ab-songs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-content: start; min-height: var(--sh); }
 .ab-wait { padding: 10px; }
 
 /* Song tables */
@@ -1385,6 +1391,7 @@ body:not(.tab-music) #mbar { transform: translateY(110%); opacity: 0; pointer-ev
 @media (max-width: 1100px) {
   .mhome-top { grid-template-columns: 1fr; }
   .moods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ab { --sh: var(--s1, 40px); }
   .ab-songs { grid-template-columns: 1fr; }
   .stable.songs .srow { grid-template-columns: 48px minmax(0, 2fr) minmax(0, 1.2fr) 40px 64px 40px; }
   .stable.songs .c-d { display: none; }
@@ -1874,6 +1881,9 @@ body:not(.tab-music) #mbar { transition: transform .4s cubic-bezier(.4,0,.2,1), 
 #view.entering.tabswap > .mshell { animation: none; }
 #view.entering.tabswap .mmain { animation: tabIn .46s cubic-bezier(.2,.8,.2,1) .08s both; }
 #view.entering.tabswap .mmain > * { animation: none; }
+/* The slight scale is taken about the middle of the page; on a very long page (Songs, Albums)
+   that middle is far below the screen and the top would fly in from way down. Cap it. */
+#view.entering.tabswap > *, #view.entering.tabswap .mmain { transform-origin: 50% min(50%, 1500px); }
 /* Home banner: the fade at the bottom reaches the page colour fully, with no seam underneath. */
 .hero-bg::after { inset: -1px 0 -3px; background: linear-gradient(90deg, var(--bg) 0%, rgba(18,12,12,.8) 32%, rgba(18,12,12,.15) 65%, rgba(18,12,12,0) 100%), linear-gradient(rgba(18,12,12,0) 50%, var(--bg) 94%); }
 .hero:not(.hero-wait) { background: var(--bg); }
@@ -3208,8 +3218,11 @@ label.set-row { cursor: pointer; }
 .stx-skel .sk-wide { height: 220px; }
 .calm .stx-skel .sk { animation: none; }
 
-/* Songs tab: rows off screen skip drawing. */
-.stable.songs .srow:not(.shead) { content-visibility: auto; contain-intrinsic-size: auto 56px; }
+/* Songs tab: only the rows near the screen exist; the box keeps the whole list's height. */
+.stable.songs .vwin { position: relative; }
+.stable.songs .vrows { position: relative; }
+/* (Rows keep the same containment they had before, so they draw exactly as they did.) */
+.stable.songs .vrows .srow { height: 56px; contain: layout style paint; }
 
 .y-pl{display:inline-flex;align-items:center;gap:10px;margin-top:14px;padding:10px 16px;border-radius:12px;background:rgba(0,0,0,.25);font-size:15px;font-weight:600}
 .y-pl[hidden]{display:none}
@@ -3282,3 +3295,10 @@ label.set-row { cursor: pointer; }
 .bk-bmb .mcv { width: 48px; height: 48px; padding: 0; }
 .bk-bmb b { display: block; color: var(--text); font-size: 15.5px; }
 .bk-bmb:hover b { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- Tiles and artwork arrive together (art.js) ---------- */
+/* A freshly drawn page waits a moment, out of sight, for the pictures on screen; its
+   entrance (and anything animating inside it) starts when it is shown. */
+[data-hold] { opacity: 0 !important; }
+[data-hold], [data-hold] *, [data-hold] *::before, [data-hold] *::after { animation-play-state: paused !important; }
+[data-hold] img, img.pre { transition: none !important; }

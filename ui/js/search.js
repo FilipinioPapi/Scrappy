@@ -358,6 +358,7 @@ export async function searchPage(root, ctx) {
   const groupHtml = (g) => `<section class="sres"><div class="section-head"><h2>${g.title}</h2><span class="count">${g.rows.length}</span></div><div class="sgrid">${g.rows.map(rowHtml).join('')}</div></section>`;
   const html = orderNow().flatMap((k) => GROUPS[k](res[k]).filter((g) => g.rows.length)).map(groupHtml).join('');
   root.innerHTML = `<div class="spage"><h1 class="disp">Results for “${esc(q)}”</h1>${failedHtml(res)}${html || `<div class="empty">Nothing found for “${esc(q)}”.</div>`}</div>`;
-  root.addEventListener('click', (e) => { const p = e.target.closest('[data-play]'); if (p) { e.preventDefault(); e.stopPropagation(); playFrom(p.dataset.play); } });
+  // The page area outlives this page: wire it once, or one click would play many times over.
+  if (!root.dataset.searchPlay) { root.dataset.searchPlay = '1'; root.addEventListener('click', (e) => { const p = e.target.closest('[data-play]'); if (p) { e.preventDefault(); e.stopPropagation(); playFrom(p.dataset.play); } }); }
   window.dispatchEvent(new Event('scrappy:ready'));
 }

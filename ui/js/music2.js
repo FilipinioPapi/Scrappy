@@ -3,8 +3,8 @@ import { esc, toast, loadingHtml } from './components.js';
 import { api } from './api.js';
 import { music, current, playSongs, setFavorite, cover, fmt, IC } from './mplayer.js';
 import {
-  EXTRA, nd, ndLoad, coverHtml, songTable, songRow, wireSongs, albumCard, artistCard, row, wireCards, wireMoods, moodTile,
-  bump, backPill, listMenu, refreshPlaylists, totalTime, plural, hue, genreHue, href, MI, ready, lib, saveLib, syncNow, variety,
+  EXTRA, nd, ndLoad, ndFast, coverHtml, songTable, songRow, wireSongs, albumCard, artistCard, row, wireCards, wireMoods, moodTile,
+  bump, backPill, listMenu, refreshPlaylists, totalTime, plural, hue, genreHue, href, MI, ready, lib, saveLib, syncNow, variety, drawInPieces,
 } from './music.js';
 
 const line = (d, n = 18) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -89,7 +89,10 @@ EXTRA.genres = async (v) => {
 
 EXTRA.genre = async (v, name) => {
   const { main, alive } = v;
-  const [sr, ar] = await Promise.all([nd('getSongsByGenre', { genre: name, count: 500 }), nd('getAlbumList2', { type: 'byGenre', genre: name, size: 500 })]);
+  // Opens from the saved copy; drawn again only if songs or albums were added or removed
+  // (play counts alone don't redraw it, so the mixes don't reshuffle under you).
+  const ids = (r) => (r.songsByGenre?.song || r.albumList2?.album || []).map((x) => x.id).join(',');
+  const [sr, ar] = await Promise.all([ndFast('getSongsByGenre', { genre: name, count: 500 }, v, { sig: ids }), ndFast('getAlbumList2', { type: 'byGenre', genre: name, size: 500 }, v, { sig: ids })]);
   if (!alive()) return;
   const songs = sr.songsByGenre?.song || [];
   const albums = ar.albumList2?.album || [];
@@ -133,10 +136,10 @@ EXTRA.genre = async (v, name) => {
   const ess = main.querySelector('#gEss');
   if (ess) { ess.addEventListener('click', (e) => { const r = e.target.closest('[data-i]'); if (r) playSongs(essentials, +r.dataset.i, { from, shuffle: false }); }); }
   // Related genres: others that share artists with this one.
-  nd('getGenres').then(async (g) => {
+  ndFast('getGenres', {}).then(async (g) => {
     const others = (g.genres?.genre || []).filter((x) => x.value !== name && x.songCount).sort((a, b) => b.songCount - a.songCount).slice(0, 12);
     const ids = new Set(artists.map((a) => a.id));
-    const scored = await Promise.all(others.map(async (o) => { try { const x = await nd('getAlbumList2', { type: 'byGenre', genre: o.value, size: 60 }); return { o, n: (x.albumList2?.album || []).filter((a) => ids.has(a.artistId)).length }; } catch { return { o, n: 0 }; } }));
+    const scored = await Promise.all(others.map(async (o) => { try { const x = await ndFast('getAlbumList2', { type: 'byGenre', genre: o.value, size: 60 }); return { o, n: (x.albumList2?.album || []).filter((a) => ids.has(a.artistId)).length }; } catch { return { o, n: 0 }; } }));
     const rel = scored.sort((a, b) => b.n - a.n).slice(0, 4).map((x) => x.o);
     if (alive() && rel.length) { const el = main.querySelector('#gRel'); el.innerHTML = `<section class="msec"><h2>Related genres</h2><div class="moods">${rel.map(moodTile).join('')}</div></section>`; wireMoods(el); }
   }).catch(() => {});
@@ -238,12 +241,17 @@ EXTRA.playlist = async (v, id) => {
     <div class="stable pltable" id="plSongs"></div><div id="plRec"></div></div>
     <aside class="pldrawer" id="plDrawer" hidden></aside></div>`;
   const table = main.querySelector('#plSongs');
+  let stopDraw = null;
   const drawMeta = () => { const t = songs.reduce((n, s) => n + (s.duration || 0), 0); main.querySelector('#plMeta').innerHTML = [plural(songs.length, 'song'), totalTime(t), pl ? ago(pl.changed) : ''].filter(Boolean).map((x) => `<b>${esc(x)}</b>`).join('<i class="dot">•</i>'); };
   const drawTable = () => {
     table.classList.toggle('editing', editing);
-    table.innerHTML = songTable(songs, { cols: ['cover', 'album', 'added'] }).replace(/class="srow"/g, 'class="srow" draggable="false"')
-      + (songs.length ? '' : `<div class="empty plempty">${canEdit ? 'No songs yet. Press Edit to add some.' : 'Nothing here yet.'}</div>`);
-    if (editing) table.querySelectorAll('.srow[data-i]').forEach((r) => { r.draggable = true; r.querySelector('.c-n').insertAdjacentHTML('afterbegin', `<span class="dgrip">${MI.grip}</span>`); r.querySelector('.c-m').innerHTML = `<button type="button" class="gb srm" title="Remove" aria-label="Remove">${MI.close}</button>`; });
+    // A long playlist draws its first screenful at once and the rest in small pieces.
+    const opts = { cols: ['cover', 'album', 'added'] };
+    const parts = [songTable([], opts), ...songs.map((s, i) => songRow(s, i, opts).replace('class="srow"', 'class="srow" draggable="false"'))];
+    const dress = () => { if (editing) table.querySelectorAll('.srow[data-i]:not([data-ed])').forEach((r) => { r.dataset.ed = 1; r.draggable = true; r.querySelector('.c-n').insertAdjacentHTML('afterbegin', `<span class="dgrip">${MI.grip}</span>`); r.querySelector('.c-m').innerHTML = `<button type="button" class="gb srm" title="Remove" aria-label="Remove">${MI.close}</button>`; }); };
+    stopDraw?.();
+    stopDraw = drawInPieces(table, parts, { first: 41, step: 40, alive, after: dress });
+    if (!songs.length) table.insertAdjacentHTML('beforeend', `<div class="empty plempty">${canEdit ? 'No songs yet. Press Edit to add some.' : 'Nothing here yet.'}</div>`);
     drawMeta(); syncNow();
   };
   drawTable();

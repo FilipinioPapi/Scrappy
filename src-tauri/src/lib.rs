@@ -306,7 +306,9 @@ fn save_png(app: AppHandle, name: String, data: Vec<u8>) -> Result<String, Strin
 }
 
 /// Return the last saved copy of a request, or null.
-#[tauri::command]
+// (async) = read off the main thread, so a page opening from its saved copies never
+// holds the window up while files are read.
+#[tauri::command(async)]
 fn api_cached(state: State<'_, AppState>, path: String) -> Value {
     let cfg = state.cfg();
     let file = meta_cache_file(&state, &cfg, &path);
@@ -346,7 +348,9 @@ async fn nd_get(state: State<'_, AppState>, endpoint: String, query: String) -> 
     Ok(v)
 }
 
-#[tauri::command]
+// (async) = read off the main thread, so a page opening from its saved copies never
+// holds the window up while files are read.
+#[tauri::command(async)]
 fn nd_cached(state: State<'_, AppState>, endpoint: String, query: String) -> Value {
     let cfg = state.cfg();
     read_cache(&cache_file(&state, &nd_key(&cfg, &endpoint, &query)))
@@ -432,7 +436,9 @@ async fn lyrics_find(state: State<'_, AppState>, artist: String, title: String, 
     servers::lyrics_find(&state.http, &artist, &title, &album, duration).await
 }
 
-#[tauri::command]
+// (async) = read off the main thread, so a page opening from its saved copies never
+// holds the window up while files are read.
+#[tauri::command(async)]
 fn abs_cached(state: State<'_, AppState>, path: String) -> Value {
     let cfg = state.cfg();
     read_cache(&cache_file(&state, &format!("abs|{}|{}|{}", cfg.abs_server, cfg.abs_user, path)))
@@ -1094,7 +1100,7 @@ async fn serve_nd_cover(state: &AppState, id: &str, parsed: &reqwest::Url) -> Re
     if let Some(bytes) = cached {
         // An artist picture saved before the album-cover fallback existed can be Navidrome's
         // grey placeholder: check it once more (the placeholder is fetched once per session).
-        let stale = id.starts_with("ar-") && cfg.nd_logged_in() && nd_artist_placeholder(&state.http, &cfg, &size).await.as_deref() == Some(&bytes[..]);
+        let stale = id.starts_with("ar-") && cfg.nd_logged_in() && nd_artist_placeholder(state, &cfg, &size).await.as_deref() == Some(&bytes[..]);
         if !stale {
             return img_response(StatusCode::OK, sniff_mime(&bytes), bytes);
         }
@@ -1131,22 +1137,44 @@ async fn nd_cover_bytes(http: &reqwest::Client, cfg: &Config, id: &str, size: &s
     r.bytes().await.ok().map(|b| b.to_vec())
 }
 
-/// Navidrome's "no artist picture" placeholder at a given size, fetched once by asking
-/// for an artist that doesn't exist.
-async fn nd_artist_placeholder(http: &reqwest::Client, cfg: &Config, size: &str) -> Option<Vec<u8>> {
-    static SEEN: std::sync::OnceLock<Mutex<HashMap<String, Option<Vec<u8>>>>> = std::sync::OnceLock::new();
-    let seen = SEEN.get_or_init(|| Mutex::new(HashMap::new()));
+/// Navidrome's "no artist picture" placeholder at a given size (what it sends for an artist
+/// that doesn't exist). It is looked up once per session however many pictures ask for it at
+/// the same moment, and a copy is kept on disk so the first artist pictures of a session
+/// don't wait on the server: the saved copy answers straight away and is refreshed behind it.
+async fn nd_artist_placeholder(state: &AppState, cfg: &Config, size: &str) -> Option<Vec<u8>> {
+    type Cell = std::sync::Arc<tokio::sync::OnceCell<Option<Vec<u8>>>>;
+    static SEEN: std::sync::OnceLock<Mutex<HashMap<String, Cell>>> = std::sync::OnceLock::new();
+    const NO_ARTIST: &str = "ar-scrappy-no-such-artist";
     let key = format!("{}|{}", cfg.nd_server, size);
-    if let Some(v) = seen.lock().unwrap().get(&key) { return v.clone(); }
-    let v = nd_cover_bytes(http, cfg, "ar-scrappy-no-such-artist", size).await;
-    seen.lock().unwrap().insert(key, v.clone());
-    v
+    let cell = SEEN.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().entry(key).or_default().clone();
+    cell.get_or_init(|| async {
+        let file = state.cache_dir.join("img").join(format!("ndph_{}_{}", sanitize(&cfg.nd_server), sanitize(size)));
+        if let Ok(saved) = std::fs::read(&file) {
+            if !saved.is_empty() {
+                let (http, cfg, size) = (state.http.clone(), cfg.clone(), size.to_string());
+                tauri::async_runtime::spawn(async move {
+                    if let Some(now) = nd_cover_bytes(&http, &cfg, NO_ARTIST, &size).await {
+                        let _ = std::fs::write(&file, &now);
+                    }
+                });
+                return Some(saved);
+            }
+        }
+        let got = nd_cover_bytes(&state.http, cfg, NO_ARTIST, size).await;
+        if let Some(b) = &got {
+            if let Some(d) = file.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            let _ = std::fs::write(&file, b);
+        }
+        got
+    }).await.clone()
 }
 
 /// When an artist has no picture of its own (Navidrome sends nothing or its grey placeholder),
 /// use the cover of the artist's most played album instead.
 async fn artist_fallback(state: &AppState, cfg: &Config, id: &str, size: &str, got: Option<Vec<u8>>) -> Option<Vec<u8>> {
-    let placeholder = nd_artist_placeholder(&state.http, cfg, size).await;
+    let placeholder = nd_artist_placeholder(state, cfg, size).await;
     let mut missing = match (&got, &placeholder) {
         (None, _) => true,
         (Some(b), Some(p)) => b == p,
