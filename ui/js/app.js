@@ -109,6 +109,9 @@ function holdOldPage() {
   const inner = document.createElement('div');
   inner.style.transform = `translateY(${Math.min(r.top, 0)}px)`;
   inner.append(...[...viewEl.childNodes].map((n) => n.cloneNode(true)));
+  // A picture only: no ids, so nothing else in the app can find or update the copy.
+  inner.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+  g.inert = true;
   g.appendChild(inner);
   document.body.appendChild(g);
   ghost = g;
