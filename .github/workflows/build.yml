@@ -202,20 +202,22 @@ jobs:
           Get-Drafts | ForEach-Object { gh api -X DELETE "repos/$repo/releases/$($_.id)" | Out-Null }
           gh release delete $tag --yes --cleanup-tag 2>$null
           $notes = "Built from ${{ github.ref_name }} at commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
+          # The newest entry ("### ...") in the PC app section ("## ... PC app") of CHANGELOG.md:
+          # all of it goes in the release notes, its bullet points in the in-app update notes.
+          $desk = ""; $entry = @()
+          if (Test-Path CHANGELOG.md) {
+            $lines = Get-Content CHANGELOG.md -Encoding utf8; $inPc = $false; $inEntry = $false; $out = @()
+            foreach ($l in $lines) {
+              if ($l -match '^## ') { if ($inEntry) { break }; $inPc = $l -match 'PC app|Desktop'; continue }
+              if ($inPc -and $l -match '^### ') { if ($inEntry) { break }; $inEntry = $true; $entry += $l; continue }
+              if ($inEntry) { $entry += $l; if ($l.Trim() -match '^[-*] ') { $out += $l.Trim() } }
+            }
+            $desk = $out -join "`n"
+          }
+          if ($entry.Count) { $notes = ($entry -join "`n").Trim() + "`n`n---`n" + $notes }
           $files = @("Scrappy-setup.exe", "Scrappy-portable.zip")
           # latest.json tells the app's updater about this build (only when it's signed).
           if (Test-Path Scrappy-setup.exe.sig) {
-            $desk = ""
-            if (Test-Path CHANGELOG.md) {
-              # The bullet points of the newest entry ("### ...") in the PC app section ("## ... PC app").
-              $lines = Get-Content CHANGELOG.md -Encoding utf8; $inPc = $false; $inEntry = $false; $out = @()
-              foreach ($l in $lines) {
-                if ($l -match '^## ') { if ($inEntry) { break }; $inPc = $l -match 'PC app|Desktop'; continue }
-                if ($inPc -and $l -match '^### ') { if ($inEntry) { break }; $inEntry = $true; continue }
-                if ($inEntry -and $l.Trim() -match '^[-*] ') { $out += $l.Trim() }
-              }
-              $desk = $out -join "`n"
-            }
             $manifest = @{
               version = $env:APP_VERSION
               notes = $desk
@@ -225,7 +227,9 @@ jobs:
             $manifest | ConvertTo-Json -Depth 5 | Set-Content latest.json
             $files += @("Scrappy-setup.exe.sig", "latest.json")
           }
-          gh release create $tag @files --title $title --notes $notes --prerelease --target ${{ github.sha }}
+          # A file, so quotes and line breaks in the notes reach GitHub as written.
+          $notes | Set-Content -Encoding utf8 release-notes.md
+          gh release create $tag @files --title $title --notes-file release-notes.md --prerelease --target ${{ github.sha }}
           # gh sometimes leaves the new release as an untagged draft (Nov 11). Make sure it ends up published.
           for ($i = 0; $i -lt 6; $i++) {
             $d = Get-Drafts
