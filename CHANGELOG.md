@@ -12,8 +12,9 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 - Shows with more than one season have an All tab at the end that lists every episode, with a heading where each season starts
 - The Grid layout opens on All, and its pictures show just the episode number and watched tick
 - New setting: Episode names on grid pictures (Settings, Movies & TV), off by default
+- Home banner and show and movie backdrops are sharper on big or high-resolution screens
 
-<sub>Built from 992c546 · includes: Movies & TV</sub>
+<sub>Built from a5ffaba · includes: Movies & TV</sub>
 
 ### Preview 26 · Nov 11, 2:55 AM
 **Home**
