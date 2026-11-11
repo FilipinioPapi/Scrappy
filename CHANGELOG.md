@@ -13,7 +13,7 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 - Album pages show the full release date (for example "Released August 25, 2017") when the music file has it, otherwise the year as before
 - Recommended songs on playlists show up much faster, with a placeholder while they load
 
-<sub>Built from bb75e0c · includes: Music</sub>
+<sub>Built from 0c150d0 · includes: Music</sub>
 
 ### Stable · Nov 11, 2026 (everything from Preview 1 to 21)
 **⚠️ Install this one by hand**
