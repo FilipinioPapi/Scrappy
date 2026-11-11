@@ -44,7 +44,7 @@ export function loginView(root, ctx, pick = '') {
         <nav class="signin-list">
           <div class="signin-label">YOUR SERVERS</div>
           <div id="srvList"></div>
-          <div class="signin-note">Only the servers you sign in to show up as tabs. You can come back here any time from the account menu.</div>
+          <div class="signin-note">Only the servers you sign in to show up as tabs. You can come back here any time from Settings.</div>
         </nav>
         <form class="signin-form" id="srvForm" autocomplete="off"></form>
       </div>

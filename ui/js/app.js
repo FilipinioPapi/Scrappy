@@ -45,7 +45,7 @@ async function refreshSession() {
   const rows = [['emby', 'Emby'], ['navidrome', 'Navidrome'], ['audiobookshelf', 'Audiobookshelf']]
     .filter(([k]) => sv[k]?.signedIn)
     .map(([k, n]) => `<div class="menu-srv"><b>${n}</b>${escapeText(sv[k].user)}</div>`).join('');
-  document.getElementById('userInfo').innerHTML = rows || 'Not signed in';
+  const ui = document.getElementById('userInfo'); if (ui) ui.innerHTML = rows || 'Not signed in';
   // Only servers you're signed in to get a tab.
   const tabFor = { home: 'emby', music: 'navidrome', audiobooks: 'audiobookshelf' };
   // Every tab always shows; a tab whose server isn't signed in offers a sign-in instead.
