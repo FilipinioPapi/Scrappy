@@ -19,6 +19,17 @@ export const routes = {
   'nd.test/rest/getAlbumList2': { 'subsonic-response': { status: 'ok', albumList2: { album: [{ id: 'nd1', name: 'OK Computer', artist: 'Radiohead' }] } } },
   'nd.test/rest/search3': { 'subsonic-response': { status: 'ok', searchResult3: {} } },
   'abs.test/api/libraries': { libraries: [] },
+  'abs.test/status': { serverVersion: '2.17.2' },
+  'emby.test/System/Info': { Version: '4.9.1.80' },
+  'emby.test/Sessions': [{ NowPlayingItem: { Name: 'Dune' } }, {}],
+  'emby.test/Plugins': [{ Name: 'Playback Reporting' }],
+  'emby.test/Users': [{ Name: 'Jayden' }, { Name: 'Sarah' }, { Name: 'Mike' }, { Name: 'Old', Policy: { IsDisabled: true } }],
+  'emby.test/Devices': { Items: [
+    { Name: 'PC', AppName: 'Scrappy Media Center', AppVersion: '0.2.140', LastUserName: 'Jayden', DateLastActivity: new Date().toISOString() },
+    { Name: 'Laptop', AppName: 'Scrappy Media Center', AppVersion: '0.2.120', LastUserName: 'Sarah', DateLastActivity: new Date().toISOString() },
+    { Name: 'TV', AppName: 'Emby Theater', AppVersion: '4', LastUserName: 'Mike', DateLastActivity: new Date().toISOString() },
+  ] },
+  'nd.test/rest/ping': { 'subsonic-response': { status: 'ok', serverVersion: '0.64.2' } },
 };
 export const flags = { nd2: false };
 

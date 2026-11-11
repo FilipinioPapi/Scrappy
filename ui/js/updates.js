@@ -17,6 +17,9 @@ let admin = ls.get('isAdmin') === '1';
 let current = '', found = null, checking = false, waitTimer = null;
 const channel = () => (admin && ls.get('updChannel') !== 'stable' ? 'preview' : 'stable');
 const autoInstall = () => ls.get('updAuto') !== 'off';
+/** For Settings: this version, a found update, and whether the request service says admin. */
+export const updInfo = () => ({ current, found: found ? found.version : '', admin });
+export const refreshAdmin = () => checkAdmin().then(() => admin);
 const fmtDay = (ms) => (ms ? new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
 const chName = () => (channel() === 'preview' ? 'Preview' : 'Stable');
 
@@ -104,9 +107,10 @@ function drawSettings(state) {
   box.querySelector('#updAuto').checked = autoInstall();
   box.querySelector('#updCheckBtn').textContent = found ? 'See update' : 'Check now';
 }
-function mountSettings() {
+/** Wire the Updates section (on the Settings page). */
+export function mountSettings() {
   const box = document.getElementById('updSettings'); if (!box) return;
-  box.querySelector('#updCheckBtn').onclick = (e) => { e.stopPropagation(); if (found) { document.getElementById('userMenu').hidden = true; card.hidden = false; drawCard(); } else check(true); };
+  box.querySelector('#updCheckBtn').onclick = (e) => { e.stopPropagation(); if (found) { card.hidden = false; drawCard(); } else check(true); };
   box.querySelectorAll('#updCh [data-ch]').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); if (b.dataset.ch === channel()) return; ls.set('updChannel', b.dataset.ch); found = null; btn.hidden = true; drawSettings(); check(true); }));
   box.querySelector('#updAuto').onchange = (e) => { ls.set('updAuto', e.target.checked ? 'on' : 'off'); };
   drawSettings();

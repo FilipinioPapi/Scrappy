@@ -5,6 +5,7 @@ mod music;
 mod requests;
 mod servers;
 mod updates;
+mod appset;
 
 use emby::Config;
 use serde_json::{json, Value};
@@ -1251,6 +1252,7 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            let _ = emby::APP_VERSION.set(app.package_info().version.to_string());
             let cfg_dir = app.path().app_config_dir()?;
             let cache_dir = app.path().app_cache_dir()?;
             let cfg_path = cfg_dir.join("config.json");
@@ -1278,6 +1280,14 @@ pub fn run() {
                 bif: Mutex::new(None),
             });
 
+            // Tray icon (closing can keep music playing); started by Windows: stay in the tray.
+            let _ = appset::make_tray(app.handle());
+            if appset::started_hidden() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+
             // Every 10 seconds, tell Emby where we are (so resume works elsewhere).
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -1301,7 +1311,12 @@ pub fn run() {
                 return;
             }
             // Closing the app mid-video: save the resume point first.
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Settings: closing hides to the tray and music keeps playing (a video stops).
+                let to_tray = window.label() == "main" && appset::CLOSE_TO_TRAY.load(std::sync::atomic::Ordering::Relaxed);
+                if to_tray {
+                    api.prevent_close();
+                }
                 if let Some(w) = window.app_handle().get_webview_window("follow") {
                     let _ = w.destroy();
                 }
@@ -1323,6 +1338,11 @@ pub fn run() {
                 let player = state.player.lock().unwrap().take();
                 if let Some((_, _, p)) = player {
                     p.quit();
+                }
+                if to_tray {
+                    let _ = window.app_handle().emit_to("main", "player-closed", json!({}));
+                    let _ = window.hide();
+                    return;
                 }
                 music::quit(&app);
             }
@@ -1382,7 +1402,12 @@ pub fn run() {
             stop_playback,
             set_fullscreen,
             is_fullscreen,
-            clear_cache
+            clear_cache,
+            appset::set_close_to_tray,
+            appset::autostart_get,
+            appset::autostart_set,
+            appset::cache_size,
+            appset::cache_trim
         ])
         .run(tauri::generate_context!())
         .expect("error while running Scrappy");

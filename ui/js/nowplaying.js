@@ -2,6 +2,7 @@
 // Up next, Lyrics or the Visualizer (Bars, Wave, Circle, Particles).
 import { listen, api } from './api.js';
 import { esc, toast } from './components.js';
+import { on, onPref } from './prefs.js';
 import { music, onMusic, current, togglePlay, next, prev, seek, toggleShuffle, cycleRepeat, setVolume, toggleMute, setFavorite, playAt, removeAt, moveInQueue, clearUpNext, cover, fmt, IC } from './mplayer.js';
 import { nd, coverHtml, songMenu, MI, hue, href, refreshPlaylists } from './music.js';
 
@@ -34,7 +35,9 @@ let under = localStorage.getItem('mnowunder') || (mode === 'lyrics' ? 'lyrics' :
 const setMode = (m) => { mode = m; if (m !== 'viz') under = m; try { localStorage.setItem('mnowmode', mode); localStorage.setItem('mnowunder', under); } catch {} };
 // The visualizer can be switched off entirely, like lyrics.
 let vizShow = localStorage.getItem('mnowviz') !== 'off';
-const setVizShow = (on) => { vizShow = on; try { localStorage.setItem('mnowviz', on ? 'on' : 'off'); } catch {} };
+const setVizShow = (v) => { vizShow = v; try { localStorage.setItem('mnowviz', v ? 'on' : 'off'); } catch {} };
+// The Settings page turns it on or off too.
+onPref('mnowviz', (v) => { vizShow = v !== 'off'; if (!el.hidden) drawRight(); });
 let open = false;
 let settingsOpen = false;
 
@@ -208,6 +211,7 @@ function drawQueue() {
 let lyr = { id: null, lines: [], synced: false };
 // Scrolling the lyrics yourself stops them following the song; right-click (or the hint) follows again.
 let freeScroll = false;
+const autoLooked = new Set();
 async function loadLyrics() {
   const s = current(); const box = el.querySelector('#lyr'); if (!s || !box) return;
   if (lyr.id !== s.id) {
@@ -238,6 +242,8 @@ async function loadLyrics() {
       if (current()?.id === s.id) { lyr = { id: s.id, ...got }; loadLyrics(); }
     } catch (err) { b.disabled = false; b.querySelector('span').textContent = 'Try again'; const m = b2.querySelector('#lyrMsg'); if (m) m.textContent = String(err?.message || err); }
   });
+  // Settings: look online by itself (once per song).
+  if (!lyr.lines.length && on('lyricsAuto') && !autoLooked.has(s.id)) { autoLooked.add(s.id); b2.querySelector('#lyrFetch')?.click(); }
   b2.onclick = (e) => {
     const p = e.target.closest('[data-li]'); if (p && lyr.synced) { seek(lyr.lines[+p.dataset.li].t); follow(b2); }
   };

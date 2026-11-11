@@ -57,9 +57,15 @@ export function openDb(file) {
       seen TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
   return db;
 }
+/** The open database (for settings.js). */
+export const handle = () => db;
 
 const j = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 function shape(r) {
@@ -134,6 +140,9 @@ export function listRequests({ user, status, type } = {}) {
   const rows = db.prepare(`SELECT * FROM requests ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY (status IN ('requested','progress')) DESC, updated_at DESC LIMIT 1000`).all(...args);
   return rows.map(shape);
 }
+/** How many open requests this person is on. */
+export const openCount = (user) => db.prepare(`SELECT COUNT(*) AS n FROM requests WHERE status IN ('requested','progress') AND id IN (SELECT request_id FROM requesters WHERE lower(user) = lower(?))`).get(user).n;
+export const countOpen = () => db.prepare(`SELECT COUNT(*) AS n FROM requests WHERE status IN ('requested','progress')`).get().n;
 export const openRequests = () => db.prepare(`SELECT * FROM requests WHERE status IN ('requested','progress')`).all().map(shape);
 
 export function setStatus(id, status, note, libRef) {

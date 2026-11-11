@@ -7,6 +7,7 @@ import { findAlbum, findSong, refreshNavidrome } from './navidrome.js';
 import { findBook, refreshAbs } from './abs.js';
 import { tvDetails, seasonDetails, poster, airedEpisodes } from './tmdb.js';
 import { today } from './util.js';
+import { settings } from './settings.js';
 
 /** Is everything this TV request asked for on the server now? */
 export async function tvDone(r) {
@@ -45,6 +46,8 @@ export async function checkArrivals() {
   await Promise.allSettled([refreshEmby(), refreshNavidrome(), refreshAbs()]);
   for (const r of db.openRequests()) {
     try {
+      // Settings: an admin can turn off marking requests Available by themselves.
+      if (!settings().autoAvailable) break;
       const ref = await whereIs(r);
       if (ref) { const done = db.setStatus(r.id, 'available', null, String(ref)); handoff.statusChanged(done, 'auto'); }
     } catch (e) { console.warn(`Check of request ${r.id} failed:`, e.message); }
@@ -72,9 +75,9 @@ export async function checkNewSeasons() {
 }
 
 export function startJobs() {
-  const every = Math.max(2, config.checkEvery) * 60 * 1000;
-  setTimeout(() => checkArrivals().catch(() => {}), 20 * 1000);
-  setInterval(() => checkArrivals().catch(() => {}), every);
+  // How often comes from Settings each time, so a change applies without a restart.
+  const again = () => setTimeout(() => checkArrivals().catch(() => {}).finally(again), Math.max(2, settings().checkEvery) * 60 * 1000);
+  setTimeout(() => checkArrivals().catch(() => {}).finally(again), 20 * 1000);
   setTimeout(() => checkNewSeasons().catch(() => {}), 60 * 1000);
   setInterval(() => checkNewSeasons().catch(() => {}), 24 * 3600 * 1000);
 }

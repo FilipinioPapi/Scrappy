@@ -11,6 +11,7 @@ import './menu.js';
 import './topfit.js';
 import './updates.js';
 import { toast } from './components.js';
+import { pref, setPref, on, onPref } from './prefs.js';
 import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView } from './views.js';
 
 const viewEl = document.getElementById('view');
@@ -104,7 +105,7 @@ async function route(opts = {}) {
   if (!session.loggedIn && name !== 'login') { location.hash = '#/login'; return; }
   if (session.loggedIn && name === 'login') { location.hash = firstTab(session); return; }
   // A tab whose server isn't signed in shows a sign-in prompt for it.
-  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || { music: 'navidrome', abs: 'audiobookshelf' }[statsKind] || (['login', 'servers', 'search'].includes(name) ? '' : 'emby');
+  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || { music: 'navidrome', abs: 'audiobookshelf' }[statsKind] || (['login', 'servers', 'search', 'settings'].includes(name) ? '' : 'emby');
   const notSigned = need && !session.servers?.[need]?.signedIn;
 
   topbar.hidden = name === 'login' || name === 'servers';
@@ -119,11 +120,13 @@ async function route(opts = {}) {
   document.body.classList.toggle('tab-music', audioTab);
   // Stats act as their own section: no side bars, no bottom bar, no tab lit up.
   // Requests act the same way.
-  document.body.classList.toggle('tab-stats', !!statsKind || name === 'requests');
+  document.body.classList.toggle('tab-stats', !!statsKind || name === 'requests' || name === 'settings');
+  document.getElementById('userBtn')?.classList.toggle('on', name === 'settings');
+  // Remember the tab for "Start on: Last used".
+  if (['home', 'music', 'audiobooks'].includes(name) && !arg) setPref('lastTab', '#/' + name);
   document.querySelectorAll('.tabs a').forEach((a) =>
-    a.classList.toggle('active', !statsKind && name !== 'requests' && a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
+    a.classList.toggle('active', !statsKind && name !== 'requests' && name !== 'settings' && a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
-  document.getElementById('userMenu').hidden = true;
 
   const ctx = makeCtx();
   if (opts.keepScroll) quiet();
@@ -152,31 +155,20 @@ async function route(opts = {}) {
     case 'requests': return requestsPage(viewEl, ctx, (arg || '').split('?')[0], arg2 ? decodeURIComponent(arg2.split('?')[0]) : '');
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return booksView(viewEl, ctx);
+    case 'settings': return import('./settings.js').then((m) => m.settingsPage(viewEl, ctx, id));
     case 'stats': if (!statsSwitch) viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
     default: return homeView(viewEl, ctx);
   }
 }
 
-// Account menu
+// The cog opens the Settings page; pressing it again goes back to where you were.
+let beforeSettings = '';
 document.getElementById('userBtn').addEventListener('click', (e) => {
   e.stopPropagation();
-  const m = document.getElementById('userMenu');
-  m.hidden = !m.hidden;
   document.getElementById('refMenu').hidden = true;
-});
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.user-menu')) document.getElementById('userMenu').hidden = true;
-});
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-  await api.logout().catch(() => {});
-  await refreshSession();
-  location.hash = '#/login';
-});
-document.getElementById('serversBtn').addEventListener('click', () => { location.hash = '#/servers'; });
-document.getElementById('clearCacheBtn').addEventListener('click', async () => {
-  await api.clearCache();
-  document.getElementById('userMenu').hidden = true;
-  toast('Image and library cache cleared.');
+  if ((location.hash || '').startsWith('#/settings')) { location.hash = beforeSettings || '#/home'; beforeSettings = ''; return; }
+  beforeSettings = location.hash || '#/home';
+  location.hash = '#/settings';
 });
 
 // ---------- Refresh button: click = Quick Scan, right-click = Quick Scan / Deep Scan ----------
@@ -258,7 +250,6 @@ async function deepScan(sec = curSection()) {
 const ago = (t) => { if (!t) return 'not yet this session'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m === 1 ? '1 min ago' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
 async function openRefMenu() {
   const sec = curSection(), S = SECTIONS[sec];
-  document.getElementById('userMenu').hidden = true;
   const draw = (admin) => {
     refMenu.innerHTML = `<div class="rm-h">${S.name}${lastRefresh[sec] ? ' · refreshed ' + ago(lastRefresh[sec]) : ''}</div>
       <button type="button" class="rm-i" data-act="quick"><span class="ic">${refreshBtn.querySelector('svg').outerHTML}</span><span><span class="t">Quick Scan</span><span class="d">Reloads this tab from ${S.server} and grabs any changed ${S.what}. A few seconds.</span></span></button>
@@ -296,7 +287,7 @@ statsBtn.addEventListener('click', (e) => {
 statsBtn.addEventListener('contextmenu', (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!statsMenu.hidden) { statsMenu.hidden = true; return; }
-  refMenu.hidden = true; document.getElementById('userMenu').hidden = true;
+  refMenu.hidden = true;
   const here = curSection(), cur = (location.hash || '').split('?')[0];
   statsMenu.innerHTML = `<div class="rm-h">Open stats</div>` + Object.keys(STATS_ROUTES).map((k) => `<button type="button" class="rm-i sm${cur === STATS_ROUTES[k] ? ' cur' : ''}" data-sec="${k}"><span class="ic">${SEC_ICON[k]}</span><span class="t">${SECTIONS[k].name} stats</span>${k === here ? '<span class="here">this tab</span>' : ''}</button>`).join('');
   statsMenu.hidden = false;
@@ -324,18 +315,17 @@ window.addEventListener('mouseup', (e) => { if (e.button === 3) history.back(); 
 
 // Player events from Rust
 
-// Settings in the account menu (full settings page comes in step 5).
-const autoplayToggle = document.getElementById('autoplayToggle');
-const windowModeToggle = document.getElementById('windowModeToggle');
-autoplayToggle.checked = localStorage.getItem('autoplay') !== 'off';
-windowModeToggle.checked = localStorage.getItem('playerMode') === 'window';
-autoplayToggle.addEventListener('change', () => localStorage.setItem('autoplay', autoplayToggle.checked ? 'on' : 'off'));
-windowModeToggle.addEventListener('change', () => localStorage.setItem('playerMode', windowModeToggle.checked ? 'window' : 'embedded'));
-// Your Year in Review normally appears on December 1; this shows it any time (for trying it out).
-const yirEarlyToggle = document.getElementById('yirEarlyToggle');
-yirEarlyToggle.checked = localStorage.getItem('yirEarly') === 'on';
-yirEarlyToggle.addEventListener('change', () => { localStorage.setItem('yirEarly', yirEarlyToggle.checked ? 'on' : 'off'); if (/stats/.test(location.hash)) route({ keepScroll: true }); });
-document.querySelector('.menu').addEventListener('click', (e) => { if (e.target.closest('label')) e.stopPropagation(); });
+// ---------- Settings that act on the whole app ----------
+// Closing the window keeps music playing in the tray (Rust needs to know).
+const tray = () => window.__TAURI__.core.invoke('set_close_to_tray', { on: on('closeTray') }).catch(() => {});
+tray(); onPref('closeTray', tray);
+// Reduce motion / intro splash: classes on <html> (index.html sets them before anything draws).
+const looks = () => { document.documentElement.classList.toggle('calm', on('reduceMotion')); document.documentElement.classList.toggle('no-intro', !on('introSplash')); };
+looks(); onPref(['reduceMotion', 'introSplash'], looks);
+// Year in Review early (admins): redraw Stats if it's open.
+onPref('yirEarly', () => { if (/stats/.test(location.hash)) route({ keepScroll: true }); });
+// Image cache size limit: trim once at start (quietly).
+if (Number(pref('cacheMax'))) setTimeout(() => window.__TAURI__.core.invoke('cache_trim', { maxMb: Number(pref('cacheMax')) }).catch(() => {}), 15000);
 
 // After playback, refresh the page so Continue Watching and progress bars update.
 window.addEventListener('scrappy:refresh', () => {
@@ -345,6 +335,11 @@ window.addEventListener('scrappy:refresh', () => {
 
 window.addEventListener('hashchange', () => route());
 mountSearch();
+// Settings: which tab opens at start (unless an update restart already chose the page).
+if (!location.hash) {
+  const st = pref('startTab'), want = st === 'last' ? pref('lastTab') : st;
+  if (['#/home', '#/music', '#/audiobooks'].includes(want) && want !== '#/home') history.replaceState(null, '', want);
+}
 route();
 
 // The Scrappy logo goes to the home screen of whichever tab you're on.
@@ -385,6 +380,11 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === '-' || e.key === '_') { e.preventDefault(); e.stopPropagation(); stepZoom(-1); }
   else if (e.key === '0') { e.preventDefault(); e.stopPropagation(); applyZoom(1, true); }
 }, true);
+window.addEventListener('scrappy:zoom', (e) => {
+  const z = e.detail;
+  if (z > zoomNow && !roomFor(z)) { toast('Make the window bigger to use that size.'); return; }
+  applyZoom(z, false);
+});
 window.addEventListener('wheel', (e) => { if (e.ctrlKey) { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); } }, { passive: false });
 // If the window is made smaller than the zoom level allows, step the zoom back down.
 window.addEventListener('resize', () => {

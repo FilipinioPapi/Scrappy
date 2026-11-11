@@ -7,6 +7,7 @@
 import { api, listen, IMG_BASE } from './api.js';
 const { emit } = window.__TAURI__.event;
 import { esc, toast } from './components.js';
+import { pref, on, onPref } from './prefs.js';
 import { followHTML, followBind, followActive, followRoot, openSettings, FOLLOW_ICON, POP_ICON } from './follow.js';
 import { loadBookmarks, bookmarksFor, onBookmarks, addBookmark, listHtml, wireList, actionToast, MARK } from './bookmarks.js';
 import { mode, enterBookMode, music as M, setVolume, toggleMute, onMusic, IC } from './mplayer.js';
@@ -119,10 +120,14 @@ export async function toggleBook() {
   if (!B.started || !B.session) return playBook(B.item.id);
   // Resuming after a while: if another device moved on since, jump to its spot first.
   if (!B.playing && B.pausedAt && Date.now() - B.pausedAt > 20000) {
+    let moved = false;
     try {
       const p = await api.abs(`/api/me/progress/${encodeURIComponent(B.item.id)}`);
-      if (p && !p.isFinished && (p.lastUpdate || 0) > B.lastSync + 2000 && Math.abs((p.currentTime || 0) - B.pos) > 5) seekBook(p.currentTime);
+      if (p && !p.isFinished && (p.lastUpdate || 0) > B.lastSync + 2000 && Math.abs((p.currentTime || 0) - B.pos) > 5) { seekBook(p.currentTime); moved = true; }
     } catch {}
+    // Settings: back a little after a pause, so you catch the last sentence (more after a long break).
+    const away = Date.now() - B.pausedAt;
+    if (!moved && on('bRewind') && away > 60000) seekBook(Math.max(0, B.pos - (away > 30 * 60000 ? 15 : 5)));
   }
   invoke('music_command', { args: ['cycle', 'pause'] }).catch(fail);
 }
@@ -140,6 +145,16 @@ export function seekBook(t) {
     .catch(() => {});
 }
 export const skip = (secs) => seekBook(B.pos + secs);
+// Skip lengths from Settings ("10/30" = back 10, forward 30). The buttons show the numbers.
+const skipLens = () => { const [b, f] = String(pref('bSkip')).split('/').map(Number); return { b: b || 10, f: f || 10 }; };
+const skipBack = () => skip(-skipLens().b);
+const skipFwd = () => skip(skipLens().f);
+function drawSkips(root = document) {
+  const { b, f } = skipLens();
+  root.querySelectorAll('#bbBack,#tbBack,#bnBack').forEach((x) => { const t = x.querySelector('text'); if (t) t.textContent = b; x.title = x.ariaLabel = `Back ${b} seconds`; });
+  root.querySelectorAll('#bbFwd,#tbFwd,#bnFwd').forEach((x) => { const t = x.querySelector('text'); if (t) t.textContent = f; x.title = x.ariaLabel = `Forward ${f} seconds`; });
+}
+onPref('bSkip', () => drawSkips());
 export function prevChapter() {
   const i = chapterAt(B.chapters, B.pos);
   if (i < 0) return seekBook(0);
@@ -332,8 +347,8 @@ slider($('bbSeek'), (f) => { dragging = true; const { start, end } = span(); set
   (f) => { dragging = false; const { start, end } = span(); seekBook(start + f * (end - start)); });
 slider($('bbVol'), (f) => { setVolume(f * 100); draw(); });
 $('bbPlay').onclick = toggleBook;
-$('bbBack').onclick = () => skip(-10);
-$('bbFwd').onclick = () => skip(10);
+$('bbBack').onclick = skipBack;
+$('bbFwd').onclick = skipFwd;
 $('bbPrev').onclick = prevChapter;
 $('bbNext').onclick = nextChapter;
 $('bbMute').onclick = () => { toggleMute(); draw(); };
@@ -400,8 +415,9 @@ slider(TB('tbSeek'), (f) => { tbDrag = true; const { start, end } = span(); setF
   (f) => { tbDrag = false; const { start, end } = span(); seekBook(start + f * (end - start)); });
 slider(TB('tbVol'), (f) => { setVolume(f * 100); draw(); });
 TB('tbPlay').onclick = toggleBook;
-TB('tbBack').onclick = () => skip(-10);
-TB('tbFwd').onclick = () => skip(10);
+TB('tbBack').onclick = skipBack;
+TB('tbFwd').onclick = skipFwd;
+drawSkips();
 TB('tbMute').onclick = () => { toggleMute(); draw(); };
 TB('tbSpd').onclick = (e) => togglePop('speed', e.currentTarget);
 TB('tbCover').onclick = () => { location.hash = B.item ? `#/audiobooks/book/${encodeURIComponent(B.item.id)}` : '#/audiobooks'; };
@@ -648,8 +664,9 @@ function buildNow() {
   if (!B.chapters.length && nowPane === 'chapters') nowPane = 'about';
   n$('bnClose').onclick = closeBookNow;
   n$('bnPlay').onclick = toggleBook;
-  n$('bnBack').onclick = () => skip(-10);
-  n$('bnFwd').onclick = () => skip(10);
+  n$('bnBack').onclick = skipBack;
+  n$('bnFwd').onclick = skipFwd;
+  drawSkips();
   n$('bnPrev').onclick = prevChapter;
   n$('bnNext').onclick = nextChapter;
   n$('bnSpd').onclick = (e) => togglePop('speed', e.currentTarget);
@@ -776,7 +793,7 @@ listen('fa-cmd', ({ payload: c }) => {
   if (!c) return;
   if (c.cmd === 'hello') sendState();
   else if (c.cmd === 'toggle') toggleBook();
-  else if (c.cmd === 'skip') skip(Number(c.n) || 0);
+  else if (c.cmd === 'skip') { if (Number(c.n) < 0) skipBack(); else if (Number(c.n) > 0) skipFwd(); }
   else if (c.cmd === 'seek') seekBook(Number(c.pos) || 0);
   else if (c.cmd === 'speed') { const L = [1, 1.25, 1.5, 1.75, 2, 0.9]; const i = L.findIndex((v) => Math.abs(v - B.speed) < 0.01); setSpeed(L[(i + 1) % L.length]); }
 });

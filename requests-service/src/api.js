@@ -10,6 +10,8 @@ import { findMovie, findShow, showEpisodes, embyOn } from './emby.js';
 import { findAlbum, findSong, artistAlbumCount, navidromeOn } from './navidrome.js';
 import { findBook, absOn } from './abs.js';
 import { cache, getJson, today } from './util.js';
+import { settings, changeSettings, isAdmin, isStaff, region } from './settings.js';
+import { health, VERSION } from './health.js';
 
 export class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 
@@ -30,7 +32,8 @@ export async function identify(req) {
     if (!name) throw new HttpError(401, 'Your Emby sign-in expired. Sign in again in Scrappy.');
     who.set(key, name);
   }
-  return { name, admin: config.admins.includes(name.toLowerCase()) };
+  const admin = isAdmin(name);
+  return { name, admin, staff: !admin && isStaff(name), manage: admin || isStaff(name) };
 }
 
 // ---------- Helpers ----------
@@ -211,14 +214,34 @@ async function alreadyThere(item) {
 // ---------- Routes ----------
 export async function route(method, path, query, body, req) {
   if (path === '/api/health') {
-    return { ok: true, version: '1.0.0', emby: embyOn(), navidrome: navidromeOn(), audiobookshelf: absOn(), tmdb: !!config.tmdbKey, region: config.region };
+    return { ok: true, version: VERSION, emby: embyOn(), navidrome: navidromeOn(), audiobookshelf: absOn(), tmdb: !!config.tmdbKey, region: region() };
   }
   const me = await identify(req);
   asker.enterWith(me.name);
   const mustAdmin = () => { if (!me.admin) throw new HttpError(403, 'Only admins can do that.'); };
+  // Staff can see and manage every request, but not change the settings.
+  const mustManage = () => { if (!me.manage) throw new HttpError(403, 'Only admins can do that.'); };
   let m;
 
-  if (method === 'GET' && path === '/api/me') return { user: me.name, admin: me.admin, region: config.region, music: navidromeOn(), books: absOn() };
+  if (method === 'GET' && path === '/api/me') return { user: me.name, admin: me.admin, staff: me.staff, manage: me.manage, region: region(), music: navidromeOn(), books: absOn() };
+
+  // ---------- Admin: Settings page ----------
+  if (method === 'GET' && path === '/api/admin/settings') {
+    mustAdmin();
+    return { settings: settings(), fixedAdmins: config.admins, version: VERSION };
+  }
+  if (method === 'PATCH' && path === '/api/admin/settings') {
+    mustAdmin();
+    try { return { settings: changeSettings(body || {}), fixedAdmins: config.admins, version: VERSION }; }
+    catch (e) { throw new HttpError(400, e.message); }
+  }
+  if (method === 'GET' && path === '/api/admin/people') {
+    mustAdmin();
+    // Everyone with an Emby account, to pick admins and staff from.
+    const users = await getJson(`${config.emby.url}/Users`, { headers: { 'X-Emby-Token': config.emby.apiKey, accept: 'application/json' } }).catch(() => []);
+    return { people: (users || []).filter((u) => !u.Policy?.IsDisabled).map((u) => u.Name).sort((a, b) => a.localeCompare(b)) };
+  }
+  if (method === 'GET' && path === '/api/admin/health') { mustAdmin(); return health(String(query.latest || '')); }
 
   if (method === 'GET' && path === '/api/search') {
     const q = String(query.q || '').trim();
@@ -243,6 +266,12 @@ export async function route(method, path, query, body, req) {
     for (const x of items) {
       const item = await itemFor(x);
       if (await alreadyThere(item)) { out.push({ title: item.title, skipped: 'on the server' }); continue; }
+      // Settings: most open requests one person can have (joining someone else's doesn't count).
+      const limit = settings().limit;
+      if (limit && !me.manage && !db.openFor(item.type, item.extId) && db.openCount(me.name) >= limit) {
+        if (!out.length) throw new HttpError(400, `You can have ${limit} open request${limit === 1 ? '' : 's'} at a time. Some need to arrive before you ask for more.`);
+        out.push({ title: item.title, skipped: 'over your limit' }); continue;
+      }
       const res = db.addRequest(item, me.name, note);
       if (item.type === 'tv' && item.follow) {
         const d = await T.tvDetails(item.extId);
@@ -255,18 +284,18 @@ export async function route(method, path, query, body, req) {
     return { results: out };
   }
   if (method === 'GET' && path === '/api/requests') {
-    if (query.scope === 'all') mustAdmin();
+    if (query.scope === 'all') mustManage();
     const list = db.listRequests({ user: query.scope === 'all' ? null : me.name, status: query.status || null, type: query.type || null });
-    const cutoff = Date.now() - 90 * 864e5;
-    // People see open requests plus finished ones from the last 90 days. Only admins see who asked.
+    const cutoff = Date.now() - settings().keepDays * 864e5;
+    // People see open requests plus finished ones from the last 90 days (Settings). Only admins and staff see who asked.
     return {
       requests: list.filter((r) => query.scope === 'all' || db.OPEN.includes(r.status) || (r.doneAt || r.updatedAt) > cutoff)
-        .map((r) => (me.admin ? r : { ...r, users: r.users.filter((u) => u.toLowerCase() === me.name.toLowerCase()), others: r.users.length - 1, notes: r.notes.filter((n) => n.user.toLowerCase() === me.name.toLowerCase()) })),
+        .map((r) => (me.manage ? r : { ...r, users: r.users.filter((u) => u.toLowerCase() === me.name.toLowerCase()), others: r.users.length - 1, notes: r.notes.filter((n) => n.user.toLowerCase() === me.name.toLowerCase()) })),
       follows: db.follows().filter((f) => f.users.some((u) => u.toLowerCase() === me.name.toLowerCase())).map((f) => ({ tmdbId: f.tmdbId, title: f.title, poster: f.poster })),
     };
   }
   if (method === 'PATCH' && (m = path.match(/^\/api\/requests\/(\d+)$/))) {
-    mustAdmin();
+    mustManage();
     const r = db.getRequest(Number(m[1]));
     if (!r) throw new HttpError(404, 'That request is gone.');
     const status = body?.status || r.status;

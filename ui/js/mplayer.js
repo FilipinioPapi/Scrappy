@@ -4,7 +4,17 @@
 import { api, listen, IMG_BASE } from './api.js';
 import { esc, toast } from './components.js';
 
+import { on, onPref } from './prefs.js';
+
 const { invoke } = window.__TAURI__.core;
+
+// Settings: gapless playback and volume levelling (ReplayGain tags in the files).
+const audioPrefs = () => {
+  invoke('music_set', { name: 'gapless-audio', value: on('gapless') ? 'weak' : 'no' }).catch(() => {});
+  invoke('music_set', { name: 'replaygain', value: on('rgain') ? 'track' : 'no' }).catch(() => {});
+};
+listen('music-loaded', audioPrefs);
+onPref(['gapless', 'rgain'], audioPrefs);
 
 export const cover = (id, w = 300) => (id ? `${IMG_BASE}/nd/${encodeURIComponent(id)}?w=${w}` : '');
 export const fmt = (s) => { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };

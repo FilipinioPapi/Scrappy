@@ -41,7 +41,11 @@ Scrappy finds the service on its own at your Emby address plus `/requests`. If y
 | `HANDOFF_URL`, `HANDOFF_SECRET` | Optional: where to send new requests and status changes (the Discord bot, later) |
 | `BASE_PATH` | Path the service lives under (default `/requests`) |
 
-The request list is one file, `data/requests.db`. Back up that folder to keep it.
+`REGION` and `CHECK_EVERY_MINUTES` are only starting values now. Admins change them, plus extra admins, staff, a per-person limit, hiding adult titles, marking requests Available by themselves and how long finished requests stay listed, in Scrappy under Settings → Admin → Requests. Those choices are saved in the database. The people in `ADMINS` always stay admins.
+
+Admins also get Settings → Admin → Server health: whether Emby, Navidrome and Audiobookshelf answer, and who's using Scrappy (from Emby's own device list).
+
+The request list and settings are one file, `data/requests.db`. Back up that folder to keep it.
 
 ## Run without Docker
 

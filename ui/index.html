@@ -6,6 +6,8 @@
   <title>Scrappy Media Center</title>
   <link rel="icon" href="logo.png" />
   <link rel="stylesheet" href="styles.css" />
+  <!-- Settings that change how the app looks from the very first frame. -->
+  <script>try { var h = document.documentElement; if (localStorage.getItem('introSplash') === 'off') h.classList.add('no-intro'); if (localStorage.getItem('reduceMotion') === 'on') h.classList.add('calm'); } catch (e) {}</script>
 </head>
 <body>
   <div id="intro" aria-hidden="true">
@@ -51,22 +53,6 @@
         <button class="icon-btn" id="userBtn" title="Settings" aria-label="Settings">
           <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
         </button>
-        <div class="menu" id="userMenu" hidden>
-          <div class="menu-h">Settings</div>
-          <div class="menu-info" id="userInfo"></div>
-          <label class="toggle">Auto-play next episode <input type="checkbox" id="autoplayToggle"></label>
-          <label class="toggle">Play in separate mpv window <input type="checkbox" id="windowModeToggle"></label>
-          <label class="toggle" title="Year in Review normally shows up on December 1">Show Year in Review early <input type="checkbox" id="yirEarlyToggle"></label>
-          <div class="upd-set" id="updSettings">
-            <div class="menu-sec">UPDATES</div>
-            <div class="upd-row"><div><b id="updVer"></b><span class="upd-state" id="updState"></span></div><button type="button" class="upd-check" id="updCheckBtn">Check now</button></div>
-            <div class="upd-ch" id="updCh" hidden><span>Channel</span><div class="upd-seg"><button type="button" data-ch="preview">Preview</button><button type="button" data-ch="stable">Stable</button></div></div>
-            <label class="toggle" title="An update that downloaded installs when you next open Scrappy">Install updates when Scrappy starts <input type="checkbox" id="updAuto"></label>
-          </div>
-          <button id="serversBtn">Servers</button>
-          <button id="clearCacheBtn">Clear image cache</button>
-          <button id="logoutBtn">Sign out</button>
-        </div>
       </div>
     </div>
   </header>

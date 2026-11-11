@@ -130,6 +130,9 @@ async function send(items, note) {
     const made = r.results.filter((x) => !x.skipped), skipped = r.results.filter((x) => x.skipped);
     if (made.length) toast(made.length === 1 ? `Requested ${made[0].title}. You'll see it under Requests when it's ready.` : `Requested ${made.length} items. You'll see them under Requests.`);
     else if (skipped.length) toast(skipped.length === 1 ? `${skipped[0].title} is already on the server.` : 'Those are already on the server.');
+    // Over the per-person limit (set by an admin): say how many didn't go in.
+    const over = skipped.filter((x) => x.skipped === 'over your limit').length;
+    if (over && made.length) toast(`${over} more didn't go in: you've reached the most open requests you can have.`, true);
     return true;
   } catch (e) { toast(String(e) === 'REQ_OFFLINE' ? "Couldn't reach the request service." : String(e), true); return false; }
 }
@@ -397,7 +400,7 @@ async function tvPage(root, ctx, id) {
 }
 
 // Open Requests: one list. People see their own open requests; admins see everyone's, with who asked.
-const listScope = () => (me.admin ? 'all' : 'mine');
+const listScope = () => (me.admin || me.manage ? 'all' : 'mine'); // staff manage requests too
 const isOpen = (r) => ['requested', 'progress'].includes(r.status);
 async function listPage(root, ctx) {
   const scope = listScope(), admin = scope === 'all';

@@ -2,6 +2,7 @@
 // this page; this file draws the controls on top and talks to mpv.
 import { api, listen, img, load, IMG_BASE } from './api.js';
 import { esc, toast, epCode, runtime } from './components.js';
+import { pref, on, onPref, SUB_STYLES, NIGHT_FILTER } from './prefs.js';
 
 const { invoke } = window.__TAURI__.core;
 
@@ -241,7 +242,7 @@ const langOf = (l) => {
   const k = String(l || '').toLowerCase().trim().split(/[-_]/)[0];
   return LANGS[k] || k;
 };
-const SUB_LANG = 'en'; // your subtitle language
+const subLangPref = () => langOf(pref('subLang')) || 'en'; // your subtitle language (Settings)
 const sameLang = (a, b) => !a || !b || langOf(a) === langOf(b);
 function matchTrack(type, ref) {
   const list = S.tracks.filter((t) => t.type === type);
@@ -266,6 +267,12 @@ function pickTracks() {
   if (!S.pick || S.defaults === undefined || !S.tracks.length) return;
   const w = wanted();
   const tp = loadTrackPrefs();
+  if (S.pick.audio && !tp.audio && pref('audioLang')) {
+    // Settings: a preferred audio language, when the video has it (else Emby's pick below).
+    const L = langOf(pref('audioLang'));
+    const t = S.tracks.find((x) => x.type === 'audio' && langOf(x.lang) === L);
+    if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.wantAid = t.id; S.pick.audio = false; }
+  }
   if (S.pick.audio) {
     if (!w.audio) S.pick.audio = false;
     else { const t = matchTrack('audio', w.audio); if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.wantAid = t.id; S.pick.audio = false; } }
@@ -282,6 +289,14 @@ function pickTracks() {
     const t = matchTrack('sub', tp.sub);
     if (t) { use(t); S.pick.sub = false; }
     return;
+  }
+  // Settings: "Always my language" or "Off unless I turn them on".
+  const mode = pref('subStart');
+  if (mode === 'off') { S.subWhy = 'your Settings (off)'; off(); return; }
+  if (mode === 'mine') {
+    const subs = S.tracks.filter((x) => x.type === 'sub' && !x.forced);
+    const t = subs.find((x) => subLang(x) === subLangPref());
+    if (t) { S.subWhy = 'your Settings (your language)'; use(t); S.pick.sub = false; return; }
   }
   // Otherwise the show's own default: the subtitles Emby itself would start with
   // (it knows the file's default flag and your Emby settings), then the subtitles
@@ -408,8 +423,9 @@ function drawButtons() {
   $('.p-cog').classList.toggle('on', S.settingsOpen);
   if (shown.vol !== S.volume) {
     shown.vol = S.volume;
+    $('.p-vol').max = volMax();
     $('.p-vol').value = S.volume;
-    $('.p-vol').style.setProperty('--v', S.volume + '%');
+    $('.p-vol').style.setProperty('--v', (S.volume / volMax() * 100) + '%');
   }
   $('.p-next').hidden = !S.next;
   $('.p-epsbtn').hidden = !(S.item?.Type === 'Episode' && S.item?.SeriesId);
@@ -480,7 +496,12 @@ function checkMarkers() {
   if (!S.open || S.starting) return;
   const p = S.pos;
   // Intro
-  if (S.intro && p >= S.intro.start && p < S.intro.end - 1 && !S.introDismissed) {
+  if (S.intro && p >= S.intro.start && p < S.intro.end - 1 && !S.introDismissed && on('skipIntro')) {
+    // Settings: skip intros by themselves (once; seeking back into it lets it play).
+    S.introDismissed = true;
+    cmd('seek', S.intro.end.toFixed(2), 'absolute');
+    toast('Skipped the intro');
+  } else if (S.intro && p >= S.intro.start && p < S.intro.end - 1 && !S.introDismissed) {
     showSkip('intro');
     const left = (S.intro.end - p) / (S.intro.end - S.intro.start);
     $('.p-skip-bar').style.width = Math.max(0, Math.min(100, left * 100)) + '%';
@@ -504,7 +525,9 @@ function checkMarkers() {
     if (p >= cs && !S.creditsHandled) {
       S.creditsHandled = true;
       const autoplay = ls.get('autoplay', 'on') !== 'off';
-      if (S.next && autoplay) showUpNext('credits');
+      // Settings: skip credits straight to the next episode, only on Emby's own credits marker.
+      if (S.next && S.credits != null && on('skipCredits')) playNext(true);
+      else if (S.next && autoplay) showUpNext('credits');
       else showSkip('credits');
     }
   }
@@ -617,7 +640,7 @@ function showDlPage(on) {
   $('.p-dl-what').textContent = (it.Type === 'Episode'
     ? [it.SeriesName, `S${it.ParentIndexNumber}:E${it.IndexNumber}`, it.Name].filter(Boolean).join(' · ')
     : it.Name) + '. Searches the subtitle sources set up on your Emby server (like OpenSubtitles).';
-  $('[data-dl-lang]').value = localStorage.getItem('subSearchLang') || 'eng';
+  $('[data-dl-lang]').value = localStorage.getItem('subSearchLang') || pref('subLang');
   if (dl.dataset.item !== it.Id) {
     dl.dataset.item = it.Id;
     dlRun++;
@@ -803,7 +826,7 @@ function showUpNext(mode) {
   if (!n) return false;
   hideUpNext();
   S.upNextMode = mode;
-  let count = 10;
+  let count = Number(pref('upNextSecs')) || 10;
   const thumb = n.ImageTags?.Primary ? img(n.Id, 'Primary', n.ImageTags.Primary, 320) : null;
   $('.p-up-thumb').innerHTML = thumb ? `<img src="${esc(thumb)}" alt="">` : '';
   $('.p-up-title').textContent = [epCode(n), n.Name].filter(Boolean).join(' · ');
@@ -887,12 +910,25 @@ listen('mpv-prop', ({ payload: { name, value } }) => {
   }
 });
 
+// Settings that go straight to mpv: picture decoding, subtitle look, night mode, volume boost.
+function applyPrefs() {
+  setProp('hwdec', pref('hwdec'));
+  Object.entries(SUB_STYLES[pref('subStyle')] || SUB_STYLES.outline).forEach(([k, v]) => setProp(k, v));
+  setProp('af', on('nightMode') ? NIGHT_FILTER : '');
+  setProp('volume-max', volMax());
+  if (S.volume > volMax()) { S.volume = volMax(); ls.set('volume', S.volume); setProp('volume', S.volume); }
+}
+onPref(['hwdec', 'subStyle', 'nightMode', 'volBoost'], () => { if (S.open) { applyPrefs(); shown.vol = null; drawButtons(); } });
+onPref('subScale', (v) => { S.subScale = v; if (S.open) setProp('sub-scale', v); });
+onPref('quality', (v) => { S.quality = v; });
+
 listen('player-loaded', ({ payload }) => {
   loadPreviews(payload?.itemId);
   S.frameSeen = false;
   updateVideoOn();
   S.buffering = false;
   drawButtons();
+  applyPrefs();
   setProp('volume', S.volume);
   setProp('sub-scale', S.subScale);
   liftSubs(!el.classList.contains('idle'), true);
@@ -935,8 +971,9 @@ async function setFullscreen(on) {
 const toggleFullscreen = () => setFullscreen(!S.fullscreen);
 const togglePause = () => cmd('cycle', 'pause');
 const seekBy = (s) => { const p = livePos(); cmd('seek', s, 'relative+exact'); S.pos = Math.max(0, p + s); markPos(); drawTime(); wake(); };
+const volMax = () => (on('volBoost') ? 150 : 100);
 const changeVolume = (d) => {
-  S.volume = Math.max(0, Math.min(100, S.volume + d));
+  S.volume = Math.max(0, Math.min(volMax(), S.volume + d));
   ls.set('volume', S.volume);
   setProp('volume', S.volume);
   if (S.muted) setProp('mute', 'no');
@@ -966,7 +1003,7 @@ function toggleSubs() {
   // Turning subtitles on: your own last pick, then English, then Emby's pick.
   const pref = loadTrackPrefs().sub, d = S.defaults || {};
   const full = subs.filter((t) => !t.forced);
-  const t = (pref && pref !== 'off' && matchTrack('sub', pref)) || full.find((x) => langOf(x.lang) === SUB_LANG)
+  const t = (pref && pref !== 'off' && matchTrack('sub', pref)) || full.find((x) => langOf(x.lang) === subLangPref())
     || (d.sub && matchTrack('sub', d.sub)) || full[0] || subs[0];
   setProp('sid', t.id);
   saveTrackPrefs({ sub: trackRef(t) });

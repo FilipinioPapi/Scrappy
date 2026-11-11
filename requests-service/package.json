@@ -1,6 +1,6 @@
 {
   "name": "scrappy-requests",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Scrappy's request service: stores requests, searches TMDB / MusicBrainz / Audible, checks Emby, Navidrome and Audiobookshelf.",
   "type": "module",

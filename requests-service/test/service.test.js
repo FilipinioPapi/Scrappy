@@ -2,7 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { install, env, flags } from './fake.js';
+import { install, env, flags, routes } from './fake.js';
 
 env();
 process.env.PORT = '0';
@@ -87,4 +87,35 @@ test('request state on search results: count and whether it is mine', async () =
   await call('DELETE', `/api/requests/${asJayden.request.id}`, null, 'u1');
   const again = (await call('GET', '/api/search?type=movie&q=dune')).items.find((x) => String(x.id) === '999');
   assert.equal(again.request.count, 1); assert.equal(again.request.mine, false);
+});
+test('admin settings: staff, per-person limit, who can change them', async () => {
+  await assert.rejects(call('GET', '/api/admin/settings', null, 'u2'), /admins/);
+  const s = await call('GET', '/api/admin/settings');
+  assert.deepEqual(s.fixedAdmins, ['jayden']); assert.equal(s.settings.keepDays, 90);
+  await assert.rejects(call('PATCH', '/api/admin/settings', { checkEvery: 7 }), /5, 10 or 30/);
+  await call('PATCH', '/api/admin/settings', { staff: ['Mike'], limit: 1, region: 'gb' });
+  assert.equal((await call('GET', '/api/me', null, 'u3')).manage, true);
+  assert.equal((await call('GET', '/api/me', null, 'u3')).admin, false);
+  assert.equal((await call('GET', '/api/me')).region, 'GB');
+  // Staff see everyone's requests but can't change settings.
+  await call('GET', '/api/requests?scope=all', null, 'u3');
+  await assert.rejects(call('PATCH', '/api/admin/settings', { limit: 0 }, 'u3'), /admins/);
+  // Sarah already has an open request (OK Computer was the only one; In Rainbows arrived), so the limit applies.
+  const open = (await call('GET', '/api/requests?status=open', null, 'u2')).requests.length;
+  routes['api.themoviedb.org/3/movie/777'] = { id: 777, title: 'Another Film', release_date: '2020-01-01', status: 'Released', release_dates: { results: [] } };
+  assert.ok(open >= 1);
+  await assert.rejects(call('POST', '/api/requests', { items: [{ type: 'movie', extId: '777' }] }, 'u2'), /open request/);
+  // Joining a request someone else already made is fine.
+  await call('POST', '/api/requests', { items: [{ type: 'movie', extId: '777' }] }, 'u1');
+  await call('POST', '/api/requests', { items: [{ type: 'movie', extId: '777' }] }, 'u2');
+  await call('PATCH', '/api/admin/settings', { limit: 0, staff: [], region: 'US' });
+});
+test('server health for admins', async () => {
+  await assert.rejects(call('GET', '/api/admin/health', null, 'u2'), /admins/);
+  const h = await call('GET', '/api/admin/health?latest=0.2.130');
+  assert.deepEqual(h.servers.map((s) => s.ok), [true, true, true]);
+  assert.equal(h.servers[0].v.watching, 1); assert.equal(h.servers[0].v.reporting, true);
+  assert.equal(h.servers[1].v.version, '0.64.2'); assert.equal(h.servers[2].v.version, '2.17.2');
+  assert.deepEqual(h.people, { active: 2, devices: 2, newest: '0.2.140', old: 1 });
+  assert.deepEqual((await call('GET', '/api/admin/people')).people, ['Jayden', 'Mike', 'Sarah']);
 });

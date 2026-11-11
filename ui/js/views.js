@@ -1,5 +1,6 @@
 import { api, load, img, imgAny } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
+import { pref } from './prefs.js';
 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
 const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
@@ -501,7 +502,9 @@ async function heroPools() {
 let heroTimer = null;
 let heroGen = 0;
 const heroReady = () => window.dispatchEvent(new Event('scrappy:ready'));
-const heroCacheKey = (ctx) => `heroCache:${ctx.session?.server || ''}:${ctx.session?.userId || ''}`;
+// Settings: the banner shows picks for you (default), only recently added, or nothing.
+const heroMode = () => (pref('heroMode') === 'recent' ? 'recent' : pref('heroMode') === 'off' ? 'off' : 'picks');
+const heroCacheKey = (ctx) => `heroCache:${ctx.session?.server || ''}:${ctx.session?.userId || ''}${heroMode() === 'recent' ? ':recent' : ''}`;
 // Just what a slide needs, so the saved copy stays small.
 const HERO_KEEP = ['Id', 'Type', 'Name', 'SeriesId', 'SeriesName', 'ProductionYear', 'ChildCount', 'RunTimeTicks', 'OfficialRating', 'Overview', 'UserData', 'IndexNumber', 'ParentIndexNumber'];
 function saveHeroCache(ctx, picks, seriesInfo) {
@@ -517,6 +520,7 @@ async function buildHero(root, ctx) {
   const slot = root.querySelector('[data-row=hero]');
   if (!slot) return;
   const my = ++heroGen;
+  if (heroMode() === 'off') { clearInterval(heroTimer); slot.innerHTML = ''; slot._hero = null; heroReady(); return; }
   // Show last time's first slide straight away; the rest are fetched fresh.
   if (!slot._hero) {
     try {
@@ -537,7 +541,7 @@ async function buildHero(root, ctx) {
 // The banner keeps the same set of picks for a few hours, so it doesn't
 // reshuffle every time Home reloads (after watching or editing something).
 const HERO_KEEP_FOR = 6 * 60 * 60 * 1000;
-const heroSetKey = (ctx) => `heroSet:${ctx.session?.server || ''}:${ctx.session?.userId || ''}`;
+const heroSetKey = (ctx) => `heroSet:${ctx.session?.server || ''}:${ctx.session?.userId || ''}${heroMode() === 'recent' ? ':recent' : ''}`;
 async function keptHeroPicks(ctx) {
   let saved;
   try { saved = JSON.parse(localStorage.getItem(heroSetKey(ctx)) || 'null'); } catch {}
@@ -566,8 +570,8 @@ async function fillHero(slot, ctx, my) {
   for (const k of ['pickBack', 'newEps', 'because', 'added', 'never', 'oldFavs']) P[k] = P[k] || [];
   if (my !== heroGen || !ctx.alive()) return;
   // Take turns from each reason so the banner is a mix; at most 2 "pick back up".
-  const order = [P.pickBack, P.newEps, P.because, P.added, P.never, P.oldFavs];
-  const caps = new Map([[P.pickBack, 2]]);
+  const order = heroMode() === 'recent' ? [P.added] : [P.pickBack, P.newEps, P.because, P.added, P.never, P.oldFavs];
+  const caps = new Map(heroMode() === 'recent' ? [[P.added, 99]] : [[P.pickBack, 2]]);
   const seen = new Set();
   const queue = [];
   for (let round = 0; round < 8; round++) {
@@ -694,7 +698,7 @@ function renderHero(slot, ctx, picks, seriesInfo) {
   el.addEventListener('mouseleave', () => (paused = false));
   const restart = () => {
     clearInterval(heroTimer);
-    if (picks.length > 1) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden) show(i + 1); }, 8000);
+    if (picks.length > 1) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden && !document.documentElement.classList.contains('calm')) show(i + 1); }, 8000);
   };
   drawNav();
   restart();

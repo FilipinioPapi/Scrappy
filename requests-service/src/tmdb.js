@@ -1,6 +1,7 @@
 // Films and TV from TMDB (titles, posters, dates, seasons and episodes).
 import { config } from './config.js';
 import { cache, getJson, today } from './util.js';
+import { settings, region as country } from './settings.js';
 
 const IMG = 'https://image.tmdb.org/t/p/';
 export const poster = (p, size = 'w342') => (p ? IMG + size + p : '');
@@ -25,7 +26,7 @@ const fmtFull = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { 
  */
 export function releaseInfo(movie) {
   const t = today();
-  const region = (movie.release_dates?.results || []).find((r) => r.iso_3166_1 === config.region);
+  const region = (movie.release_dates?.results || []).find((r) => r.iso_3166_1 === country());
   const dates = (region?.release_dates || []).map((d) => ({ type: d.type, date: (d.release_date || '').slice(0, 10) })).filter((d) => d.date);
   const first = (types) => dates.filter((d) => types.includes(d.type)).map((d) => d.date).sort()[0];
   const cinema = first([2, 3]), digital = first([4]), physical = first([5]), tv = first([6]);
@@ -52,8 +53,9 @@ export const movieDetails = (id) => tmdb(`/movie/${id}`, { append_to_response: '
 export const tvDetails = (id) => tmdb(`/tv/${id}`, { append_to_response: 'external_ids' });
 export const seasonDetails = (id, n) => tmdb(`/tv/${id}/season/${n}`);
 export const collection = (id) => tmdb(`/collection/${id}`);
-export const searchMovies = (q) => tmdb('/search/movie', { query: q, include_adult: 'false', region: config.region });
-export const searchTv = (q) => tmdb('/search/tv', { query: q, include_adult: 'false' });
+const adult = () => (settings().hideAdult ? 'false' : 'true');
+export const searchMovies = (q) => tmdb('/search/movie', { query: q, include_adult: adult(), region: country() });
+export const searchTv = (q) => tmdb('/search/tv', { query: q, include_adult: adult() });
 
 /** Episodes that have aired (by our clock) in a TMDB season. */
 export const airedEpisodes = (season) => (season.episodes || []).filter((e) => e.air_date && e.air_date <= today()).map((e) => e.episode_number);
