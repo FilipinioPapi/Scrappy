@@ -24,6 +24,8 @@ export function loadBookmarks(force = false) {
   }).catch(() => all).finally(() => { loading = null; });
   return loading;
 }
+/** Every bookmark, newest first. */
+export const allBookmarks = () => all.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 /** This book's bookmarks, in time order. */
 export const bookmarksFor = (id) => all.filter((b) => b.libraryItemId === id).sort((a, b) => a.time - b.time);
 

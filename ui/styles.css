@@ -1089,7 +1089,7 @@ body.has-mbar.tab-music .maside { bottom: var(--mbar); }
 .mshell.collapsed .maside { padding: 18px 10px; }
 .mshell.collapsed .lbl, .mshell.collapsed .mli-txt, .mshell.collapsed .mli-pin, .mshell.collapsed .mlsec, .mshell.collapsed .mlempty { display: none; }
 .mshell.collapsed .mhead { justify-content: center; padding: 0 0 8px; }
-.mshell.collapsed #mCol svg { transform: scaleX(-1); }
+.mshell.collapsed .side-col svg { transform: scaleX(-1); }
 .mshell.collapsed .mnav { justify-content: center; padding: 0; }
 .mshell.collapsed .mli { justify-content: center; padding: 6px 0; }
 .mmain { margin-left: var(--mside); padding: 28px 40px 48px; min-height: calc(100vh - 72px); transition: margin .32s var(--ease); min-width: 0; }
@@ -1870,7 +1870,8 @@ body:not(.tab-music) #mbar { transition: transform .4s cubic-bezier(.4,0,.2,1), 
 /* The audio tabs' shell only fades: a moving shell would carry its fixed side menu with it,
    so the menu showed up lower down and slid into place late. The page inside it rises instead. */
 @keyframes tabFade { from { opacity: 0; } to { opacity: 1; } }
-#view.entering.tabswap > .mshell { animation: tabFade .3s ease both; }
+/* Every tab has the side menu now, so it stays solid while the page beside it changes. */
+#view.entering.tabswap > .mshell { animation: none; }
 #view.entering.tabswap .mmain { animation: tabIn .46s cubic-bezier(.2,.8,.2,1) .08s both; }
 #view.entering.tabswap .mmain > * { animation: none; }
 /* Home banner: the fade at the bottom reaches the page colour fully, with no seam underneath. */
@@ -3252,3 +3253,32 @@ label.set-row { cursor: pointer; }
 .ep-season { margin: 22px 0 12px; font-size: 16px; font-weight: 800; color: var(--text); }
 #epList > .ep-season:first-child, .ep-sgroup:first-child .ep-season { margin-top: 4px; }
 .ep-sgroup { content-visibility: auto; contain-intrinsic-size: auto 400px; }
+
+/* ---------- One side menu for all three tabs (approved mock: SideTV / SideBooks) ---------- */
+.mmain.tvmain { padding: 0; }
+.mmain.tvmain .row-wrap { --gutter: inherit; }
+.mli .mcv { padding: 0; }
+.mli .mcv span { display: none; }
+.mli .mcv.poster { width: 32px; height: 46px; aspect-ratio: auto; margin: 0 6px; border-radius: 5px; }
+.mli .mcv.stack { overflow: visible; }
+.mli .mcv.stack::before { content: ""; position: absolute; inset: -4px -4px 4px 4px; border-radius: 8px; background: rgba(255,255,255,.1); z-index: -1; }
+.mli .mcv.stack img { border-radius: 8px; }
+.mli-prog { height: 3px; margin-top: 5px; border-radius: 2px; background: rgba(255,255,255,.12); overflow: hidden; }
+.mli-prog i { display: block; height: 100%; background: var(--red); }
+.mshell.collapsed .mli .mcv.poster { margin: 0; }
+.mshell.collapsed .slib .mlsec, .mshell.collapsed .slib .mlempty { display: none; }
+/* Movies & TV genres page */
+.tvgen-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-top: 6px; }
+.tvgen { position: relative; overflow: hidden; height: 110px; border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px;
+  background: linear-gradient(135deg, var(--c1), var(--c2) 60%, var(--c3)); transition: transform .25s var(--spring), box-shadow .25s; }
+.tvgen:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(0,0,0,.45); }
+.tvgen .gf-sym { font-size: 84px; left: auto; right: 10px; top: -10px; }
+.tvgen b { position: relative; color: #fff; font-size: 17px; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,.4); }
+.tvgen small { position: relative; color: rgba(255,255,255,.8); font-size: 12.5px; font-weight: 600; }
+/* Audiobooks bookmarks page */
+.bk-bmh { margin-bottom: 18px; }
+.bk-bmg { margin-bottom: 26px; max-width: 900px; }
+.bk-bmb { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.bk-bmb .mcv { width: 48px; height: 48px; padding: 0; }
+.bk-bmb b { display: block; color: var(--text); font-size: 15.5px; }
+.bk-bmb:hover b { text-decoration: underline; text-underline-offset: 3px; }

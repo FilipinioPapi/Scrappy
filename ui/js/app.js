@@ -12,7 +12,8 @@ import './topfit.js';
 import './updates.js';
 import { toast } from './components.js';
 import { pref, setPref, on, onPref } from './prefs.js';
-import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView } from './views.js';
+import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView, genresView, favoritesView } from './views.js';
+import { tvShell } from './tvside.js';
 
 const viewEl = document.getElementById('view');
 
@@ -213,16 +214,18 @@ async function route(opts = {}) {
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
     case 'servers': return loginView(viewEl, ctx, id);
-    case 'library': return libraryView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
-    case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
-    case 'person': return personView(viewEl, ctx, id);
+    case 'library': return libraryView(tvShell(viewEl), ctx, id, arg2 ? decodeURIComponent(arg2) : '');
+    case 'item': return itemView(tvShell(viewEl), ctx, id, arg2 ? decodeURIComponent(arg2) : '');
+    case 'person': return personView(tvShell(viewEl), ctx, id);
+    case 'genres': return genresView(tvShell(viewEl), ctx);
+    case 'favorites': return favoritesView(tvShell(viewEl), ctx);
     case 'search': return searchPage(viewEl, ctx);
     case 'requests': return requestsPage(viewEl, ctx, (arg || '').split('?')[0], arg2 ? decodeURIComponent(arg2.split('?')[0]) : '');
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return booksView(viewEl, ctx);
     case 'settings': return import('./settings.js').then((m) => m.settingsPage(viewEl, ctx, id));
     case 'stats': if (!statsSwitch) viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
-    default: return homeView(viewEl, ctx);
+    default: return homeView(tvShell(viewEl), ctx);
   }
 }
 

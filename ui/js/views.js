@@ -2,6 +2,8 @@ import { api, load, img, imgAny } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
+import { genreLook } from './gtiles.js';
+import { noteCollection } from './tvside.js';
 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
 const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
@@ -943,6 +945,7 @@ export async function itemView(root, ctx, id, seasonId = '') {
       // Fresh data that only differs in small details (last played time, etc.) doesn't redraw
       // the whole page; that redraw is what made it blink.
       const key = itemKey(it);
+      if (it.Type === 'BoxSet' && !shownKey) noteCollection(it);
       if (key === shownKey) return;
       shownKey = key;
       renderItem(root, ctx, it, seasonId);
@@ -1428,6 +1431,58 @@ async function renderChildren(el, ctx, folder) {
           <div class="grid">${items.map((i) => card(i)).join('')}</div></section>`
       : '';
   }, ctx.alive).catch(() => {});
+}
+
+
+// ---------------- Genres and Favorites (side menu pages) ----------------
+
+// Every genre in your movie and TV libraries as colour tiles; a tile opens that library filtered by it.
+export async function genresView(root, ctx) {
+  root.innerHTML = loadingHtml();
+  let vs = [];
+  try { vs = ((await api.cached('/Users/{userId}/Views')) || (await api.get('/Users/{userId}/Views')))?.Items || []; } catch (e) { return ctx.fail(e); }
+  const libs = vs.filter((v) => GENRE_LIBS.has(v.CollectionType) && v.CollectionType !== 'boxsets');
+  if (!ctx.alive()) return;
+  if (!libs.length) { root.innerHTML = '<div class="empty">No movie or TV libraries found.</div>'; return; }
+  let cur = localStorage.getItem('tvGenLib');
+  if (!libs.some((l) => l.Id === cur)) cur = libs[0].Id;
+  root.innerHTML = `<section class="section">
+      <div class="section-head"><h2>Genres</h2><span class="count" id="gcount"></span></div>
+      ${libs.length > 1 ? `<div class="season-tabs">${libs.map((l) => `<button class="season-tab ${l.Id === cur ? 'active' : ''}" data-lib="${esc(l.Id)}">${esc(l.Name)}</button>`).join('')}</div>` : ''}
+      <div class="tvgen-grid" id="ggrid"></div></section>`;
+  const grid = root.querySelector('#ggrid'), count = root.querySelector('#gcount');
+  const draw = async () => {
+    const lib = libs.find((l) => l.Id === cur);
+    await load(`/Genres?ParentId=${lib.Id}&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&Fields=ItemCounts`, (d) => {
+      const gs = d?.Items || [];
+      count.textContent = `${gs.length} genre${gs.length === 1 ? '' : 's'}`;
+      grid.innerHTML = gs.map((g) => {
+        const look = genreLook(g.Name), n = g.MovieCount || g.SeriesCount || g.ChildCount || 0;
+        return `<a class="tvgen" href="#/library/${encodeURIComponent(lib.Id)}/${encodeURIComponent(g.Id)}" style="--c1:${look.c[0]};--c2:${look.c[1]};--c3:${look.c[2]}"><span class="gf-sym" aria-hidden="true">${look.sym}</span><b>${esc(g.Name)}</b>${n ? `<small>${n} title${n === 1 ? '' : 's'}</small>` : ''}</a>`;
+      }).join('') || '<div class="empty">No genres in this library yet.</div>';
+    }, ctx.alive).catch(() => {});
+  };
+  root.querySelectorAll('[data-lib]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.lib === cur) return;
+    cur = b.dataset.lib; try { localStorage.setItem('tvGenLib', cur); } catch {}
+    root.querySelectorAll('[data-lib]').forEach((x) => x.classList.toggle('active', x === b));
+    draw();
+  }));
+  draw();
+}
+
+// Everything you've hearted, split into Movies, Shows, Episodes and Collections.
+export async function favoritesView(root, ctx) {
+  root.innerHTML = loadingHtml();
+  await load(`/Users/{userId}/Items?Filters=IsFavorite&Recursive=true&IncludeItemTypes=Movie,Series,Episode,BoxSet&SortBy=SortName&Fields=${FIELDS}&${IMG_OPTS}&Limit=1000`, (d) => {
+    const items = d?.Items || [];
+    const groups = [['Movie', 'Movies'], ['Series', 'Shows'], ['Episode', 'Episodes'], ['BoxSet', 'Collections']]
+      .map(([t, name]) => [name, items.filter((i) => i.Type === t)]).filter(([, l]) => l.length);
+    root.innerHTML = groups.length
+      ? groups.map(([name, l], k) => `<section class="section"><div class="section-head">${k === 0 ? `<h2>Favorites <span class="h-dim">· ${esc(name)}</span></h2>` : `<h2>${esc(name)}</h2>`}<span class="count">${l.length}</span></div>
+          <div class="grid">${l.map((i) => card(i, i.Type === 'Episode' ? { shape: 'wide' } : {})).join('')}</div></section>`).join('')
+      : `<section class="section"><div class="section-head"><h2>Favorites</h2></div><div class="empty">Nothing here yet. Press the heart on any movie or show to add it.</div></section>`;
+  }, ctx.alive).catch((e) => ctx.fail(e));
 }
 
 

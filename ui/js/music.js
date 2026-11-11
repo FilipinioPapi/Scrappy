@@ -1,6 +1,7 @@
 // The Music tab (Navidrome): side menu with Your Library, and every Music screen.
 // Screens follow the approved mock-ups on the Music design canvas.
 import { api, quiet } from './api.js';
+import { shellAttrs, headHtml, wireSize } from './sidemenu.js';
 import { esc, toast, loadingHtml } from './components.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { history, music, onMusic, current, playSongs, playNext, addToQueue, playAt, removeAt, moveInQueue, clearUpNext, setFavorite, togglePlay, cover, fmt, IC } from './mplayer.js';
@@ -164,9 +165,9 @@ function markActive() {
 
 function shellHtml() {
   return `
-  <div class="mshell${lib.collapsed ? ' collapsed' : ''}" style="--mside:${lib.collapsed ? 76 : lib.width}px">
+  <div ${shellAttrs('mushell')}>
     <aside class="maside">
-      <div class="mhead"><span class="lbl">MUSIC</span><button type="button" class="gb" id="mCol" title="Collapse / expand" aria-label="Collapse or expand the side menu">${MI.collapse}</button></div>
+      ${headHtml('MUSIC')}
       ${NAV.map(([p, l, d]) => `<a class="mnav" data-p="${p}" href="#/music/${p}" title="${l}">${line(d)}<span class="lbl">${l}</span></a>`).join('')}
       <div class="msep"></div>
       <div class="mlibh lbl">YOUR LIBRARY</div>
@@ -181,11 +182,8 @@ function shellHtml() {
 
 function wireShell(root) {
   const shell = root.querySelector('.mshell');
-  root.querySelector('#mCol').onclick = () => {
-    lib.collapsed = !lib.collapsed; saveLib();
-    shell.classList.toggle('collapsed', lib.collapsed);
-    shell.style.setProperty('--mside', (lib.collapsed ? 76 : lib.width) + 'px');
-  };
+  // Collapse and resize are shared with the other tabs' side menus.
+  wireSize(shell);
   root.querySelector('.mchips').onclick = (e) => {
     const c = e.target.closest('.mchip'); if (!c) return;
     lib.fil = lib.fil === c.dataset.f ? 'all' : c.dataset.f; saveLib(); drawLib(true);
@@ -197,14 +195,6 @@ function wireShell(root) {
     if (!lib.pins.includes(k)) { const e = libEntries().all.find((x) => x.k === k); if (e && !lib.rec.some((r) => r.k === k)) lib.rec = [e, ...lib.rec].slice(0, 60); }
     lib.pins = lib.pins.includes(k) ? lib.pins.filter((x) => x !== k) : [k, ...lib.pins];
     saveLib(); drawLib(true);
-  });
-  // Drag the right edge to resize the side menu.
-  root.querySelector('.mgrab').addEventListener('pointerdown', (e) => {
-    if (lib.collapsed) return;
-    const g = e.currentTarget; g.setPointerCapture(e.pointerId); shell.classList.add('resizing');
-    const mv = (ev) => { lib.width = Math.max(220, Math.min(420, ev.clientX)); shell.style.setProperty('--mside', lib.width + 'px'); };
-    const up = () => { g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); shell.classList.remove('resizing'); saveLib(); };
-    g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up);
   });
   nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; playlistsLoaded = true; drawLib(false); }).catch(() => {});
   drawLib(false);
@@ -546,7 +536,7 @@ export async function musicView(root, ctx) {
   const [, page = 'home', rawId = ''] = path.split('/');
   const id = decodeURIComponent(rawId);
   const params = new URLSearchParams(qs || '');
-  if (!root.querySelector('.mshell:not(.bkshell)')) { root.innerHTML = shellHtml(); wireShell(root); }
+  if (!root.querySelector(':scope > .mushell')) { root.innerHTML = shellHtml(); wireShell(root); }
   markActive();
   const main = root.querySelector('#mmain');
   main.className = 'mmain page-' + page;

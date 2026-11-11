@@ -6,7 +6,8 @@ import { homeRows, rowCache } from './homeedit.js';
 import { IC } from './mplayer.js';
 import { MI, hue } from './music.js';
 import { fanTile, fanBanner, learnColors } from './gtiles.js';
-import { loadBookmarks, bookmarksFor, onBookmarks, listHtml, wireList } from './bookmarks.js';
+import { loadBookmarks, bookmarksFor, onBookmarks, listHtml, wireList, allBookmarks } from './bookmarks.js';
+import { shellAttrs, headHtml, navHtml, wireSize, markNav, libStore, libHtml, drawLib as drawSideLib, wireLib } from './sidemenu.js';
 import { book, playBook, toggleBook, seekBook, setFinished, onBook, absCover, absAuthorImg, hm, clock, chapterAt, BI } from './bplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -16,6 +17,7 @@ const NAV = [
   ['authors', 'Authors', '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'],
   ['series', 'Series', '<rect x="3" y="6" width="12" height="15" rx="1.5"/><path d="M7 3h12.5A1.5 1.5 0 0 1 21 4.5V17"/>'],
   ['genres', 'Genres', '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>'],
+  ['bookmarks', 'Bookmarks', '<path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/>'],
 ];
 const BOOK_ICON = 'M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3';
 const plural = (n, w) => `${(n || 0).toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
@@ -113,14 +115,80 @@ function wirePlay(el) {
 
 // ---------- Shell ----------
 function shellHtml() {
-  return `<div class="mshell bkshell" style="--mside:240px">
+  return `<div ${shellAttrs('bkshell')}>
     <aside class="maside">
-      <div class="mhead"><span class="lbl">AUDIOBOOKS</span></div>
-      ${NAV.map(([p, l, d]) => `<a class="mnav" data-p="${p}" href="${H(p)}">${line(d)}<span class="lbl">${l}</span></a>`).join('')}
+      ${headHtml('AUDIOBOOKS')}
+      ${navHtml(NAV.map(([p, l, d]) => [p, l, d, H(p)]))}
       <div id="bkLibs"></div>
+      ${libHtml([['book', 'Books'], ['author', 'Authors'], ['series', 'Series']])}
+      <div class="mgrab" title="Drag to resize"></div>
     </aside>
     <section class="mmain" id="mmain"></section>
   </div>`;
+}
+
+// ---------- Your Library in the side menu ----------
+// Recents = books you've listened to (newest first, with time left), plus authors you opened.
+// Series show under the Series chip, from the books you're in the middle of.
+const SL = libStore('books');
+const AUTH_KEY = 'bkSideAuthors';
+let sideItems = null;
+const openedAuthors = () => { try { return JSON.parse(localStorage.getItem(AUTH_KEY) || '[]'); } catch { return []; } };
+function noteAuthor(a) {
+  const list = [{ id: a.id, name: a.name, imagePath: a.imagePath, updatedAt: a.updatedAt, at: Date.now() }, ...openedAuthors().filter((x) => x.id !== a.id)].slice(0, 20);
+  try { localStorage.setItem(AUTH_KEY, JSON.stringify(list)); } catch {}
+  redrawSide();
+}
+function sideRecents() {
+  const byId = new Map((sideItems || []).map((it) => [it.id, it]));
+  const out = [];
+  const seenSeries = new Set();
+  [...PROG.values()].filter((p) => byId.has(p.libraryItemId) && (p.progress > 0 || p.isFinished))
+    .sort((a, b) => (b.lastUpdate || 0) - (a.lastUpdate || 0)).slice(0, 30).forEach((p) => {
+      const it = byId.get(p.libraryItemId), m = md(it), dur = it.media?.duration || 0;
+      const left = p.isFinished ? 'Finished' : dur ? hm(dur - (p.currentTime || 0)) + ' left' : '';
+      out.push({ k: 'bk:' + it.id, kind: 'book', t: m.title || 'Untitled', sub: [m.authorName, left].filter(Boolean).join(' · '), img: absCover(it, 100), href: bookHref(it.id), prog: p.isFinished ? 0 : p.progress, at: p.lastUpdate || 0 });
+      const ser = (m.seriesName || '').replace(/ #\S+$/, '');
+      if (ser && !seenSeries.has(ser)) { seenSeries.add(ser); out.push({ k: 'sr:' + ser, kind: 'series', onlyFil: true, t: ser, sub: ['Series', m.authorName].filter(Boolean).join(' · '), img: absCover(it, 100), shape: 'stack', href: H('series') + '?q=' + encodeURIComponent(ser), at: (p.lastUpdate || 0) - 1 }); }
+    });
+  openedAuthors().forEach((a) => out.push({ k: 'au:' + a.id, kind: 'author', t: a.name, sub: 'Author', img: absAuthorImg(a, 100), shape: 'round', href: authorHref(a.id), at: a.at }));
+  return out.sort((a, b) => b.at - a.at);
+}
+function redrawSide() { const sh = document.querySelector('.bkshell'); if (sh) drawSideLib(sh, SL, sideRecents()); }
+async function loadSideItems() {
+  try {
+    const path = `/api/libraries/${libId()}/items?minified=1&sort=addedAt&desc=1&limit=0`;
+    const c = await api.absCached(path).catch(() => null);
+    if (c?.results) { sideItems = c.results; redrawSide(); }
+    sideItems = (await api.abs(path)).results || sideItems; redrawSide();
+  } catch {}
+}
+window.addEventListener('book:progress', () => { clearTimeout(redrawSide.t); redrawSide.t = setTimeout(redrawSide, 1500); });
+
+// ---------- Bookmarks page: every bookmark, grouped by book ----------
+async function bookmarksPage(v) {
+  const { main, alive } = v;
+  await loadBookmarks(true);
+  if (!sideItems) await loadSideItems();
+  const byId = new Map((sideItems || []).map((it) => [it.id, it]));
+  const edit = {};
+  const draw = () => {
+    if (!alive()) { off(); return; }
+    const groups = [];
+    for (const b of allBookmarks()) { let g = groups.find((x) => x.id === b.libraryItemId); if (!g) groups.push(g = { id: b.libraryItemId }); }
+    main.innerHTML = `<div class="msec-h bk-bmh"><h1 class="disp mtitle">Bookmarks</h1></div>`
+      + (groups.length ? groups.map((g) => {
+        const it = byId.get(g.id), m = md(it);
+        return `<section class="bk-bmg"><a class="bk-bmb" href="${bookHref(g.id)}">${it ? coverBox(it, 120, 'sm') : ''}<span><b>${esc(m.title || 'A book that is no longer in this library')}</b><small class="t2">${esc(m.authorName || '')}</small></span></a>
+          <div class="bm-list" data-id="${esc(g.id)}">${listHtml(g.id, [], { playBtn: true, editing: edit[g.id] ?? null })}</div></section>`;
+      }).join('') : `<div class="empty">No bookmarks yet. Press <kbd>B</kbd> or the bookmark button while listening to save your spot.</div>`);
+    main.querySelectorAll('.bm-list').forEach((box) => {
+      const id = box.dataset.id;
+      wireList(box, id, (t) => (book.item?.id === id && book.started ? seekBook(t) : playBook(id, { at: t })), (t) => { edit[id] = t; draw(); });
+    });
+  };
+  const off = onBookmarks(draw);
+  draw();
 }
 function drawLibs(root) {
   const box = root.querySelector('#bkLibs'); if (!box || !LIBS || LIBS.length < 2) return;
@@ -133,16 +201,24 @@ export async function booksView(root, ctx) {
   const [, page = '', rawId = ''] = path.split('/');
   const id = decodeURIComponent(rawId);
   const params = new URLSearchParams(qs || '');
-  if (!root.querySelector('.bkshell')) root.innerHTML = shellHtml();
+  if (!root.querySelector('.bkshell')) {
+    root.innerHTML = shellHtml();
+    const sh = root.querySelector('.bkshell');
+    wireSize(sh);
+    wireLib(sh, SL, redrawSide, (k) => sideRecents().find((e) => e.k === k));
+    loadProgress().then(redrawSide);
+  }
   // Home is lit on the home page, Library on the library pages (book and author pages light neither).
-  const lit = ['', 'library', 'authors', 'series', 'genres', 'stats'].includes(page) ? page : page === 'genre' ? 'genres' : null;
-  root.querySelectorAll('.mnav[data-p]').forEach((a) => a.classList.toggle('on', a.dataset.p === lit));
+  const lit = ['', 'library', 'authors', 'series', 'genres', 'stats', 'bookmarks'].includes(page) ? page : page === 'genre' ? 'genres' : null;
+  markNav(root, lit);
+  redrawSide();
   const main = root.querySelector('#mmain');
   main.className = 'mmain bk page-' + (page || 'home');
   main.innerHTML = loadingHtml();
   const v = { main, ctx, alive: ctx.alive, params };
   try {
     await libraries(); drawLibs(root);
+    if (!sideItems) loadSideItems();
     switch (page) {
       case 'library': return params.get('genre') ? await libraryPage(v) : await shelfPage(v);
       case 'authors': return await authorsPage(v);
@@ -151,6 +227,7 @@ export async function booksView(root, ctx) {
       case 'genre': return await genrePage(v, id);
       case 'book': return await bookPage(v, id);
       case 'author': return await authorPage(v, id);
+      case 'bookmarks': return await bookmarksPage(v);
       case 'stats': return await (await import('./stats.js')).statsPage(main, 'abs', ctx.alive);
       default: return await homePage(v);
     }
@@ -283,6 +360,7 @@ async function authorPage(v, id) {
     const list = (a.libraryItems || []).slice().sort((x, y) => seriesOf(x).localeCompare(seriesOf(y)) || (md(x).publishedYear || '').localeCompare(md(y).publishedYear || ''));
     const fin = list.filter((it) => progOf(it.id)?.isFinished).length;
     const img = absAuthorImg(a, 400), bio = plainText(a.description);
+    if (noteAuthor.last !== a.id) { noteAuthor.last = a.id; noteAuthor(a); }
     main.innerHTML = `
       ${crumbs([['Authors', H('authors')], [a.name]])}
       <div class="bk-ahead"><div class="mcv round bk-av bk-big" style="--h:${hue(a.name)}"><b>${esc(initials(a.name))}</b>${img ? `<img src="${img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
