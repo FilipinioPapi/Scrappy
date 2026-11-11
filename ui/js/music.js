@@ -977,14 +977,25 @@ async function artistPage(v, id) {
 }
 
 // ---------- Songs ----------
-export async function allSongs() {
-  const out = [];
-  for (let off = 0; off < 100000; off += 500) {
-    const r = await nd('search3', { query: '', songCount: 500, songOffset: off, albumCount: 0, artistCount: 0 });
-    const s = r.searchResult3?.song || []; out.push(...s);
-    if (s.length < 500) break;
-  }
-  return out;
+// Every song, kept for a few minutes (Songs tab and Stats share it). Pages of 500 are
+// asked for four at a time instead of one after another.
+let songsCache = null;
+export function allSongs() {
+  if (songsCache && Date.now() - songsCache.t < 5 * 60000) return songsCache.p;
+  const page = (off) => nd('search3', { query: '', songCount: 500, songOffset: off, albumCount: 0, artistCount: 0 }).then((r) => r.searchResult3?.song || []);
+  const p = (async () => {
+    const out = await page(0);
+    if (out.length < 500) return out;
+    for (let off = 500; off < 200000; off += 2000) {
+      const parts = await Promise.all([0, 500, 1000, 1500].map((d) => page(off + d)));
+      parts.forEach((x) => out.push(...x));
+      if (parts.some((x) => x.length < 500)) break;
+    }
+    return out;
+  })();
+  songsCache = { t: Date.now(), p };
+  p.catch(() => { if (songsCache?.p === p) songsCache = null; });
+  return p;
 }
 async function songsPage(v) {
   const { main, alive } = v;
@@ -1003,6 +1014,7 @@ async function songsPage(v) {
   const from = { type: 'songs', id: 'all', name: 'Songs' };
   const keyOf = { title: (s) => (s.title || '').toLowerCase(), album: (s) => (s.album || '').toLowerCase(), added: (s) => s.created || '', time: (s) => s.duration || 0 };
   const letter = (s) => { const c = (s.title || '').trim()[0]?.toUpperCase() || '#'; return /[A-Z]/.test(c) ? c : '#'; };
+  let drawGen = 0;
   const draw = () => {
     const f = filter.trim().toLowerCase();
     view = (f ? songs.filter((s) => `${s.title} ${s.artist} ${s.album}`.toLowerCase().includes(f)) : songs.slice())
@@ -1010,12 +1022,16 @@ async function songsPage(v) {
     const arrow = (k) => (sort === k ? `<i class="sarrow${dir < 0 ? ' down' : ''}">▴</i>` : '');
     const head = `<div class="srow shead sticky"><span class="c-n"></span><button type="button" class="c-t" data-sort="title">Title${arrow('title')}</button><button type="button" class="c-a" data-sort="album">Album${arrow('album')}</button><button type="button" class="c-d" data-sort="added">Date added${arrow('added')}</button><span class="c-f"></span><button type="button" class="c-l" data-sort="time">${MI.clock}${arrow('time')}</button><span class="c-m"></span></div>`;
     const byLetter = sort === 'title' && !f;
-    let html = head, last = null;
-    view.forEach((s, i) => {
-      if (byLetter) { const L = letter(s); if (L !== last) { html += `<div class="lsec" id="L-${L === '#' ? 'num' : L}">${L}</div>`; last = L; } }
-      html += songRow(s, i, { cols: ['cover', 'album', 'added'] });
-    });
-    table.innerHTML = html + (view.length ? '' : '<div class="empty">No songs match.</div>');
+    // The first rows draw straight away; the rest follow in chunks so the page never freezes.
+    const rowsOf = (from, to) => { let h = ''; for (let i = from; i < to && i < view.length; i++) { const s = view[i]; if (byLetter) { const L = letter(s); if (L !== last) { h += `<div class="lsec" id="L-${L === '#' ? 'num' : L}">${L}</div>`; last = L; } } h += songRow(s, i, { cols: ['cover', 'album', 'added'] }); } return h; };
+    let last = null;
+    const FIRST = 120, CHUNK = 400, my = ++drawGen;
+    table.innerHTML = head + rowsOf(0, FIRST) + (view.length ? '' : '<div class="empty">No songs match.</div>');
+    let next = FIRST;
+    const more = () => { if (my !== drawGen || next >= view.length || !alive()) return; table.insertAdjacentHTML('beforeend', rowsOf(next, next + CHUNK)); next += CHUNK; syncRows(); (window.requestIdleCallback || setTimeout)(more); };
+    // Jumping to a letter that isn't drawn yet draws the rest first.
+    table._rest = () => { if (my !== drawGen || next >= view.length) return; table.insertAdjacentHTML('beforeend', rowsOf(next, view.length)); next = view.length; syncRows(); };
+    (window.requestIdleCallback || setTimeout)(more);
     rail.hidden = !byLetter;
     table.classList.toggle('lettered', byLetter);
     if (byLetter) { const have = new Set(view.map(letter)); rail.innerHTML = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((L) => `<button type="button" class="${have.has(L) ? '' : 'off'}" data-L="${L}">${L}</button>`).join(''); }
@@ -1026,7 +1042,7 @@ async function songsPage(v) {
     const k = h.dataset.sort; if (sort === k) dir = -dir; else { sort = k; dir = k === 'added' ? -1 : 1; }
     localStorage.setItem('msongsort', sort); localStorage.setItem('msongdir', dir < 0 ? 'desc' : 'asc'); draw();
   });
-  rail.addEventListener('click', (e) => { const b = e.target.closest('[data-L]'); if (!b || b.classList.contains('off')) return; const el = main.querySelector('#L-' + (b.dataset.L === '#' ? 'num' : b.dataset.L)); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 130, behavior: 'smooth' }); });
+  rail.addEventListener('click', (e) => { const b = e.target.closest('[data-L]'); if (!b || b.classList.contains('off')) return; table._rest?.(); const el = main.querySelector('#L-' + (b.dataset.L === '#' ? 'num' : b.dataset.L)); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 130, behavior: 'smooth' }); });
   wireSongs(table, () => view, from);
   main.querySelector('#sgPlay').onclick = () => playSongs(view, 0, { from, shuffle: false });
   main.querySelector('#sgShuf').onclick = () => playSongs(view, 0, { from, shuffle: true });

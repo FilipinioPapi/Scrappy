@@ -102,20 +102,20 @@ export async function statsPage(main, kind, alive) {
   let per = window.__statsPer || 'year';
   if (!PERIODS.some(([k]) => k === per)) per = 'year';
   window.__statsPer = per;
-  const head = `${secBar(kind)}<div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
-    <div class="seg" id="stxWho" hidden title="Only admins see this"><button type="button" data-w="me" class="on">Me</button><button type="button" data-w="all">Everyone</button></div>
+  // Me / Everyone sits at the right of the category row (above the time periods).
+  const head = `<div class="stx-top-row">${secBar(kind)}<span class="sp"></span><div class="seg" id="stxWho" hidden title="Only admins see this"><button type="button" data-w="me" class="on">Me</button><button type="button" data-w="all">Everyone</button></div></div><div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
     <div class="seg" id="stxSeg"${ALLTIME.has(kind) ? ' hidden' : ''}>${PERIODS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === per ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
   const prev = main.querySelector(':scope > .stx');
   if (prev) {
     // Switching category inside Stats: keep the page and fade the old numbers out while the new ones load.
     const fresh = document.createElement('div'); fresh.innerHTML = head;
-    prev.querySelector('.stx-secs').replaceWith(fresh.querySelector('.stx-secs'));
+    prev.querySelector('.stx-top-row').replaceWith(fresh.querySelector('.stx-top-row'));
     prev.querySelector('.stx-h').replaceWith(fresh.querySelector('.stx-h'));
     ['#yirSlot', '#stxBody'].forEach((q) => { const n = prev.querySelector(q); n.classList.remove('stx-in'); n.classList.add('stx-old'); });
   } else {
-    main.innerHTML = `<div class="stx full">${head}<div id="yirSlot"></div><div id="stxBody"><div class="stx-load t2">Adding up your stats…</div></div></div>`;
+    main.innerHTML = `<div class="stx full">${head}<div id="yirSlot"></div><div id="stxBody">${SKEL}</div></div>`;
   }
-  const show = (n, h) => { n.innerHTML = h; if (n.classList.contains('stx-old')) { n.classList.remove('stx-old'); void n.offsetWidth; n.classList.add('stx-in'); } };
+  const show = (n, h) => { const fade = n.classList.contains('stx-old') || !!n.querySelector('.stx-skel'); n.innerHTML = h; if (fade) { n.classList.remove('stx-old'); void n.offsetWidth; n.classList.add('stx-in'); } };
   const body = main.querySelector('#stxBody');
   const src = SOURCES[kind], raws = {};
   let token = 0, who = 'me';
@@ -123,9 +123,13 @@ export async function statsPage(main, kind, alive) {
     const my = ++token;
     try {
       const w = who;
-      if (!raws[w]) { if (w === 'all') body.innerHTML = '<div class="stx-load t2">Adding up everyone\'s stats…</div>'; raws[w] = await (w === 'all' ? src.loadAll() : loadRaw(kind)); }
+      // Switching Me / Everyone: the old numbers fade while the new ones load (no blank page).
+      if (!raws[w]) { if (!body.classList.contains('stx-old') && body.querySelector('.stx-box')) { body.classList.remove('stx-in'); body.classList.add('stx-old'); } raws[w] = await (w === 'all' ? loadAllRaw(kind) : loadRaw(kind)); }
       if (!alive() || my !== token) return;
-      const m = (w === 'all' ? src.buildAll || src.build : src.build)(raws[w], ALLTIME.has(kind) ? 'all' : per);
+      // Built pages are kept, so flicking between tabs and periods is instant the second time.
+      const bk = `${kind}|${w}|${ALLTIME.has(kind) ? 'all' : per}`, hit = BUILT.get(bk);
+      const m = hit && hit.raw === raws[w] ? hit.m : (w === 'all' ? src.buildAll || src.build : src.build)(raws[w], ALLTIME.has(kind) ? 'all' : per);
+      BUILT.set(bk, { raw: raws[w], m });
       main.querySelector('#stxSub').textContent = m.sub || '';
       main.querySelector('.stx-h h1').textContent = w === 'all' ? EVERYONE[kind] : TITLES[kind];
       show(body, html(m));
@@ -167,7 +171,17 @@ export async function statsPage(main, kind, alive) {
 }
 
 // One copy of each tab's raw data for a few minutes, shared with Your Year in Review.
-const RAW = {};
+const RAW = {}, RAW_ALL = {}, BUILT = new Map();
+function loadAllRaw(kind) {
+  const c = RAW_ALL[kind];
+  if (c && Date.now() - c.t < 5 * 60000) return c.p;
+  const p = SOURCES[kind].loadAll();
+  RAW_ALL[kind] = { t: Date.now(), p };
+  p.catch(() => { if (RAW_ALL[kind]?.p === p) delete RAW_ALL[kind]; });
+  return p;
+}
+// Loading: soft shapes in the page's own layout that shimmer, instead of a line of text.
+const SKEL = `<div class="stx-skel" aria-label="Loading"><div class="stx-cards">${'<i class="sk sk-card"></i>'.repeat(4)}</div><div class="stx-g2"><i class="sk sk-box"></i><i class="sk sk-box"></i></div><i class="sk sk-wide"></i></div>`;
 export function loadRaw(kind) {
   const c = RAW[kind];
   if (c && Date.now() - c.t < 5 * 60000) return c.p;

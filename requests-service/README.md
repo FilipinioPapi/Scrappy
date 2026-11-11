@@ -36,7 +36,7 @@ Scrappy finds the service on its own at your Emby address plus `/requests`. If y
 | `TMDB_API_KEY` | Film and TV search |
 | `EMBY_URL`, `EMBY_API_KEY` | Checking who's signed in, and what films and shows are on Emby |
 | `NAVIDROME_URL`, `NAVIDROME_USER`, `NAVIDROME_PASSWORD` | What albums and songs are on Navidrome |
-| `ABS_URL`, `ABS_TOKEN` | What audiobooks are on Audiobookshelf |
+| `ABS_URL`, `ABS_TOKEN` | What audiobooks are on Audiobookshelf. ABS_TOKEN is an API key from Audiobookshelf: Settings, API Keys |
 | `CHECK_EVERY_MINUTES` | How often to look for requested things arriving (default 10) |
 | `HANDOFF_URL`, `HANDOFF_SECRET` | Optional: where to send new requests and status changes (the Discord bot, later) |
 | `BASE_PATH` | Path the service lives under (default `/requests`) |

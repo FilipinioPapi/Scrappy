@@ -2188,10 +2188,10 @@ body.bnow-open #bbar { display: none; }
 .stx-h { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
 .stx-h h1 { font-size: 42px; line-height: 1; margin: 0; }
 .stx-h .sp { flex: 1; }
-.stx-h .seg { display: flex; gap: 2px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.06); }
-.stx-h .seg button { height: 34px; padding: 0 14px; border-radius: 9px; border: 0; background: transparent; color: #D9C3C4; font: 600 13.5px Inter, sans-serif; cursor: pointer; transition: background .28s var(--ease), color .28s; }
-.stx-h .seg button:hover { background: rgba(255,255,255,.06); color: #fff; }
-.stx-h .seg button.on { background: var(--red); color: #fff; }
+.stx-h .seg, .stx-top-row .seg { display: flex; gap: 2px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.06); }
+.stx-h .seg button, .stx-top-row .seg button { height: 34px; padding: 0 14px; border-radius: 9px; border: 0; background: transparent; color: #D9C3C4; font: 600 13.5px Inter, sans-serif; cursor: pointer; transition: background .28s var(--ease), color .28s; }
+.stx-h .seg button:hover, .stx-top-row .seg button:hover { background: rgba(255,255,255,.06); color: #fff; }
+.stx-h .seg button.on, .stx-top-row .seg button.on { background: var(--red); color: #fff; }
 .stx-load { padding: 40px 4px; }
 /* Switching Stats category: old numbers dim while the new ones load, then fade in. */
 .stx #stxBody, .stx #yirSlot { transition: opacity .2s var(--ease); }
@@ -2259,7 +2259,7 @@ body.bnow-open #bbar { display: none; }
 .stx-mini.wide { width: 180px; } .stx-mini.wide .art { width: 180px; height: 101px; }
 .stx-mini .m { display: block; font-size: 12px; color: var(--muted); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stx-call > div:last-child { flex: 1; min-width: 0; }
-.stx-h .seg[hidden] { display: none; }
+.stx-h .seg[hidden], .stx-top-row .seg[hidden] { display: none; }
 .stx-top .cv em { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-weight: 800; font-size: 18px; color: #fff; }
 .stx-ppl { margin-bottom: 18px; }
 .stx-fun.wide { grid-template-columns: repeat(4, 1fr); }
@@ -3160,3 +3160,28 @@ label.set-row { cursor: pointer; }
    anyway, and the blur was redrawn on every scroll frame). Stats sections off screen skip
    drawing until they come near. */
 .stx-box:not(:has(.yg-wrap, .stx-bars)) { content-visibility: auto; contain-intrinsic-size: auto 360px; }
+
+/* Mark watched redraws the episode list in place: no entrance animation. */
+.episodes.soft *, .episodes.soft { animation: none !important; }
+/* Episodes: the name opens the episode page (underline on hover), the picture plays. */
+#epList .ep-title, #epList .ep-name { cursor: pointer; transition: color .15s; }
+#epList .ep-title:hover, #epList .ep-name:hover { color: #fff; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+#epList .art { cursor: pointer; }
+
+.stx-top-row { display: flex; align-items: center; gap: 16px; margin-bottom: 22px; }
+.stx-top-row .sp { flex: 1; }
+.stx-top-row .stx-secs { margin-bottom: 0; }
+.stx-top-row #stxWho:not([hidden]) { animation: viewIn .3s var(--ease-out); }
+
+/* Stats loading shapes */
+.stx-skel .sk { display: block; border-radius: 16px; background: linear-gradient(90deg, rgba(255,255,255,.035), rgba(255,255,255,.075), rgba(255,255,255,.035)) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
+.stx-skel .sk-card { height: 118px; }
+.stx-skel .sk-box { height: 360px; margin-bottom: 22px; }
+.stx-skel .sk-wide { height: 220px; }
+.calm .stx-skel .sk { animation: none; }
+
+/* Songs tab: rows off screen skip drawing. */
+.stable.songs .srow:not(.shead) { content-visibility: auto; contain-intrinsic-size: auto 56px; }
+
+.y-pl{display:inline-flex;align-items:center;gap:10px;margin-top:14px;padding:10px 16px;border-radius:12px;background:rgba(0,0,0,.25);font-size:15px;font-weight:600}
+.y-pl[hidden]{display:none}

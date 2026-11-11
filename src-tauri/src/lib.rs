@@ -1256,6 +1256,8 @@ async fn tokio_sleep(secs: u64) {
 
 pub fn run() {
     tauri::Builder::default()
+        // Only one Scrappy at a time: starting it again brings the open window to the front.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| appset::show_main(app)))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Ready::default())
         .register_asynchronous_uri_scheme_protocol("img", |ctx, request, responder| {

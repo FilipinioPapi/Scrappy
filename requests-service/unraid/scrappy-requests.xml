@@ -23,7 +23,7 @@
   <Config Name="Navidrome user" Target="NAVIDROME_USER" Default="" Mode="" Description="A normal (non-admin) Navidrome user" Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="Navidrome password" Target="NAVIDROME_PASSWORD" Default="" Mode="" Description="That user's password" Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="Audiobookshelf URL" Target="ABS_URL" Default="http://192.168.1.10:13378" Mode="" Description="Audiobookshelf as Unraid sees it" Type="Variable" Display="always" Required="false" Mask="false">http://192.168.1.10:13378</Config>
-  <Config Name="Audiobookshelf token" Target="ABS_TOKEN" Default="" Mode="" Description="Audiobookshelf: Settings, Users, pick a user, API token" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Audiobookshelf token" Target="ABS_TOKEN" Default="" Mode="" Description="Audiobookshelf: Settings, API Keys, Add API key (pick a user who can see the books)" Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="Hand-off URL" Target="HANDOFF_URL" Default="" Mode="" Description="Later, for the Discord bot. Leave empty." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Hand-off secret" Target="HANDOFF_SECRET" Default="" Mode="" Description="Later, for the Discord bot. Leave empty." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
 </Container>

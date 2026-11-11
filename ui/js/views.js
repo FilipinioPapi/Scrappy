@@ -1043,15 +1043,18 @@ function wireIconButtons(scope, it) {
     const kind = b.dataset.toggle;
     const on = !b.classList.contains('on');
     const path = kind === 'played' ? `/Users/{userId}/PlayedItems/${it.Id}` : `/Users/{userId}/FavoriteItems/${it.Id}`;
+    // Change the button straight away; Emby can take a moment for a whole show.
+    const setTip = (v) => { b.querySelector('.tip').textContent = kind === 'played'
+      ? (v ? 'Mark unwatched' : it.Type === 'Series' ? 'Mark whole show watched' : 'Mark watched')
+      : (v ? 'Remove from favorites' : 'Add to favorites'); };
+    b.classList.toggle('on', on); setTip(on); b.disabled = true;
     try {
       await (on ? api.post(path) : api.del(path));
-      b.classList.toggle('on', on);
-      b.querySelector('.tip').textContent = kind === 'played'
-        ? (on ? 'Mark unwatched' : it.Type === 'Series' ? 'Mark whole show watched' : 'Mark watched')
-        : (on ? 'Remove from favorites' : 'Add to favorites');
       toast(kind === 'played' ? (on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`) : (on ? `Added ${it.Name} to Favorites` : `Removed ${it.Name} from Favorites`));
-      if (kind === 'played') window.dispatchEvent(new Event('scrappy:refresh'));
-    } catch (e) { toast(String(e), true); }
+      // Only the episode list updates (in place, no reload of the page).
+      if (kind === 'played') document.getElementById('epList')?._soft?.();
+    } catch (e) { b.classList.toggle('on', !on); setTip(!on); toast(String(e), true); }
+    b.disabled = false;
   }));
 }
 
@@ -1252,6 +1255,8 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
     }));
     renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, false, view);
+    // Quiet redraw after Mark watched: same list, new ticks, no entrance animation.
+    list._soft = () => { list.classList.add('soft'); renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, false, view).finally(() => setTimeout(() => list.classList.remove('soft'), 400)); };
   }, ctx.alive).catch(() => {});
 }
 
@@ -1316,13 +1321,15 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
   }, alive).catch(() => {});
 }
 
-// Clicking anywhere on an episode plays it (or resumes it if you're part-way).
+// Episodes: the picture plays it (or resumes it); the name and text open the episode's page.
 document.addEventListener('click', (e) => {
   const row = e.target.closest('#epList [data-ep]');
   if (!row || e.target.closest('[data-play], [data-block]')) return;
   e.preventDefault();
   e.stopPropagation();
-  playItem(row.dataset.ep);
+  const onPicture = e.target.closest('.art') && !e.target.closest('.ep-name');
+  if (onPicture) playItem(row.dataset.ep);
+  else location.hash = `#/item/${encodeURIComponent(row.dataset.ep)}`;
 }, true);
 
 async function renderChildren(el, ctx, folder) {

@@ -5,7 +5,7 @@
 //    plus "Past years" chips. Settings › "Show Year in Review early" shows it any time.
 //  - Google TV: the same slideshow, driven by the remote. tv.js adds class "tv" on <html>.
 import { esc } from './components.js';
-import { img, IMG_BASE } from './api.js';
+import { api, img, IMG_BASE } from './api.js';
 import { loadRaw, absImg, ndImg, hue, hm, n0, plural, dkey, streaks, mergeGenres } from './stats.js';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -207,13 +207,14 @@ function musicYear(raw, y) {
   s.forEach((sl) => { const f = SND[sl.k]; if (f) sl.snd = f(); });
   const ts = s.find((sl) => sl.k === 'Your top songs'); if (ts?.snd) ts.playRow = tS.findIndex((x) => x.k === ts.snd.id);
   s[s.length - 1].snd = pick((x) => x.k === song.k);
+  const top50 = [...songs.values()].filter((x) => x.ti && x.alId).sort((a, b) => b.t - a.t).slice(0, 50).map((x) => x.k);
   const card = {
     fan: fan3([...tS.map((x) => ({ k: x.alId, url: x.cv && ndImg(x.cv, 300), seed: x.al })), ...tA.map((x) => ({ k: x.id, url: x.cv && ndImg(x.cv, 300), seed: x.name }))]), po: false,
     av: { url: ndImg(ar.id || ar.cv, 300), seed: ar.k, ini: ini(ar.k), name: ar.k, pp: false },
     h1: 'TOP SONGS', L1: rows(tS.map((x) => x.ti)), h2: 'TOP ARTISTS', L2: rows(tR.map((x) => x.k)),
     stats: [['MINUTES', n0(mins)], ['TOP GENRE', (gs[0]?.[0] || '—').toUpperCase()], late || !before.size ? ['ARTISTS', n0(artists.size)] : ['NEW ARTISTS', n0(fresh.size)], ['BEST STREAK', plural(streak, 'day').toUpperCase()]],
   };
-  return { slides: s, card };
+  return { slides: s, card, top50 };
 }
 
 function tvYear(raw, y) {
@@ -323,6 +324,13 @@ export async function yirBanner(slot, kind, alive) {
   // Hold the banner's place straight away so the page below doesn't jump when it arrives.
   if (bannerYear() && !slot.innerHTML.trim()) slot.innerHTML = '<div class="yb yb-ph" aria-hidden="true"></div>';
   let raw; try { raw = await loadRaw(kind); } catch { if (alive()) slot.innerHTML = ''; return; }
+  const wire = () => {
+    slot.onclick = (e) => { const b = e.target.closest('[data-yir]'); if (b) openYir(kind, Number(b.dataset.yir)); };
+    slot.onkeydown = (e) => { if (e.key === 'Enter' && e.target.classList.contains('yb')) { e.preventDefault(); openYir(kind, Number(e.target.dataset.yir)); } };
+  };
+  // Seen this banner already (same data): put it straight back, no adding up again.
+  const kept = BANNERS.get(kind);
+  if (kept && kept.raw === raw && kept.by === bannerYear() && kept.early === early()) { slot.innerHTML = kept.html; wire(); return; }
   // The Stats numbers draw first; the year is added up once the page has settled.
   await idle();
   if (!alive()) return;
@@ -344,9 +352,10 @@ export async function yirBanner(slot, kind, alive) {
       ${m.err ? '' : `<button type="button" class="yb-go" data-yir="${by}" tabindex="-1">${PLAY}Play</button>`}
     </div>` : ''}
     ${past.length ? `<div class="yb-past"><span class="t2">${m ? 'Past years:' : 'Year in Review:'}</span>${past.map((y) => `<button type="button" class="yb-chip" data-yir="${y}">${y}</button>`).join('')}</div>` : ''}`;
-  slot.onclick = (e) => { const b = e.target.closest('[data-yir]'); if (b) openYir(kind, Number(b.dataset.yir)); };
-  slot.onkeydown = (e) => { if (e.key === 'Enter' && e.target.classList.contains('yb')) { e.preventDefault(); openYir(kind, Number(e.target.dataset.yir)); } };
+  BANNERS.set(kind, { raw, by, early: early(), html: slot.innerHTML });
+  wire();
 }
+const BANNERS = new Map();
 
 // ---------- the slideshow ----------
 const SVG = {
@@ -354,6 +363,7 @@ const SVG = {
   pause: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></svg>',
   snd: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
   mute: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>',
+  list: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h12M4 12h12M4 18h8"/><path d="M18 14v6l3-2"/></svg>',
   close: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   prev: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   next: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>',
@@ -404,35 +414,58 @@ const soundOn = () => { try { return localStorage.getItem('yirSound') !== 'off';
 function snippets() {
   const { invoke } = window.__TAURI__.core;
   const A = [new Audio(), new Audio()], timers = new Map();
-  let cur = 0, curId = '', on = soundOn(), held = false, gen = 0, now = null;
-  const VOL = 0.85;
+  A.forEach((a) => { a.preload = 'auto'; a.volume = 0; });
+  let cur = 0, curId = '', on = soundOn(), held = false, now = null;
+  const VOL = 0.85, FADE = 1400;
+  // Equal-power curve so the crossfade doesn't dip in the middle.
   const ramp = (a, to, ms, done) => {
     clearInterval(timers.get(a));
     const from = a.volume, t0 = performance.now();
     timers.set(a, setInterval(() => {
-      const p = Math.min(1, (performance.now() - t0) / ms);
-      a.volume = Math.max(0, Math.min(1, from + (to - from) * p));
+      const p = Math.min(1, (performance.now() - t0) / ms), e = to > from ? Math.sin(p * Math.PI / 2) : Math.cos((1 - p) * Math.PI / 2);
+      a.volume = Math.max(0, Math.min(1, from + (to - from) * e));
       if (p >= 1) { clearInterval(timers.get(a)); done?.(); }
-    }, 30));
+    }, 25));
   };
-  const live = () => A[cur];
-  const start = (a) => { if (on && !held && a.src) a.play().then(() => ramp(a, VOL, 900)).catch(() => {}); };
+  // Load a song into a player, already at its starting point, paused. The file comes as it
+  // is (quick to start and seek); if the PC can't play that format, Navidrome converts it.
+  const load = (a, snd) => new Promise((ok) => {
+    if (a.dataset.id === snd.id && a.readyState >= 3) return ok();
+    a.dataset.id = snd.id; a.pause(); a.volume = 0;
+    const at = Math.floor((snd.d || 0) * 0.4);
+    let tried = false;
+    const go = (u) => { a.src = u; a.load(); };
+    a.onloadedmetadata = () => { if (!tried) { try { a.currentTime = at; } catch {} } };
+    a.oncanplay = () => ok();
+    a.onerror = () => {
+      if (tried) return ok();
+      tried = true;
+      invoke('nd_snippet_url', { id: snd.id, at, raw: false }).then(go).catch(() => ok());
+    };
+    invoke('nd_snippet_url', { id: snd.id, at, raw: true }).then(go).catch(() => ok());
+    setTimeout(ok, 2500);
+  });
+  const start = (a) => { if (on && !held && a.src) a.play().then(() => ramp(a, VOL, FADE)).catch(() => {}); };
   return {
-    play(snd) {
-      if (!snd || snd.id === curId) return;
-      curId = snd.id; now = snd; const my = ++gen;
-      const old = live(); cur = 1 - cur; const next = live();
-      ramp(old, 0, 700, () => old.pause());
-      invoke('nd_snippet_url', { id: snd.id, at: Math.floor((snd.d || 0) * 0.4) }).then((u) => {
-        if (my !== gen) return;
-        next.pause(); next.volume = 0; next.src = u; start(next);
-      }).catch(() => {});
+    /** Ready the first song before the slides start. */
+    prepare(snd) { return snd ? load(A[cur], snd).then(() => { curId = ''; }) : Promise.resolve(); },
+    play(snd, upcoming) {
+      if (snd && snd.id !== curId) {
+        curId = snd.id; now = snd;
+        const old = A[cur], nextIdx = A[cur].dataset.id === snd.id && old.paused ? cur : 1 - cur, next = A[nextIdx];
+        if (next !== old) ramp(old, 0, FADE, () => old.pause());
+        cur = nextIdx;
+        load(next, snd).then(() => { if (curId === snd.id && A[cur] === next) start(next); });
+      }
+      // Get the next different song ready in the free player, so it starts instantly.
+      const ahead = (upcoming || []).find((x) => x && x.id !== curId);
+      if (ahead) { const free = A[1 - cur]; setTimeout(() => { if (A[1 - cur] === free && free.dataset.id !== ahead.id) { if (free.paused || free.volume === 0) load(free, ahead); } }, FADE + 100); }
     },
-    hold(h) { held = h; const a = live(); if (h) ramp(a, 0, 300, () => a.pause()); else start(a); },
-    toggle() { on = !on; try { localStorage.setItem('yirSound', on ? 'on' : 'off'); } catch {} const a = live(); if (on) start(a); else ramp(a, 0, 300, () => a.pause()); return on; },
+    hold(h) { held = h; const a = A[cur]; if (h) ramp(a, 0, 300, () => a.pause()); else start(a); },
+    toggle() { on = !on; try { localStorage.setItem('yirSound', on ? 'on' : 'off'); } catch {} const a = A[cur]; if (on) start(a); else ramp(a, 0, 300, () => a.pause()); return on; },
     get on() { return on; },
     get now() { return now; },
-    stop() { gen++; A.forEach((a) => ramp(a, 0, 250, () => { a.pause(); a.removeAttribute('src'); a.load(); })); },
+    stop() { A.forEach((a) => ramp(a, 0, 300, () => { a.pause(); a.removeAttribute('src'); a.load(); })); },
   };
 }
 /** Pause whatever Scrappy is playing while the review plays; returns a function that resumes it. */
@@ -444,6 +477,24 @@ async function hushMusic() {
     await invoke('music_command', { args: ['set', 'pause', 'yes'] });
     return () => invoke('music_command', { args: ['set', 'pause', 'no'] }).catch(() => {});
   } catch { return () => {}; }
+}
+
+// "Your 2026": a Navidrome playlist of your top 50 songs, made (or refreshed) when you open
+// your Music review. Marked "Generated by Scrappy" so it's clear where it came from.
+const PL_NOTE = 'Generated by Scrappy';
+async function yearPlaylist(year, ids) {
+  if (!ids?.length) return false;
+  const nd = (ep, query) => api.nd(ep, query);
+  const name = `Your ${year}`;
+  const me = ((await api.session())?.servers?.navidrome?.user || '').toLowerCase();
+  const lists = (await nd('getPlaylists', ''))?.playlists?.playlist || [];
+  const mine = lists.find((p) => p.name === name && (p.comment || '').includes(PL_NOTE) && (!me || (p.owner || '').toLowerCase() === me));
+  const songs = ids.map((id) => '&songId=' + encodeURIComponent(id)).join('');
+  // createPlaylist with a playlistId replaces that playlist's songs.
+  const r = await nd('createPlaylist', mine ? `playlistId=${encodeURIComponent(mine.id)}${songs}` : `name=${encodeURIComponent(name)}${songs}`);
+  const id = mine?.id || r?.playlist?.id;
+  if (id) await nd('updatePlaylist', `playlistId=${encodeURIComponent(id)}&comment=${encodeURIComponent(PL_NOTE)}&public=false`).catch(() => {});
+  return true;
 }
 
 let openNow = null;
@@ -468,6 +519,8 @@ export async function openYir(kind, year) {
   const L = m?.slides || [];
   const snd = kind === 'music' && L.some((x) => x.snd) ? snippets() : null;
   const unhush = snd ? await hushMusic() : () => {};
+  let plMade = false;
+  if (kind === 'music' && m?.top50?.length) yearPlaylist(year, m.top50).then((ok) => { plMade = ok; stage.querySelector('.y-pl')?.removeAttribute('hidden'); }).catch(() => {});
   if (!el.isConnected) { unhush(); return; }
   let i = 0, paused = false, to = 0, left = D, t0 = 0, raf = 0;
   const arm = (ms) => { clearTimeout(to); left = ms; t0 = Date.now(); to = setTimeout(() => { if (!paused && i < L.length - 1) go(i + 1); }, ms); };
@@ -479,6 +532,7 @@ export async function openYir(kind, year) {
         <div class="y-k y-anim">That's a wrap</div>
         <div class="y-mid y-anim">YOUR ${year}<br>IN ${WORD[kind]}</div>
         <div class="y-lede y-anim2">${tv ? 'Watch it again, or head back.' : 'Save this card to share it, or watch the whole thing again.'}</div>
+        ${kind === 'music' ? `<div class="y-pl y-anim2"${plMade ? '' : ' hidden'}>${SVG.list} Your ${year} playlist, with your top 50 songs, is in your Navidrome library.</div>` : ''}
         ${flav(s.q)}
         <div class="y-acts y-anim3">
           ${tv ? '' : `<button type="button" class="y-btn" data-a="save">${SVG.save}Save as image</button>`}
@@ -507,7 +561,7 @@ export async function openYir(kind, year) {
       <div class="y-foot">${tv ? `<span><b>◀ ▶</b>Move</span><span><b>OK</b>${sum ? 'Select' : paused ? 'Play' : 'Pause'}</span><span><b>Back</b>Close</span>` : `<span>Moves on by itself every 7 seconds.</span><span style="flex:1"></span><span><kbd>←</kbd><kbd>→</kbd> move</span><span><kbd>Space</kbd> pause</span><span><kbd>Esc</kbd> close</span>`}</div>`;
     stage.style.setProperty('--dur', D + 'ms');
     if (snd) {
-      snd.play(s.snd);
+      snd.play(s.snd, L.slice(i + 1).map((x) => x.snd));
       const np = snd.now;
       if (np && !sum) stage.querySelector('.y-sp')?.insertAdjacentHTML('beforebegin', `<div class="y-np${snd.on ? '' : ' off'}" aria-hidden="true"><span class="y-eq"><i></i><i></i><i></i></span><b>${esc(np.ti)}</b><span>${esc(np.ar || '')}</span></div>`);
     }
@@ -558,6 +612,8 @@ export async function openYir(kind, year) {
   const onKeyUp = (e) => { if (e.key === ' ') e.preventDefault(); };
   addEventListener('keydown', onKey, true); addEventListener('keyup', onKeyUp, true);
   openNow = { close };
+  if (snd) await Promise.race([snd.prepare(L.find((x) => x.snd)?.snd), new Promise((r) => setTimeout(r, 1500))]);
+  if (!el.isConnected) return;
   if (L.length) { el.focus?.(); go(0); }
 }
 

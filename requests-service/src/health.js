@@ -49,6 +49,8 @@ export async function health(latest = '') {
     const st = await getJson(config.abs.url + '/status', { timeout: 8000 }).catch(() => null);
     return { version: st?.serverVersion || '' };
   }) : null;
+  // Audiobookshelf 2.26+ turned off old login tokens: it wants an API key instead.
+  if (abs && !abs.ok && /401/.test(abs.error || '')) abs.error = 'Audiobookshelf turned down the key. Make an API key in Audiobookshelf (Settings, API Keys) and put it in ABS_TOKEN.';
   out.servers.push({ key: 'audiobookshelf', name: 'Audiobookshelf', set: !!abs, ...(abs || {}) });
 
   // Who's using Scrappy: Emby's device list, Scrappy devices active in the last week.
