@@ -474,6 +474,9 @@ const HERO_SLIDES = 6;
 const DAY = 86400000;
 const heroChecked = new Map(); // backdrop url -> true/false (only definite answers are kept)
 
+// Banner and page backdrops: ask for as many pixels as the screen really has (a 1440p or 4K
+// screen with Windows scaling needs more than 1920), up to 4K. Emby never sends more than the original.
+const bigW = () => Math.min(3840, Math.max(1920, Math.ceil((window.screen?.width || 1920) * (window.devicePixelRatio || 1) / 320) * 320));
 function heroBackdrop(it) {
   if (it.BackdropImageTags?.length) return { id: it.Id, tag: it.BackdropImageTags[0] };
   if (it.ParentBackdropImageTags?.length && it.ParentBackdropItemId) return { id: it.ParentBackdropItemId, tag: it.ParentBackdropImageTags[0] };
@@ -606,7 +609,7 @@ async function keptHeroPicks(ctx) {
     if (!it || (it.Type !== 'Series' && it.UserData?.Played)) continue;
     const b = heroBackdrop(it);
     if (!b) continue;
-    picks.push({ it, kicker: x.kicker, why: x.why, url: img(b.id, 'Backdrop', b.tag, 1920, 0) });
+    picks.push({ it, kicker: x.kicker, why: x.why, url: img(b.id, 'Backdrop', b.tag, bigW(), 0) });
   }
   return picks.length >= Math.min(3, saved.list.length) ? picks : null;
 }
@@ -645,7 +648,7 @@ async function fillHero(slot, ctx, my) {
     const batch = queue.slice(i, i + 4);
     const ok = await Promise.all(batch.map((c) => {
       const b = heroBackdrop(c.it);
-      c.url = img(b.id, 'Backdrop', b.tag, 1920, 0);
+      c.url = img(b.id, 'Backdrop', b.tag, bigW(), 0);
       return backdropIsGood(c.url);
     }));
     if (my !== heroGen || !ctx.alive()) return;
@@ -1152,8 +1155,8 @@ function renderItem(root, ctx, it, seasonId = '') {
   const isSeries = it.Type === 'Series';
   const t = it.ImageTags || {};
   let backdrop = null;
-  if (it.BackdropImageTags?.length) backdrop = img(it.Id, 'Backdrop', it.BackdropImageTags[0], 1920, 0);
-  else if (it.ParentBackdropImageTags?.length) backdrop = img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], 1920, 0);
+  if (it.BackdropImageTags?.length) backdrop = img(it.Id, 'Backdrop', it.BackdropImageTags[0], bigW(), 0);
+  else if (it.ParentBackdropImageTags?.length) backdrop = img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], bigW(), 0);
 
   let poster, wide = false;
   if (isEp && t.Primary) { poster = img(it.Id, 'Primary', t.Primary, 800); wide = true; }
