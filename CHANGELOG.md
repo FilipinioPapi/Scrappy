@@ -14,8 +14,9 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 **Home**
 - Smart home rows show up instantly when you switch tabs, with no flicker or reshuffling. They refresh every 30 minutes
 - Because you played shows real artist pictures and album counts, and leaves out artists with no albums in your library
+- On repeat shows an album once instead of repeating its cover for each song
 
-<sub>Built from 44fff3d · includes: page changes, Home</sub>
+<sub>Built from 174100c · includes: page changes, Home</sub>
 
 ### Preview 24 · Nov 11, 1:10 AM
 **Home**
