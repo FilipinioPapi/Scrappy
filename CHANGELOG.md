@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 29 · Nov 11, 8:30 AM
+**Movies & TV**
+- Grid layout: episode names always show under each picture (the setting is gone)
+
+<sub>Built from 5baf82c · includes: Movies & TV</sub>
+
 ### Preview 28 · Nov 11, 3:25 AM
 **Movies & TV**
 - New side menu like Music's: Home, your libraries, Genres, Favorites, and Your Library with your pinned and recently watched shows and movies (with time left)
