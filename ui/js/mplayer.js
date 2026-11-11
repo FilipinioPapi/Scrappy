@@ -203,15 +203,21 @@ export function setVolume(v) {
   save(); drawBar();
 }
 // Scrolling over a volume bar or mute button nudges the volume, 5% per notch.
-document.addEventListener('wheel', (e) => {
-  const el = e.target.closest?.('.mseek.vol, #mbMute, #mnMute, #tpMute');
-  if (!el) return;
+// The blocking wheel listener goes on those controls only (added the first time the pointer
+// is over one), so it never slows down scrolling the page.
+const VOL_SEL = '.mseek.vol, #mbMute, #mnMute, #tpMute';
+document.addEventListener('pointerover', (e) => {
+  const el = e.target.closest?.(VOL_SEL);
+  if (el && !el._volWheel) { el._volWheel = true; el.addEventListener('wheel', volWheel, { passive: false }); }
+}, { passive: true });
+function volWheel(e) {
+  const el = e.currentTarget;
   e.preventDefault();
   const bar = el.matches('.mseek') ? el : el.nextElementSibling;
   bar?.classList.add('wheel'); clearTimeout(bar?._wt); if (bar) bar._wt = setTimeout(() => bar.classList.remove('wheel'), 300);
   setVolume((S.muted ? 0 : S.volume) + (e.deltaY < 0 ? 5 : -5));
   notify();
-}, { passive: false });
+}
 export function toggleMute() {
   S.muted = !S.muted;
   invoke('music_set', { name: 'volume', value: String(S.muted ? 0 : S.volume) }).catch(() => {});

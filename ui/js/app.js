@@ -385,7 +385,14 @@ window.addEventListener('scrappy:zoom', (e) => {
   if (z > zoomNow && !roomFor(z)) { toast('Make the window bigger to use that size.'); return; }
   applyZoom(z, false);
 });
-window.addEventListener('wheel', (e) => { if (e.ctrlKey) { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); } }, { passive: false });
+// Ctrl + wheel zooms. The wheel listener is only attached while Ctrl is held: a blocking
+// wheel listener on the whole window makes every normal scroll wait for the page.
+const zoomWheel = (e) => { if (e.ctrlKey) { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); } };
+let zoomArmed = false;
+const armZoom = (on) => { if (on === zoomArmed) return; zoomArmed = on; window[on ? 'addEventListener' : 'removeEventListener']('wheel', zoomWheel, { passive: false }); };
+window.addEventListener('keydown', (e) => { if (e.key === 'Control') armZoom(true); });
+window.addEventListener('keyup', (e) => { if (e.key === 'Control') armZoom(false); });
+window.addEventListener('blur', () => armZoom(false));
 // If the window is made smaller than the zoom level allows, step the zoom back down.
 window.addEventListener('resize', () => {
   if (zoomNow <= 1 || innerWidth >= MIN_W && innerHeight >= MIN_H) return;

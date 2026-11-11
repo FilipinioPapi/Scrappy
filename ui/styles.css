@@ -1338,7 +1338,7 @@ body.has-mbar.tab-music .mpanel { bottom: var(--mbar); }
 .mdlg-it.new svg { width: 40px; height: 40px; padding: 10px; border-radius: 6px; background: rgba(255,255,255,.07); }
 
 /* Bottom player bar */
-#mbar { position: fixed; left: 0; right: 0; bottom: 0; height: var(--mbar); z-index: 30; background: rgba(30,20,21,.94); backdrop-filter: blur(18px); border-top: 1px solid var(--line);
+#mbar { position: fixed; left: 0; right: 0; bottom: 0; height: var(--mbar); z-index: 30; background: rgba(30,20,21,.97); border-top: 1px solid var(--line);
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr); align-items: center; gap: 24px; padding: 0 28px; box-shadow: 0 -12px 30px rgba(0,0,0,.45); animation: barIn .4s var(--ease); }
 #mbar[hidden] { display: none; }
 #mbar { transition: transform .5s var(--ease), opacity .4s var(--ease); }
@@ -1884,7 +1884,7 @@ html, body { overflow-x: clip; }
 
 /* ---------- Audiobooks ---------- */
 /* Book player bar: same look as the Music bar (#mbar), with book controls. */
-#bbar { position: fixed; left: 0; right: 0; bottom: 0; height: var(--mbar); z-index: 30; background: rgba(30,20,21,.94); backdrop-filter: blur(18px); border-top: 1px solid var(--line);
+#bbar { position: fixed; left: 0; right: 0; bottom: 0; height: var(--mbar); z-index: 30; background: rgba(30,20,21,.97); border-top: 1px solid var(--line);
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr); align-items: center; gap: 24px; padding: 0 28px; box-shadow: 0 -12px 30px rgba(0,0,0,.45);
   animation: barIn .4s var(--ease); transition: transform .4s cubic-bezier(.4,0,.2,1), opacity .18s ease; }
 #bbar[hidden] { display: none; }
@@ -3067,7 +3067,7 @@ a.rq-link { color: var(--text); font-weight: 600; }
 .stx-show { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 6px 4px; border-radius: 10px; color: inherit; text-decoration: none; transition: background .2s; }
 .stx-show[hidden] { display: none; }
 .stx-show:hover { background: rgba(255,255,255,.05); }
-.stx-show .cv { position: relative; width: 40px; height: 58px; border-radius: 6px; overflow: hidden; background: linear-gradient(135deg, hsl(var(--h) 45% 38%), hsl(var(--h) 45% 16%)); box-shadow: 0 6px 12px rgba(0,0,0,.45); }
+.stx-show .cv { position: relative; width: 40px; height: 58px; border-radius: 6px; overflow: hidden; background: linear-gradient(135deg, hsl(var(--h) 45% 38%), hsl(var(--h) 45% 16%)); box-shadow: 0 3px 6px rgba(0,0,0,.4); }
 .stx-show .cv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
 .stx-show .cv img.in { opacity: 1; }
 .stx-show .tx { min-width: 0; }
@@ -3155,3 +3155,8 @@ label.set-row { cursor: pointer; }
 /* Settings: no intro splash, and reduce motion. */
 .no-intro #intro { display: none !important; }
 .calm *, .calm *::before, .calm *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+
+/* Speed pass: the player bars no longer blur what scrolls under them (it was nearly opaque
+   anyway, and the blur was redrawn on every scroll frame). Stats sections off screen skip
+   drawing until they come near. */
+.stx-box:not(:has(.yg-wrap, .stx-bars)) { content-visibility: auto; contain-intrinsic-size: auto 360px; }
