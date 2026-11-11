@@ -7,6 +7,19 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 28 · Nov 11, 3:25 AM
+**Movies & TV**
+- New side menu like Music's: Home, your libraries, Genres, Favorites, and Your Library with your pinned and recently watched shows and movies (with time left)
+- New Genres and Favorites pages
+
+**Audiobooks**
+- The side menu now matches Music: collapse button, resizable, Your Library with recently listened books and authors, and a new Bookmarks page with every bookmark in one place
+
+**App-wide**
+- Collapsing or resizing the side menu applies to all three tabs, and it stays put when you switch tabs
+
+<sub>Built from 208c6e8 · includes: side menus</sub>
+
 ### Preview 27 · Nov 11, 3:10 AM
 **Movies & TV**
 - Shows with more than one season have an All tab at the end that lists every episode, with a heading where each season starts
