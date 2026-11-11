@@ -7,7 +7,15 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
-### Preview 22 · Nov 11, 12:30 AM
+### Preview 23 · Nov 11, 12:55 AM
+**Music**
+- Recommended songs on playlists got a cleanup: labelled columns, and the artist, album and genre now open their pages. The year sits under the album, and Your plays shows "New to you" for songs you've never played
+- New filters: Best match, Same artists, Same genres, New to you, Your favorites. There's also an Add all button
+- Click a cover to hear a 30-second preview. Your music pauses and picks back up afterwards
+
+<sub>Built from 2a30fab · includes: Music</sub>
+
+### Preview 22 · Nov 11, 12:36 AM
 **Music**
 - Skipping tracks on the Now playing screen no longer flashes placeholder art: the old cover stays until the new one is ready, then fades in
 - Album pages show the full release date (for example "Released August 25, 2017") when the music file has it, otherwise the year as before
