@@ -2,7 +2,7 @@
 // Screens follow the approved mock-ups on the Music design canvas.
 import { api, quiet } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
-import { homeRows, rowOff } from './homeedit.js';
+import { homeRows, rowOff, cachedRow } from './homeedit.js';
 import { history, music, onMusic, current, playSongs, playNext, addToQueue, playAt, removeAt, moveInQueue, clearUpNext, setFavorite, togglePlay, cover, fmt, IC } from './mplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -710,9 +710,10 @@ function smartMusicRows(main, alive) {
   const off = (id) => rowOff('music', id);
   const put = (sel, html) => { if (!alive()) return; const el = main.querySelector(sel); if (el) el.innerHTML = html; };
   const DAY = 864e5;
+  const row_ = (id, fetcher, render) => { if (!off(id)) cachedRow('music', id, () => fetcher().catch(() => null), render).catch(() => {}); };
   // On repeat: most played songs in the last 30 days (Navidrome's dated history); if that
   // isn't available, your most played albums of all time.
-  if (!off('onrepeat')) (async () => {
+  row_('onrepeat', async () => {
     let ids = [];
     try {
       const { ndHistory } = await import('./stats.js');
@@ -722,31 +723,39 @@ function smartMusicRows(main, alive) {
     } catch {}
     if (ids.length >= 4) {
       const songs = (await Promise.all(ids.map((id) => nd('getSong', { id }).then((r) => r.song).catch(() => null)))).filter(Boolean);
+      return { songs: songs.map(({ id, title, artist, artistId, album, albumId, coverArt, duration, genre, year, starred }) => ({ id, title, artist, artistId, album, albumId, coverArt, duration, genre, year, starred })) };
+    }
+    const r = await nd('getAlbumList2', { type: 'frequent', size: 14 });
+    return { albums: r?.albumList2?.album || [] };
+  }, (d) => {
+    if (d.songs) {
+      const songs = d.songs;
       put('#hRepeat', srow('On repeat', "What you've played most in the last 30 days", songs.map((x, i) => `<a class="mcard" href="${href('album', x.albumId)}?song=${encodeURIComponent(x.id)}">
         <div class="mcard-art">${coverHtml(x.coverArt, x.title, 300)}<button type="button" class="hoverplay" data-repeat="${i}" aria-label="Play">${IC.play}</button></div>
         <div class="t1">${esc(x.title)}</div><div class="t2">${esc(x.artist || '')}</div></a>`).join('')));
-      main.querySelector('#hRepeat')?.addEventListener('click', (e) => { const b = e.target.closest('[data-repeat]'); if (!b) return; e.preventDefault(); e.stopPropagation(); playSongs(songs, +b.dataset.repeat, { shuffle: false }); });
-    } else {
-      const r = await nd('getAlbumList2', { type: 'frequent', size: 14 }).catch(() => null);
-      const al = r?.albumList2?.album || [];
-      put('#hRepeat', al.length ? srow('On repeat', 'Your most played albums', al.map((a) => albumCard(a)).join('')) : '');
-    }
-  })();
-  // Because you played: artists like the one you played last.
-  if (!off('because')) nd('getAlbumList2', { type: 'recent', size: 1 }).then(async (r) => {
-    const a = r.albumList2?.album?.[0]; if (!a?.artistId) return;
-    const info = await nd('getArtistInfo2', { id: a.artistId, count: 20 });
-    const sim = (info.artistInfo2?.similarArtist || []).filter((x) => x.id).map((x) => ({ ...x, coverArt: x.coverArt || 'ar-' + x.id }));
-    put('#hBecause', sim.length ? srow(`Because you played ${a.artist}`, 'Similar artists in your library', sim.map(artistCard).join('')) : '');
-  }).catch(() => {});
+      const el = main.querySelector('#hRepeat');
+      if (el) el.onclick = (e) => { const b = e.target.closest('[data-repeat]'); if (!b) return; e.preventDefault(); e.stopPropagation(); playSongs(songs, +b.dataset.repeat, { shuffle: false }); };
+    } else put('#hRepeat', d.albums?.length ? srow('On repeat', 'Your most played albums', d.albums.map((a) => albumCard(a)).join('')) : '');
+  });
+  // Because you played: artists like the one you played last, using each artist's real
+  // picture and album count from your library (artists with no albums here are left out).
+  row_('because', async () => {
+    const r = await nd('getAlbumList2', { type: 'recent', size: 1 });
+    const a = r.albumList2?.album?.[0]; if (!a?.artistId) return { name: '', list: [] };
+    const [info, all] = await Promise.all([nd('getArtistInfo2', { id: a.artistId, count: 30 }), nd('getArtists')]);
+    const lib = new Map((all.artists?.index || []).flatMap((g) => g.artist || []).map((x) => [x.id, x]));
+    const list = (info.artistInfo2?.similarArtist || []).map((x) => lib.get(x.id)).filter((x) => x && x.albumCount > 0).slice(0, 16);
+    return { name: a.artist, list };
+  }, (d) => put('#hBecause', d.list?.length ? srow(`Because you played ${d.name}`, 'Similar artists in your library', d.list.map(artistCard).join('')) : ''));
   // New from artists you love: recently added albums by the artists you play most.
-  if (!off('newfrom')) Promise.all([nd('getAlbumList2', { type: 'frequent', size: 60 }), nd('getAlbumList2', { type: 'newest', size: 200 })]).then(([f, n]) => {
+  row_('newfrom', async () => {
+    const [f, n] = await Promise.all([nd('getAlbumList2', { type: 'frequent', size: 60 }), nd('getAlbumList2', { type: 'newest', size: 200 })]);
     const fav = new Set((f.albumList2?.album || []).map((a) => a.artistId).filter(Boolean).slice(0, 30));
-    const list = (n.albumList2?.album || []).filter((a) => fav.has(a.artistId)).slice(0, 14);
-    put('#hNewFrom', list.length ? srow('New from artists you love', 'Recently added albums by artists you play a lot', list.map((a) => albumCard(a)).join('')) : '');
-  }).catch(() => {});
+    return (n.albumList2?.album || []).filter((a) => fav.has(a.artistId)).slice(0, 14);
+  }, (list) => put('#hNewFrom', list.length ? srow('New from artists you love', 'Recently added albums by artists you play a lot', list.map((a) => albumCard(a)).join('')) : ''));
   // Forgotten favorites: favorite albums (or albums of favorite songs) not played in 3+ months.
-  if (!off('forgotten')) nd('getStarred2').then((r) => {
+  row_('forgotten', async () => {
+    const r = await nd('getStarred2');
     const old = (p) => !p || Date.now() - new Date(p).getTime() > 90 * DAY;
     let list = (r.starred2?.album || []).filter((a) => old(a.played));
     if (list.length < 4) {
@@ -754,13 +763,12 @@ function smartMusicRows(main, alive) {
       (r.starred2?.song || []).filter((x) => old(x.played) && x.albumId && !seen.has(x.albumId) && seen.add(x.albumId))
         .forEach((x) => list.push({ id: x.albumId, name: x.album, artist: x.artist, coverArt: x.coverArt }));
     }
-    list = list.sort(() => Math.random() - 0.5).slice(0, 14);
-    put('#hForgot', list.length ? srow('Forgotten favorites', "Favorites you haven't played in 3+ months", list.map((a) => albumCard(a)).join('')) : '');
-  }).catch(() => {});
-  if (!off('unplayed')) nd('getAlbumList2', { type: 'random', size: 200 }).then((r) => {
-    const list = (r.albumList2?.album || []).filter((a) => !a.playCount).slice(0, 14);
-    put('#hUnplayed', list.length ? srow("Albums you haven't played", 'Still waiting for their first spin', list.map((a) => albumCard(a)).join('')) : '');
-  }).catch(() => {});
+    return list.sort(() => Math.random() - 0.5).slice(0, 14);
+  }, (list) => put('#hForgot', list.length ? srow('Forgotten favorites', "Favorites you haven't played in 3+ months", list.map((a) => albumCard(a)).join('')) : ''));
+  row_('unplayed', async () => {
+    const r = await nd('getAlbumList2', { type: 'random', size: 200 });
+    return (r.albumList2?.album || []).filter((a) => !a.playCount).slice(0, 14);
+  }, (list) => put('#hUnplayed', list.length ? srow("Albums you haven't played", 'Still waiting for their first spin', list.map((a) => albumCard(a)).join('')) : ''));
 }
 // History cards: a little badge says what kind of thing it is, plus when you played it.
 const HB = { song: MI.note, album: MI.album, artist: MI.artist, playlist: MI.playlist, mix: IC.shuffle, genre: MI.genres };

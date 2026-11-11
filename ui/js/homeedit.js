@@ -95,3 +95,27 @@ function openEditor(box, tab, rows, tabName) {
   shade.querySelector('.hed-done').onclick = close;
   shade.querySelector('.hed-reset').onclick = () => { write(tab, null); apply(box, tab, rows); draw(); };
 }
+
+// Smart rows remember what they showed for a while, so switching tabs draws them straight
+// away instead of rows popping in one by one (and shuffled rows don't reshuffle each visit).
+const MEM = new Map();
+export function rowCache(tab, id, ttl = 30 * 60e3) {
+  const k = `hr:${tab}:${id}`;
+  return {
+    get() {
+      let c = MEM.get(k);
+      if (!c) { try { c = JSON.parse(localStorage.getItem(k) || 'null'); } catch {} if (c) MEM.set(k, c); }
+      return c && Date.now() - c.t < ttl ? c.d : null;
+    },
+    set(d) { const c = { t: Date.now(), d }; MEM.set(k, c); try { localStorage.setItem(k, JSON.stringify(c)); } catch {} },
+  };
+}
+/** Draw a smart row from its saved copy if it's fresh, otherwise fetch, save and draw. */
+export async function cachedRow(tab, id, fetcher, render) {
+  const c = rowCache(tab, id);
+  const d = c.get();
+  if (d != null) { render(d); return; }
+  const fresh = await fetcher();
+  if (fresh == null) return;
+  c.set(fresh); render(fresh);
+}

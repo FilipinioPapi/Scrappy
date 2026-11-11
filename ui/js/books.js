@@ -2,7 +2,7 @@
 // Playback and the bottom bar live in bplayer.js.
 import { api } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
-import { homeRows } from './homeedit.js';
+import { homeRows, rowCache } from './homeedit.js';
 import { IC } from './mplayer.js';
 import { MI, hue } from './music.js';
 import { fanTile, fanBanner, learnColors } from './gtiles.js';
@@ -190,6 +190,8 @@ async function homePage(v) {
   // Smart rows (approved mock). Because you finished: books you haven't started that share the
   // author, series, narrator or genre of the last book you finished. Short listens: under 5 hours.
   const lastDone = again[0];
+  // Keep the same picks for a while so the rows don't reshuffle on every visit.
+  const keep = (id, list) => { const c = rowCache('books', id); const ids = c.get(); const got = ids && ids.map((x) => byId.get(x)).filter(Boolean); if (got && got.length === ids.length) return got; c.set(list.map((it) => it.id)); return list; };
   let because = [];
   if (lastDone) {
     const L = md(lastDone), sn = (m) => (seriesOf({ media: { metadata: m } }) || '').replace(/ · Book .*$/, '');
@@ -202,9 +204,12 @@ async function homePage(v) {
       (m.genres || []).forEach((g) => { if (lg.has(g)) sc += 1; });
       return [it, sc + Math.random() * 0.5];
     }).filter((e) => e[1] >= 1).sort((a, b) => b[1] - a[1]).slice(0, 14).map((e) => e[0]);
+    because = keep('because-' + lastDone.id, because);
   }
   const short = all.filter((it) => { const d = it.media?.duration || 0; const p = progOf(it.id); return d > 0 && d < 5 * 3600 && !p?.isFinished; })
     .sort(() => Math.random() - 0.5).slice(0, 14);
+  const shortKept = keep('short', short).filter((it) => !progOf(it.id)?.isFinished);
+  short.splice(0, short.length, ...shortKept);
   const W = (id, html) => `<div data-hrow="${id}">${html}</div>`;
   main.innerHTML = [
     W('cont', cont.length ? section('Continue listening', plural(cont.length, 'book') + ' in progress', `<div class="bk-conts">${cont.map(contCard).join('')}</div>`) : ''),
