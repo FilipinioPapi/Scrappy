@@ -9,6 +9,7 @@ import { mountSearch, setSearchSession, searchPage } from './search.js';
 import { requestsPage, mountRequests } from './requests.js';
 import './menu.js';
 import './topfit.js';
+import './updates.js';
 import { toast } from './components.js';
 import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView } from './views.js';
 

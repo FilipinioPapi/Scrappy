@@ -4,6 +4,7 @@ mod mpv;
 mod music;
 mod requests;
 mod servers;
+mod updates;
 
 use emby::Config;
 use serde_json::{json, Value};
@@ -1240,6 +1241,7 @@ async fn tokio_sleep(secs: u64) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .register_asynchronous_uri_scheme_protocol("img", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let uri = request.uri().to_string();
@@ -1325,6 +1327,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            updates::app_version,
+            updates::upd_check,
+            updates::upd_install,
             set_zoom,
             get_session,
             login,

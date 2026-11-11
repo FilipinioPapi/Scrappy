@@ -57,6 +57,12 @@
           <label class="toggle">Auto-play next episode <input type="checkbox" id="autoplayToggle"></label>
           <label class="toggle">Play in separate mpv window <input type="checkbox" id="windowModeToggle"></label>
           <label class="toggle" title="Year in Review normally shows up on December 1">Show Year in Review early <input type="checkbox" id="yirEarlyToggle"></label>
+          <div class="upd-set" id="updSettings">
+            <div class="menu-sec">UPDATES</div>
+            <div class="upd-row"><div><b id="updVer"></b><span class="upd-state" id="updState"></span></div><button type="button" class="upd-check" id="updCheckBtn">Check now</button></div>
+            <div class="upd-ch" id="updCh" hidden><span>Channel</span><div class="upd-seg"><button type="button" data-ch="preview">Preview</button><button type="button" data-ch="stable">Stable</button></div></div>
+            <label class="toggle" title="An update that downloaded installs when you next open Scrappy">Install updates when Scrappy starts <input type="checkbox" id="updAuto"></label>
+          </div>
           <button id="serversBtn">Servers</button>
           <button id="clearCacheBtn">Clear image cache</button>
           <button id="logoutBtn">Sign out</button>
