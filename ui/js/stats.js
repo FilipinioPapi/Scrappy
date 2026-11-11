@@ -154,9 +154,10 @@ export async function statsPage(main, kind, alive) {
       draw();
     });
   }).catch(() => {});
-  // Your Year in Review banner (from Dec 1) and Past years chips.
+  // Your Year in Review banner (from Dec 1) and Past years chips. When switching category the
+  // slot is faded out (stx-old): fade the new banner in, keeping what yirBanner put there.
   const slot = main.querySelector('#yirSlot');
-  import('./yir.js').then((m) => m.yirBanner(slot, kind, alive)).then(() => { if (alive() && slot.classList.contains('stx-old')) show(slot, ''); }).catch(() => {});
+  import('./yir.js').then((m) => m.yirBanner(slot, kind, alive)).then(() => { if (alive() && slot.classList.contains('stx-old')) show(slot, slot.innerHTML); }).catch(() => {});
   await draw();
 }
 
