@@ -79,3 +79,12 @@ test('music: albums only by default, on-server check, auto available', async () 
   const n = await call('GET', '/api/notices', null, 'u2');
   assert.equal(n.notices[0].request.title, 'In Rainbows');
 });
+test('request state on search results: count and whether it is mine', async () => {
+  await call('POST', '/api/requests', { items: [{ type: 'movie', extId: '999' }] }, 'u2');
+  await call('POST', '/api/requests', { items: [{ type: 'movie', extId: '999' }] }, 'u1');
+  const asJayden = (await call('GET', '/api/search?type=movie&q=dune')).items.find((x) => x.id === 999 || x.id === '999');
+  assert.equal(asJayden.request.count, 2); assert.equal(asJayden.request.mine, true);
+  await call('DELETE', `/api/requests/${asJayden.request.id}`, null, 'u1');
+  const again = (await call('GET', '/api/search?type=movie&q=dune')).items.find((x) => String(x.id) === '999');
+  assert.equal(again.request.count, 1); assert.equal(again.request.mine, false);
+});

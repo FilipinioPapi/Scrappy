@@ -18,6 +18,7 @@ const I = {
   search: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>', 18),
   x: svg('<path d="M6 6l12 12M18 6 6 18"/>', 16),
   chev: svg('<path d="m9 6 6 6-6 6"/>', 16),
+  list: svg('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>', 20, 1.9),
   check: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 14, 2.4),
 };
 const TYPES = [['movie', 'Movie', I.movie], ['tv', 'TV show', I.tv], ['music', 'Music', I.music], ['book', 'Audiobook', I.book]];
@@ -50,7 +51,7 @@ async function fail(root, e) { root.innerHTML = await offlineHtml(String(e)); wi
 function badge(it) {
   if (it.onServer && !it.partial) return `<span class="rq-badge ok">On the server</span>`;
   if (it.onServer && it.partial) return `<span class="rq-badge part">Partly on the server</span>`;
-  if (it.request && ['requested', 'progress'].includes(it.request.status)) return `<span class="rq-badge req">${STATUS[it.request.status]}</span>`;
+  if (it.request && ['requested', 'progress'].includes(it.request.status)) return `<span class="rq-badge req">${STATUS[it.request.status]}${it.request.count > 1 ? ` ×${it.request.count}` : ''}</span>`;
   if (it.release && !it.release.out && it.release.label) return `<span class="rq-badge soon">${esc(it.release.label)}</span>`;
   return '';
 }
@@ -59,7 +60,9 @@ const kindWord = { movie: 'MOVIE', tv: 'TV SHOW', album: 'ALBUM', song: 'SONG', 
 const actionFor = (it) => {
   if (it.type === 'tv') return `<a class="btn sm secondary" href="#/requests/tv/${enc(it.id)}">See seasons</a>`;
   if (it.onServer) return `<a class="btn sm secondary" href="${libHref(it.type, it.onServer)}">Open</a>`;
-  if (it.request && ['requested', 'progress'].includes(it.request.status)) return `<button class="btn sm secondary" data-req="${esc(it.id)}">Add me to it</button>`;
+  if (it.request && ['requested', 'progress'].includes(it.request.status)) return it.request.mine
+    ? `<button class="btn sm secondary rq-mine" data-unreq="${it.request.id}" title="You asked for this. Click to cancel.">${I.check} Requested</button>`
+    : `<button class="btn sm secondary rq-add" data-req="${esc(it.id)}">+ Add request</button>`;
   return `<button class="btn sm" data-req="${esc(it.id)}">Request</button>`;
 };
 function cardHtml(it) {
@@ -72,12 +75,13 @@ function cardHtml(it) {
   </div>`;
 }
 function rowHtml(it, opts = {}) {
-  const sel = opts.select && !it.onServer;
+  const mineOpen = it.request && ['requested', 'progress'].includes(it.request.status) && it.request.mine;
+  const sel = opts.select && !it.onServer && !mineOpen;
   return `<div class="rq-row${opts.link ? ' rq-go' : ''}" data-id="${esc(it.id)}" ${opts.link ? `data-href="${opts.link}"` : ''}>
     ${opts.select ? `<button class="rq-ck${sel ? '' : ' dis'}" data-ck="${esc(it.id)}" aria-label="Select" ${sel ? '' : 'disabled'}>${I.check}</button>` : ''}
     <div class="rq-th ${opts.round ? 'round' : ''} ${opts.sq ? 'sq' : ''}" style="--h:${hue(it.title)}">${it.poster ? `<img src="${esc(it.poster)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
     <div class="rq-tx"><div class="t1">${esc(it.title)}</div><div class="t2">${esc(it.subtitle || '')}</div></div>
-    ${badge(it) || (opts.select && !it.onServer ? '<span class="t2 rq-miss">Missing</span>' : '')}
+    ${mineOpen && opts.select ? `<span class="rq-badge mine">${I.check} Requested${it.request.count > 1 ? ` ×${it.request.count}` : ''}</span>` : badge(it) || (opts.select && !it.onServer ? '<span class="t2 rq-miss">Missing</span>' : '')}
     ${opts.action ? actionFor(it) : opts.link ? `<span class="rq-chev">${I.chev}</span>` : ''}
   </div>`;
 }
@@ -129,20 +133,24 @@ async function send(items, note) {
     return true;
   } catch (e) { toast(String(e) === 'REQ_OFFLINE' ? "Couldn't reach the request service." : String(e), true); return false; }
 }
+async function unrequest(id) {
+  try { await rq('DELETE', `/api/requests/${id}`); toast('Cancelled your request.'); refreshBadge(); return true; }
+  catch (e) { toast(String(e) === 'REQ_OFFLINE' ? "Couldn't reach the request service." : String(e), true); return false; }
+}
 const typeKicker = { movie: 'REQUEST A MOVIE', tv: 'REQUEST A TV SHOW', album: 'REQUEST AN ALBUM', song: 'REQUEST A SONG', book: 'REQUEST AN AUDIOBOOK' };
 async function requestOne(it) {
   let info = '';
   if (it.release && !it.release.out && it.release.label) info = `Not out yet (${it.release.label}). Your request stays on the list until it's out.`;
   if (it.type === 'song') info = `Jayden will see the song, artist and album, and decide whether to grab just the song or the whole album.`;
-  if (it.request && ['requested', 'progress'].includes(it.request.status)) info = (info ? info + ' ' : '') + 'Someone already asked for this. You\'ll be added to their request.';
-  const ok = await sheet({ kicker: typeKicker[it.type], title: it.title, sub: it.subtitle || it.year, poster: it.poster, info, sq: ['album', 'song', 'book'].includes(it.type) });
+  if (it.request && ['requested', 'progress'].includes(it.request.status)) info = (info ? info + ' ' : '') + `${it.request.count > 1 ? it.request.count + ' people have' : 'Someone has'} already asked for this. You'll be added, so you hear when it arrives too.`;
+  const ok = await sheet({ kicker: typeKicker[it.type], title: it.title, sub: it.subtitle || it.year, poster: it.poster, info, label: it.request && ['requested', 'progress'].includes(it.request.status) ? 'Add my request' : 'Send request', sq: ['album', 'song', 'book'].includes(it.type) });
   if (!ok) return false;
   return send([{ type: it.type, extId: it.id, source: it.source }], ok.note);
 }
 
 // ---------- Pages ----------
 export async function requestsPage(root, ctx, sub, id) {
-  root.onclick = null; // a handler left by another requests page would catch clicks here
+  root.onclick = null; root.onchange = null; // handlers left by another requests page would catch clicks here
   try { await whoami(); } catch (e) { return fail(root, e); }
   if (sub === 'new' || !sub && location.hash.includes('/new')) return makePage(root, ctx);
   if (sub === 'collection') return groupPage(root, ctx, 'collection', id);
@@ -160,11 +168,16 @@ function makePage(root, ctx) {
   let all = params.get('all') === '1';
   const what = { movie: 'films', tv: 'TV shows', music: 'artists, albums and songs', book: 'audiobooks, series and authors' };
   root.innerHTML = `<div class="rq-page">
-    <div class="rq-top"><div><div class="kicker">REQUESTS</div><h1 class="disp rq-h1">Make a request</h1></div><a class="btn secondary sm" href="#/requests">Your requests</a></div>
+    <div class="rq-top"><div><div class="kicker">REQUESTS</div><h1 class="disp rq-h1">Make a request</h1></div><a class="rq-openbtn" href="#/requests">${I.list}Open Requests<span class="rq-n" id="rqOpenN" hidden></span></a></div>
     <div class="rq-types" role="tablist">${TYPES.map(([k, l, ic]) => `<button type="button" data-type="${k}" class="${k === type ? 'on' : ''}">${ic}${l}</button>`).join('')}</div>
     <form class="rq-big" id="rqForm">${I.search}<input id="rqQ" spellcheck="false" autocomplete="off" value="${esc(params.get('q') || '')}"><span class="t2" id="rqWhat"></span></form>
     <div id="rqRes"></div></div>`;
   const input = root.querySelector('#rqQ'), res = root.querySelector('#rqRes');
+  const openCount = () => get(`/api/requests?scope=${listScope()}&status=open`).then((d) => {
+    const n = root.querySelector('#rqOpenN'); if (!n) return;
+    n.textContent = d.requests.length; n.hidden = !d.requests.length;
+  }).catch(() => {});
+  openCount();
   const setUrl = () => history.replaceState(null, '', `#/requests/new?type=${type}${input.value.trim() ? '&q=' + enc(input.value.trim()) : ''}${all ? '&all=1' : ''}`);
   const placeholder = () => { input.placeholder = { movie: 'Search for a film…', tv: 'Search for a TV show…', music: 'Search for an artist, album or song…', book: 'Search for a book, series or author…' }[type]; root.querySelector('#rqWhat').textContent = `Searching ${what[type]}`; };
   let seq = 0, timer, last = null;
@@ -220,10 +233,12 @@ function makePage(root, ctx) {
       if (ok && (await send(missing.map((m) => ({ type: 'movie', extId: m.id })), ok.note))) run();
       return;
     }
+    const un = e.target.closest('[data-unreq]');
+    if (un) { if (await unrequest(un.dataset.unreq)) { run(); openCount(); } return; }
     const b = e.target.closest('[data-req]'); if (!b) return;
     const card = b.closest('[data-id]');
     const it = [...byId.values()].find((x) => x.id === card.dataset.id);
-    if (it && (await requestOne(it))) run();
+    if (it && (await requestOne(it))) { run(); openCount(); }
   });
   root.querySelector('.rq-types').addEventListener('click', (e) => {
     const b = e.target.closest('[data-type]'); if (!b || b.dataset.type === type) return;
@@ -252,7 +267,7 @@ async function groupPage(root, ctx, kind, id) {
   const draw = () => {
     const items = d.items || d.books || [];
     const open = (x) => x.request && ['requested', 'progress'].includes(x.request.status);
-    const missing = items.filter((x) => !x.onServer && !open(x) && (kind !== 'artist' || ['album', 'ep'].includes(x.kind)));
+    const missing = items.filter((x) => !x.onServer && !(open(x) && x.request.mine) && (kind !== 'artist' || ['album', 'ep'].includes(x.kind)));
     const word = { collection: 'film', artist: 'album', series: 'book', author: 'book' }[kind];
     const pl = (n) => `${n} ${word}${n === 1 ? '' : 's'}`;
     const head = {
@@ -381,60 +396,65 @@ async function tvPage(root, ctx, id) {
   window.dispatchEvent(new Event('scrappy:ready'));
 }
 
-// Your requests, and (admins) everyone's.
+// Open Requests: one list. People see their own open requests; admins see everyone's, with who asked.
+const listScope = () => (me.admin ? 'all' : 'mine');
+const isOpen = (r) => ['requested', 'progress'].includes(r.status);
 async function listPage(root, ctx) {
-  const params = new URLSearchParams(location.hash.split('?')[1] || '');
-  let scope = me.admin && params.get('scope') === 'all' ? 'all' : 'mine';
-  let status = params.get('status') || (scope === 'all' ? 'open' : '');
-  let type = params.get('type') || '';
+  const scope = listScope(), admin = scope === 'all';
+  let showDone = new URLSearchParams(location.hash.split('?')[1] || '').get('done') === '1';
   root.innerHTML = `<div class="rq-page">${loadingHtml()}</div>`;
   rq('POST', '/api/notices/seen', {}).then(refreshBadge).catch(() => {});
   document.querySelector('.rq-avail')?.remove();
   let data;
-  const load = async () => { data = await get(`/api/requests?scope=${scope}${status ? '&status=' + status : ''}${type ? '&type=' + type : ''}`); };
+  const cutoff = Date.now() - 90 * 864e5;
+  const load = async () => { data = await get(`/api/requests?scope=${scope}`); };
   try { await load(); } catch (e) { return fail(root, e); }
   if (!ctx.alive()) return;
   const typeName = { movie: 'Movie', tv: 'TV', album: 'Album', song: 'Song', book: 'Audiobook' };
+  const rowHtmlFor = (r) => {
+    const sq = ['album', 'song', 'book'].includes(r.type);
+    const statusCell = admin
+      ? `<select class="rq-sel ${r.status}" data-status="${r.id}">${Object.entries(STATUS).map(([k, l]) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${l}</option>`).join('')}</select>`
+      : `<span class="rq-pill ${r.status}">${STATUS[r.status]}</span>`;
+    const act = admin ? '' : isOpen(r) || r.status === 'cantfind'
+      ? `<button class="btn sm secondary" data-cancel="${r.id}">${r.status === 'cantfind' ? 'Remove' : 'Cancel'}</button>`
+      : r.libRef ? `<a class="btn sm secondary" href="${libHref(r.type, r.libRef)}">Open</a>` : '<span></span>';
+    const sub = [typeName[r.type], r.type !== 'movie' ? r.subtitle : (r.year || '')].filter(Boolean).map(esc).join(' · ');
+    return `<div class="rq-tr">
+      <div class="rq-th ${sq ? 'sq' : ''}" style="--h:${hue(r.title)}">${r.poster ? `<img src="${esc(r.poster)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
+      <div class="rq-tx"><div class="t1">${esc(r.title)}</div>
+        <div class="t2">${sub}${r.release && r.status !== 'available' ? ` · <span class="rq-soon">${esc(r.release)}</span>` : ''}${admin ? '' : ` · asked ${day(r.createdAt).toLowerCase().replace(/^(\d)/, 'on $1')}`}</div>
+        ${r.notes?.length ? `<div class="t2 rq-unote">${r.notes.map((n) => `${admin ? esc(n.user) + ': ' : 'Your note: '}“${esc(n.note)}”`).join('<br>')}</div>` : ''}
+        ${r.adminNote && r.status === 'cantfind' ? `<div class="rq-cant">${admin ? 'Your note: ' : ''}${esc(r.adminNote)}</div>` : ''}
+        ${admin && r.status === 'cantfind' ? `<button class="rq-link" data-editnote="${r.id}">${r.adminNote ? 'Change note' : 'Add a note'}</button>` : ''}
+      </div>
+      ${admin ? `<div class="rq-who">${r.users.map((u) => `<span class="rq-av" style="--h:${hue(u)}">${esc(u.slice(0, 1).toUpperCase())}</span><span>${esc(u)}</span>`).join('')}</div>
+        <div class="t2" title="${esc(new Date(r.createdAt).toLocaleString())}">${day(r.createdAt)}</div>` : ''}
+      <div class="rq-stat">${statusCell}</div>
+      ${admin ? '' : `<div class="rq-act">${act}</div>`}
+    </div>`;
+  };
   const draw = () => {
-    const rows = data.requests;
-    const setUrl = () => history.replaceState(null, '', `#/requests?scope=${scope}${status ? '&status=' + status : ''}${type ? '&type=' + type : ''}`);
-    setUrl();
-    const chip = (attr, v, label, cur) => `<button type="button" class="rq-chip${cur === v ? ' on' : ''}" data-${attr}="${v}">${label}</button>`;
+    history.replaceState(null, '', `#/requests${showDone ? '?done=1' : ''}`);
+    const open = data.requests.filter(isOpen);
+    const done = data.requests.filter((r) => !isOpen(r) && (r.doneAt || r.updatedAt) > cutoff);
+    const people = new Set(open.flatMap((r) => r.users.map((u) => u.toLowerCase()))).size;
+    const head = `<div class="rq-tr hd"><span></span><span>REQUEST</span>${admin ? '<span>ASKED BY</span><span>WHEN</span>' : ''}<span>STATUS</span>${admin ? '' : '<span></span>'}</div>`;
     root.innerHTML = `<div class="rq-page">
-      <div class="rq-top"><div><div class="kicker">REQUESTS</div><h1 class="disp rq-h1">Requests</h1></div><a class="btn" href="#/requests/new">${I.req} Make a request</a></div>
-      <div class="rq-ptabs"><button data-scope="mine" class="${scope === 'mine' ? 'on' : ''}">My requests</button>${me.admin ? `<button data-scope="all" class="${scope === 'all' ? 'on' : ''}">All requests<span class="rq-adm">ADMIN</span></button>` : ''}</div>
-      <div class="rq-filters">${chip('status', 'open', 'Open', status)}${chip('status', '', 'All', status)}<span class="rq-gap"></span>${chip('type', '', 'Everything', type)}${chip('type', 'movie', 'Movies', type)}${chip('type', 'tv', 'TV', type)}${chip('type', 'album', 'Albums', type)}${chip('type', 'song', 'Songs', type)}${chip('type', 'book', 'Audiobooks', type)}</div>
-      ${scope === 'mine' && data.follows?.length ? `<div class="rq-follows t2">Watching for new seasons: ${data.follows.map((f) => `<span class="rq-chip">${esc(f.title)}<button data-unfollow="${esc(f.tmdbId)}" aria-label="Stop">${I.x}</button></span>`).join('')}</div>` : ''}
-      ${rows.length ? `<div class="rq-table ${scope}">
-        <div class="rq-tr hd"><span></span><span>REQUEST</span>${scope === 'all' ? '<span>ASKED BY</span>' : ''}<span>DATE</span><span>STATUS</span></div>
-        ${rows.map((r) => {
-          const parts = r.type === 'tv' ? r.subtitle : r.subtitle;
-          const sq = ['album', 'song', 'book'].includes(r.type);
-          const statusCell = scope === 'all'
-            ? `<select class="rq-sel ${r.status}" data-status="${r.id}">${Object.entries(STATUS).map(([k, l]) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${l}</option>`).join('')}</select>`
-            : `<span class="rq-pill ${r.status}">${STATUS[r.status]}</span>${['requested', 'progress', 'cantfind'].includes(r.status) ? `<button class="rq-link t2" data-cancel="${r.id}">${r.status === 'cantfind' ? 'Remove' : 'Cancel'}</button>` : r.libRef ? `<a class="rq-link" href="${libHref(r.type, r.libRef)}">Open</a>` : ''}`;
-          return `<div class="rq-tr">
-            <div class="rq-th ${sq ? 'sq' : ''}" style="--h:${hue(r.title)}">${r.poster ? `<img src="${esc(r.poster)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
-            <div class="rq-tx"><div class="t1">${esc(r.title)}${r.year && r.type !== 'tv' ? ` <span class="t2">(${esc(r.year)})</span>` : ''}</div>
-              <div class="t2">${esc(typeName[r.type])}${parts && r.type !== 'movie' ? ' · ' + esc(parts) : ''}${r.release && r.status !== 'available' ? ` · <span class="rq-soon">${esc(r.release)}</span>` : ''}</div>
-              ${r.notes?.length ? `<div class="t2 rq-unote">${r.notes.map((n) => `${scope === 'all' ? esc(n.user) + ': ' : 'Your note: '}“${esc(n.note)}”`).join('<br>')}</div>` : ''}
-              ${r.adminNote && r.status === 'cantfind' ? `<div class="rq-cant">${scope === 'all' ? 'Your note: ' : ''}${esc(r.adminNote)}</div>` : ''}
-              ${scope === 'all' && r.status === 'cantfind' ? `<button class="rq-link" data-editnote="${r.id}">${r.adminNote ? 'Change note' : 'Add a note'}</button>` : ''}
-            </div>
-            ${scope === 'all' ? `<div>${esc(r.users.join(', '))}</div>` : ''}
-            <div class="t2" title="${esc(new Date(r.createdAt).toLocaleString())}">${day(r.createdAt)}${scope === 'mine' && r.others ? `<div class="t2 rq-others">+${r.others} other${r.others > 1 ? 's' : ''} asked</div>` : ''}</div>
-            <div class="rq-stat">${statusCell}</div>
-          </div>`;
-        }).join('')}</div>` : `<div class="empty">${scope === 'all' ? 'No requests here.' : 'You haven\'t requested anything yet.'}<br><br><a class="btn" href="#/requests/new">Make a request</a></div>`}
+      <div class="rq-top"><div><div class="kicker">REQUESTS</div><h1 class="disp rq-h1">Open Requests</h1></div><a class="btn" href="#/requests/new">${I.req} Make a request</a></div>
+      <div class="t2 rq-count">${open.length ? `${open.length} open request${open.length === 1 ? '' : 's'}${admin ? ` from ${people} ${people === 1 ? 'person' : 'people'}` : ''}` : ''}</div>
+      ${!admin && data.follows?.length ? `<div class="rq-follows t2">Watching for new seasons: ${data.follows.map((f) => `<span class="rq-chip">${esc(f.title)}<button data-unfollow="${esc(f.tmdbId)}" aria-label="Stop">${I.x}</button></span>`).join('')}</div>` : ''}
+      ${open.length ? `<div class="rq-table ${scope}">${head}${open.map(rowHtmlFor).join('')}</div>`
+        : `<div class="empty">${admin ? 'No open requests right now.' : 'You have no open requests.'}<br><br><a class="btn" href="#/requests/new">Make a request</a></div>`}
+      ${done.length ? `<div class="rq-more t2">Finished and can't-find requests from the last 90 days: <button class="rq-link" data-done>${showDone ? 'Hide' : `Show ${done.length} finished`}</button></div>
+        ${showDone ? `<div class="rq-table ${scope} rq-donelist">${head}${done.map(rowHtmlFor).join('')}</div>` : ''}` : ''}
     </div>`;
   };
   root.onclick = async (e) => {
     const t = e.target;
-    const sc = t.closest('[data-scope]'); if (sc) { scope = sc.dataset.scope; status = scope === 'all' ? 'open' : ''; await load(); draw(); return; }
-    const st = t.closest('[data-status]:not(select)'); if (st) { status = st.dataset.status; await load(); draw(); return; }
-    const ty = t.closest('[data-type]'); if (ty) { type = ty.dataset.type; await load(); draw(); return; }
+    if (t.closest('[data-done]')) { showDone = !showDone; draw(); return; }
     const c = t.closest('[data-cancel]');
-    if (c) { try { await rq('DELETE', `/api/requests/${c.dataset.cancel}`); toast('Removed from your requests.'); await load(); draw(); } catch (err) { toast(String(err), true); } return; }
+    if (c) { try { await rq('DELETE', `/api/requests/${c.dataset.cancel}`); toast('Removed from your requests.'); await load(); draw(); refreshBadge(); } catch (err) { toast(String(err), true); } return; }
     const en = t.closest('[data-editnote]');
     if (en) {
       const r = data.requests.find((x) => x.id === Number(en.dataset.editnote));
@@ -491,7 +511,7 @@ function availCard(notices) {
         <div class="rq-tx"><div class="t1">${esc(r.title)}</div><div class="t2">${ok ? esc(r.subtitle || 'Your request') : `Couldn't find it${r.adminNote ? ': ' + esc(r.adminNote) : ''}`}</div></div>
         ${ok && r.libRef ? `<a class="btn sm" href="${libHref(r.type, r.libRef)}" data-go>${verb[r.type]}</a>` : ''}</div>`; }).join('')}
     ${notices.length > 3 ? `<div class="t2">and ${notices.length - 3} more</div>` : ''}
-    <div class="rq-av-f"><a href="#/requests" data-go>See all your requests</a><button type="button" data-dismiss>Dismiss</button></div>`;
+    <div class="rq-av-f"><a href="#/requests" data-go>Open Requests</a><button type="button" data-dismiss>Dismiss</button></div>`;
   el.addEventListener('click', (e) => {
     if (e.target.closest('[data-go]') || e.target.closest('[data-dismiss]')) {
       rq('POST', '/api/notices/seen', { ids: notices.map((n) => n.id) }).then(refreshBadge).catch(() => {});

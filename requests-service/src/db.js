@@ -87,7 +87,8 @@ export function latestFor(type, extIds) {
     // An open request wins over an older finished one.
     if (!prev || OPEN.includes(r.status) || !OPEN.includes(prev.status)) out.set(r.ext_id, r);
   }
-  return new Map([...out].map(([k, r]) => [k, { id: r.id, status: r.status, parts: j(r.parts, {}) }]));
+  const who = (id) => db.prepare('SELECT lower(user) AS u FROM requesters WHERE request_id = ?').all(id).map((x) => x.u);
+  return new Map([...out].map(([k, r]) => [k, { id: r.id, status: r.status, parts: j(r.parts, {}), users: who(r.id) }]));
 }
 
 const union = (a = [], b = []) => [...new Set([...a, ...b])].sort((x, y) => x - y);

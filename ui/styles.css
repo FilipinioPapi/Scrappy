@@ -2915,6 +2915,38 @@ a.rq-link { color: var(--text); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .rq-dim, .rq-sheet, .rq-avail { animation: none; } }
 .rq-hero .rq-badge { white-space: normal; height: auto; min-height: 22px; padding: 4px 8px; }
 
+/* Requests polish: Open Requests button, one list, Requested / Add request buttons */
+.rq-top:has(.rq-openbtn) { align-items: flex-start; }
+.rq-openbtn { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 20px; border-radius: 13px; background: rgba(255,255,255,.09); border: 1px solid var(--line); font-weight: 800; font-size: 15.5px; color: #fff; text-decoration: none; white-space: nowrap; transition: background .15s, border-color .15s; }
+.rq-openbtn:hover { background: rgba(255,255,255,.14); border-color: #5a3a3b; }
+.rq-openbtn svg { width: 20px; height: 20px; }
+.rq-n { min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--red); font-size: 12.5px; display: grid; place-items: center; }
+.rq-n[hidden] { display: none; }
+.btn.secondary.rq-mine { background: rgba(79,201,122,.16); color: #4FC97A; border: 1px solid rgba(79,201,122,.45); }
+.btn.secondary.rq-mine:hover { background: rgba(255,122,126,.12); color: #FF7A7E; border-color: rgba(255,122,126,.45); }
+.btn.secondary.rq-mine:hover svg { display: none; }
+.btn.secondary.rq-mine:hover::after { content: ' · Cancel'; }
+.btn.secondary.rq-mine svg { width: 14px; height: 14px; }
+.btn.secondary.rq-add { background: rgba(255,255,255,.08); color: #fff; border: 1px solid var(--line); }
+.btn.secondary.rq-add:hover { background: rgba(255,255,255,.14); }
+.rq-badge.mine { color: #4FC97A; background: rgba(20,40,26,.85); }
+.rq-badge.mine::before { display: none; }
+.rq-badge.mine svg { width: 12px; height: 12px; }
+.rq-count { margin: -6px 0 14px; font-size: 14px; }
+.rq-tr { grid-template-columns: 44px minmax(0, 1fr) 140px 120px; }
+.rq-table.all .rq-tr { grid-template-columns: 44px minmax(0, 1fr) minmax(0, 200px) 100px 160px; }
+.rq-tr > .rq-th { width: 44px; height: 64px; }
+.rq-tr > .rq-th.sq { height: 44px; }
+.rq-tr .rq-tx .t1 { font-weight: 700; font-size: 15px; }
+.rq-act { display: flex; justify-content: flex-end; }
+.rq-act .btn { min-width: 96px; }
+.rq-who { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.rq-av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; background: hsl(var(--h) 45% 38%); flex: none; }
+.rq-more { margin-top: 14px; font-size: 13.5px; }
+.rq-more .rq-link { color: var(--text); border-bottom: 1px solid var(--line); margin: 0; font-size: 13.5px; }
+.rq-more .rq-link:hover { text-decoration: none; border-color: var(--text); }
+.rq-donelist { margin-top: 8px; opacity: .85; }
+
 /* Home banner edges: the darkening is done by fading the picture itself (over the page colour)
    instead of laying a dark layer on top. During the slide animation Windows scaling could draw the
    picture one pixel past that layer, showing a bright line on the left, top and bottom edges. */

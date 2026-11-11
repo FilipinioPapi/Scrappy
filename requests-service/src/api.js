@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 // The service's web API, used by the Scrappy apps.
 import { config } from './config.js';
 import * as db from './db.js';
@@ -33,7 +34,13 @@ export async function identify(req) {
 }
 
 // ---------- Helpers ----------
-const reqState = (map, id) => { const r = map.get(String(id)); return r ? { id: r.id, status: r.status } : null; };
+// Who's asking, for the request state on each item (count of people, and whether it's you). Names stay private.
+const asker = new AsyncLocalStorage();
+const reqState = (map, id) => {
+  const r = map.get(String(id)); if (!r) return null;
+  const meName = String(asker.getStore() || '').toLowerCase();
+  return { id: r.id, status: r.status, count: r.users?.length || 0, mine: !!meName && (r.users || []).includes(meName) };
+};
 const yearOf = (d) => (d || '').slice(0, 4);
 const recent = (d) => !d || d > today() || (Date.now() - Date.parse(d)) / 864e5 < 150;
 
@@ -207,6 +214,7 @@ export async function route(method, path, query, body, req) {
     return { ok: true, version: '1.0.0', emby: embyOn(), navidrome: navidromeOn(), audiobookshelf: absOn(), tmdb: !!config.tmdbKey, region: config.region };
   }
   const me = await identify(req);
+  asker.enterWith(me.name);
   const mustAdmin = () => { if (!me.admin) throw new HttpError(403, 'Only admins can do that.'); };
   let m;
 

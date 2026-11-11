@@ -1,7 +1,7 @@
 // Fake outside servers (Emby, TMDB, MusicBrainz, Navidrome, Audiobookshelf) for tests.
 const T = (d) => { const x = new Date(Date.now() + d * 864e5); return x.toISOString().slice(0, 10); };
 export const routes = {
-  'emby.test/Users/u1': { Name: 'Jayden' }, 'emby.test/Users/u2': { Name: 'Sarah' },
+  'emby.test/Users/u1': { Name: 'Jayden' }, 'emby.test/Users/u2': { Name: 'Sarah' }, 'emby.test/Users/u3': { Name: 'Mike' },
   'emby.test/Items': { Items: [{ Id: 'e1', Name: 'Dune', Type: 'Movie', ProductionYear: 2021, ProviderIds: { Tmdb: '438631' } }, { Id: 's1', Name: 'Severance', Type: 'Series', ProductionYear: 2022, ProviderIds: { Tmdb: '95396' } }], TotalRecordCount: 2 },
   'emby.test/Shows/s1/Episodes': { Items: [1, 2, 3].map((n) => ({ ParentIndexNumber: 1, IndexNumber: n })).concat([1, 2].map((n) => ({ ParentIndexNumber: 2, IndexNumber: n }))) },
   'api.themoviedb.org/3/search/movie': { results: [{ id: 438631, title: 'Dune', release_date: '2021-09-15', poster_path: '/a.jpg' }, { id: 999, title: 'Dune: Part Three', release_date: T(40), poster_path: '/b.jpg' }] },
