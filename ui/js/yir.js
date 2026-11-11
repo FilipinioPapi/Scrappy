@@ -285,6 +285,12 @@ async function model(kind, y) {
 }
 
 // ---------- banner on the Stats pages ----------
+const idle = () => new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(() => r(), { timeout: 600 }) : setTimeout(r, 60)));
+/** Wait (briefly) until these pictures are ready, so the banner appears in one smooth step. */
+const decoded = (urls) => Promise.race([
+  Promise.all(urls.filter(Boolean).map((u) => { const im = new Image(); im.src = u; return im.decode().catch(() => {}); })),
+  new Promise((r) => setTimeout(r, 1200)),
+]);
 const PLAY = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M7 5.5v13a1 1 0 0 0 1.5.9l10.4-6.5a1 1 0 0 0 0-1.8L8.5 4.6A1 1 0 0 0 7 5.5z" fill="currentColor"/></svg>';
 const early = () => { try { return localStorage.getItem('yirEarly') === 'on'; } catch { return false; } };
 /** Which year the big banner shows: this year from Dec 1, last year through January. */
@@ -298,7 +304,11 @@ const SUBS = { abs: 'audiobook', music: 'music', tv: 'movie and TV' };
 
 /** Fills `slot` with the Year in Review banner and Past years chips for this tab. */
 export async function yirBanner(slot, kind, alive) {
+  // Hold the banner's place straight away so the page below doesn't jump when it arrives.
+  if (bannerYear() && !slot.innerHTML.trim()) slot.innerHTML = '<div class="yb yb-ph" aria-hidden="true"></div>';
   let raw; try { raw = await loadRaw(kind); } catch { if (alive()) slot.innerHTML = ''; return; }
+  // The Stats numbers draw first; the year is added up once the page has settled.
+  await idle();
   if (!alive()) return;
   const by = bannerYear();
   const years = yearsOf(kind, raw).filter((y) => y < new Date().getFullYear() || y === by);
@@ -309,6 +319,8 @@ export async function yirBanner(slot, kind, alive) {
   if (!m && !past.length) { slot.innerHTML = ''; return; }
   const note = !m ? '' : m.err ? (m.err === 'old' ? 'Needs Navidrome 0.59 or newer, which keeps a dated play history.' : "Couldn't read your play history from Navidrome. Open this page again to sign in.") : `Your ${SUBS[kind]} year in about a minute.${early() && new Date().getMonth() !== 11 ? ' Early preview: it shows up for real on December 1.' : ''}`;
   const fan = m && !m.err ? m.card.fan.map((f, j, a) => { const L = [[60], [30, 90], [0, 60, 120]][a.length - 1], R = [[0], [-6, 6], [-10, 0, 10]][a.length - 1]; return `<i style="${esc(pic(f.url, f.seed))};left:${L[j]}px;transform:rotate(${R[j]}deg)${a.length === 3 && j === 1 ? ';z-index:2' : ''}"></i>`; }).join('') : '';
+  if (m && !m.err) await decoded(m.card.fan.map((f) => f.url));
+  if (!alive()) return;
   slot.innerHTML = `${m ? `<div class="yb${m.err ? ' off' : ''}"${m.err ? '' : ' data-yir="' + by + '" tabindex="0" role="button" aria-label="Play your ' + by + ' Year in Review"'}>
       <div class="yb-yr">${by}</div>
       <div class="yb-t"><b>YOUR YEAR<br>IN REVIEW</b><span>${esc(note)}</span>${m.err ? '' : `<div class="yb-ok">${PLAY}Press OK to play</div>`}</div>

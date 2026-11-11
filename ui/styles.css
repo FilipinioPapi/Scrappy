@@ -2481,6 +2481,7 @@ html.tv .y-decor .y-o1,html.tv .y-decor .y-cf{animation:none}
 html.tv .y-w span{animation-duration:.45s}
 
 /* Year in Review banner on the Stats pages */
+.yb-ph{background:linear-gradient(90deg,var(--bg-2),#24191a,var(--bg-2)) 0 0/200% 100%!important;animation:shimmer 1.4s linear infinite;cursor:default}
 .yb{position:relative;height:190px;border-radius:20px;overflow:hidden;padding:28px 36px;display:flex;align-items:center;gap:32px;margin-bottom:12px;background:linear-gradient(120deg,#EC282E,#6E0C10);color:#fff;cursor:pointer;transition:transform .3s var(--ease,cubic-bezier(.2,.8,.2,1))}
 .yb:hover{transform:translateY(-2px)}
 .yb.off{cursor:default;opacity:.75}.yb.off:hover{transform:none}
