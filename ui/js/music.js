@@ -2,7 +2,7 @@
 // Screens follow the approved mock-ups on the Music design canvas.
 import { api, quiet } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
-import { homeRows, rowOff, cachedRow } from './homeedit.js';
+import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { history, music, onMusic, current, playSongs, playNext, addToQueue, playAt, removeAt, moveInQueue, clearUpNext, setFavorite, togglePlay, cover, fmt, IC } from './mplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -717,7 +717,8 @@ function smartMusicRows(main, alive) {
   const off = (id) => rowOff('music', id);
   const put = (sel, html) => { if (!alive()) return; const el = main.querySelector(sel); if (el) el.innerHTML = html; };
   const DAY = 864e5;
-  const row_ = (id, fetcher, render, key = id) => { if (!off(id)) cachedRow('music', key, () => fetcher().catch(() => null), render).catch(() => {}); };
+  const lp = lowPriority(alive);
+  const row_ = (id, fetcher, render, key = id) => { if (!off(id)) cachedRow('music', key, () => fetcher().catch(() => null), render, lp).catch(() => {}); };
   // On repeat: most played songs in the last 30 days (Navidrome's dated history); if that
   // isn't available, your most played albums of all time.
   row_('onrepeat', async () => {

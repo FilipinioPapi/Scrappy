@@ -112,11 +112,22 @@ export function rowCache(tab, id, ttl = 30 * 60e3) {
   };
 }
 /** Draw a smart row from its saved copy if it's fresh, otherwise fetch, save and draw. */
-export async function cachedRow(tab, id, fetcher, render) {
+export async function cachedRow(tab, id, fetcher, render, run = (f) => f()) {
   const c = rowCache(tab, id);
   const d = c.get();
   if (d != null) { render(d); return; }
-  const fresh = await fetcher();
+  const fresh = await run(fetcher);
   if (fresh == null) return;
   c.set(fresh); render(fresh);
+}
+
+/** A one-at-a-time queue that starts once the page has settled and stops when you leave,
+ *  so smart-row lookups never compete with the covers and pages you're looking at. */
+export function lowPriority(alive, delay = 900) {
+  let chain = new Promise((r) => setTimeout(r, delay));
+  return (task) => {
+    const p = chain.then(() => (alive() ? task() : null));
+    chain = p.catch(() => {}).then(() => new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(r, { timeout: 400 }) : setTimeout(r, 30))));
+    return p;
+  };
 }

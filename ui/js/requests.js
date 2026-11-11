@@ -181,7 +181,7 @@ function makePage(root, ctx) {
     n.textContent = d.requests.length; n.hidden = !d.requests.length;
   }).catch(() => {});
   openCount();
-  const setUrl = () => history.replaceState(null, '', `#/requests/new?type=${type}${input.value.trim() ? '&q=' + enc(input.value.trim()) : ''}${all ? '&all=1' : ''}`);
+  const setUrl = () => history.replaceState(history.state, '', `#/requests/new?type=${type}${input.value.trim() ? '&q=' + enc(input.value.trim()) : ''}${all ? '&all=1' : ''}`);
   const placeholder = () => { input.placeholder = { movie: 'Search for a film…', tv: 'Search for a TV show…', music: 'Search for an artist, album or song…', book: 'Search for a book, series or author…' }[type]; root.querySelector('#rqWhat').textContent = `Searching ${what[type]}`; };
   let seq = 0, timer, last = null;
   const run = async () => {
@@ -438,7 +438,7 @@ async function listPage(root, ctx) {
     </div>`;
   };
   const draw = () => {
-    history.replaceState(null, '', `#/requests${showDone ? '?done=1' : ''}`);
+    history.replaceState(history.state, '', `#/requests${showDone ? '?done=1' : ''}`);
     const open = data.requests.filter(isOpen);
     const done = data.requests.filter((r) => !isOpen(r) && (r.doneAt || r.updatedAt) > cutoff);
     const people = new Set(open.flatMap((r) => r.users.map((u) => u.toLowerCase()))).size;

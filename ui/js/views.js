@@ -1,7 +1,7 @@
 import { api, load, img, imgAny } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
-import { homeRows, rowOff, cachedRow } from './homeedit.js';
+import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
 const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
@@ -290,6 +290,7 @@ function smartRow(root, slot, title, sub, items, opts) {
 }
 function smartRows(root, ctx, q) {
   const off = (id) => rowOff('tv', id);
+  const lp = lowPriority(ctx.alive);
   const types = 'IncludeItemTypes=Movie,Series&Recursive=true';
   if (!off('nextup')) load(`/Shows/NextUp?UserId={userId}&Limit=20&${q}`, (d) => smartRow(root, 'nextup', 'Next Up', 'The next episode of every show you\'re watching', d?.Items || [], { shape: 'wide', clickPlay: true }), ctx.alive).catch(() => {});
   // Because you watched: the last thing you finished (a show, if it was an episode).
@@ -300,7 +301,7 @@ function smartRows(root, ctx, q) {
     if (!id) return null;
     const r = await api.get(`/Items/${id}/Similar?UserId={userId}&Limit=20&${q}`).catch(() => null);
     return { name, items: (r?.Items || []).filter((i) => !i.UserData?.Played) };
-  }, (d) => ctx.alive() && smartRow(root, 'because', `Because you watched ${esc(d.name || '')}`, '', d.items, {})).catch(() => {});
+  }, (d) => ctx.alive() && smartRow(root, 'because', `Because you watched ${esc(d.name || '')}`, '', d.items, {}), lp).catch(() => {});
   // Your most watched genre, things you haven't seen yet. Watch again: favorites, oldest watch first.
   if (!off('unseen')) cachedRow('tv', 'unseen', async () => {
     const d = await api.get(`/Users/{userId}/Items?${types}&Filters=IsPlayed&Fields=Genres&Limit=300`).catch(() => null);
@@ -309,7 +310,7 @@ function smartRows(root, ctx, q) {
     const top = [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]; if (!top) return null;
     const r = await api.get(`/Users/{userId}/Items?${types}&Genres=${encodeURIComponent(top)}&Filters=IsUnplayed&SortBy=Random&Limit=20&${q}`).catch(() => null);
     return { top, items: r?.Items || [] };
-  }, (d) => ctx.alive() && smartRow(root, 'unseen', `${esc(d.top)} you haven't seen`, 'Your most watched genre', d.items, {})).catch(() => {});
+  }, (d) => ctx.alive() && smartRow(root, 'unseen', `${esc(d.top)} you haven't seen`, 'Your most watched genre', d.items, {}), lp).catch(() => {});
   if (!off('again')) load(`/Users/{userId}/Items?${types}&Filters=IsFavorite,IsPlayed&SortBy=DatePlayed&SortOrder=Ascending&Limit=20&${q}`,
     (d) => smartRow(root, 'again', 'Watch again', "Favorites you haven't seen in a while", d?.Items || [], {}), ctx.alive).catch(() => {});
 }
@@ -1300,7 +1301,7 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       b.classList.add('live');
       setCrumb(b.dataset.name, true);
       // Keep the address in step so Back and refresh land on this season.
-      if (crumbEl) history.replaceState(null, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`);
+      if (crumbEl) history.replaceState(history.state, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`);
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
     }));
     el.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => {

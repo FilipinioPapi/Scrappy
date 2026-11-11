@@ -122,6 +122,33 @@ function holdOldPage() {
   ghostTimer = setTimeout(dropGhost, 1200);
 }
 
+// Back/forward put you where you were on that page: each history entry gets a key and
+// its scroll position is remembered; going back to it scrolls there once it has drawn.
+try { history.scrollRestoration = 'manual'; } catch {}
+const SCROLL = new Map();
+let scrollKey = null, restoreRun = 0;
+function navKey() {
+  const st = history.state;
+  if (st && st.sk) return { k: st.sk, seen: true };
+  const k = Math.random().toString(36).slice(2);
+  try { history.replaceState({ ...(st || {}), sk: k }, ''); } catch {}
+  return { k, seen: false };
+}
+window.addEventListener('scroll', () => { if (scrollKey) SCROLL.set(scrollKey, window.scrollY); }, { passive: true });
+function restoreScroll(y) {
+  const run = ++restoreRun, t0 = performance.now();
+  const stop = () => { restoreRun++; window.removeEventListener('wheel', stop); window.removeEventListener('keydown', stop); };
+  window.addEventListener('wheel', stop, { once: true, passive: true }); window.addEventListener('keydown', stop, { once: true });
+  const tick = () => {
+    if (run !== restoreRun) return;
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    if (max >= y - 2) { window.scrollTo(0, y); stop(); return; }
+    if (performance.now() - t0 > 2500) { window.scrollTo(0, Math.max(0, max)); stop(); return; }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 let lastRouteName = '';
 async function route(opts = {}) {
   // Remember where you came from, so Back buttons on pages can return there.
@@ -162,12 +189,15 @@ async function route(opts = {}) {
   moveTabPill();
 
   if (!opts.keepScroll && !statsSwitch) holdOldPage();
+  const nk = navKey(); const backTo = nk.seen && !opts.keepScroll ? SCROLL.get(nk.k) : undefined;
+  restoreRun++; scrollKey = null;
   const ctx = makeCtx();
   if (opts.keepScroll) quiet();
   const id = arg ? decodeURIComponent(arg) : '';
   if (!opts.keepScroll && !statsSwitch) {
     window.scrollTo(0, 0);
     viewEl.classList.remove('quiet');
+    if (backTo > 0) restoreScroll(backTo);
     // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
     viewEl.classList.remove('entering', 'tabswap');
     void viewEl.offsetWidth;
@@ -176,6 +206,7 @@ async function route(opts = {}) {
     clearTimeout(enterTimer);
     enterTimer = setTimeout(() => viewEl.classList.remove('entering', 'tabswap'), 900);
   }
+  scrollKey = nk.k;
   // Home says when its banner is ready; every other page is ready once drawn.
   if (!['home', undefined, ''].includes(name)) setTimeout(hideIntro, 0);
   if (notSigned) return connectView(viewEl, need);
@@ -372,7 +403,7 @@ mountSearch();
 // Settings: which tab opens at start (unless an update restart already chose the page).
 if (!location.hash) {
   const st = pref('startTab'), want = st === 'last' ? pref('lastTab') : st;
-  if (['#/home', '#/music', '#/audiobooks'].includes(want) && want !== '#/home') history.replaceState(null, '', want);
+  if (['#/home', '#/music', '#/audiobooks'].includes(want) && want !== '#/home') history.replaceState(history.state, '', want);
 }
 route();
 
