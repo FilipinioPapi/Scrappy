@@ -11,7 +11,11 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 **Home**
 - Edit home: dragging rows to reorder now works
 
-<sub>Built from 9d13aa2 · includes: Home</sub>
+**App-wide**
+- Switching to Music or Audiobooks: the side menu no longer shows up low and slides into place late
+- Dropdown lists (subtitles, audio, player settings and others) are now dark and easy to read
+
+<sub>Built from 2012fb1 · includes: Home, app-wide</sub>
 
 ### Preview 25 · Nov 11, 2:20 AM
 **App-wide**
