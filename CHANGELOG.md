@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 22 · Nov 11, 12:30 AM
+**Music**
+- Skipping tracks on the Now playing screen no longer flashes placeholder art: the old cover stays until the new one is ready, then fades in
+
+<sub>Built from dad60fb · includes: Music</sub>
+
 ### Stable · Nov 11, 2026 (everything from Preview 1 to 21)
 **⚠️ Install this one by hand**
 - The previous Stable build can't update itself. Install this one once, and future updates arrive in the app
