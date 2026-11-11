@@ -45,6 +45,18 @@ export function coverHtml(id, title, w = 300, cls = '') {
   const h = hue(title || id);
   return `<div class="mcv ${cls}" style="--h:${h}"><span>${esc(title || '')}</span>${id ? `<img loading="lazy" src="${cover(id, w)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>`;
 }
+// "Released March 12, 2017" when the tags have a full date (original release first,
+// so reissues show when the album first came out), else month + year, else just the year.
+export function relDate(a) {
+  const pick = [a.originalReleaseDate, a.releaseDate].find((d) => d?.year && d.month) || null;
+  if (pick) {
+    const dt = new Date(pick.year, pick.month - 1, pick.day || 1);
+    const opts = pick.day ? { month: 'long', day: 'numeric', year: 'numeric' } : { month: 'long', year: 'numeric' };
+    return 'Released ' + dt.toLocaleDateString(undefined, opts);
+  }
+  const y = a.originalReleaseDate?.year || a.year;
+  return y ? 'Released ' + y : '';
+}
 export const totalTime = (secs) => { const m = Math.round(secs / 60); return m >= 60 ? `${Math.floor(m / 60)} hr ${m % 60} min` : `${m} min`; };
 export const plural = (n, w) => `${(n || 0).toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
 export const dateStr = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '');
@@ -845,7 +857,7 @@ async function albumPage(v, id) {
             <div class="mbtns"><button type="button" class="btn" id="alPlay" data-playctx="album:${esc(album.id)}">${IC.play}<span>Play</span></button><button type="button" class="btn secondary" id="alShuf">${IC.shuffle}<span>Shuffle</span></button>
             <button type="button" class="gb sq${album.starred ? ' on' : ''}" id="alFav" title="${album.starred ? 'Remove from Favorites' : 'Add to Favorites'}">${album.starred ? IC.heartOn : IC.heart}</button><button type="button" class="gb sq" id="alMore" aria-label="More">${IC.more}</button></div></div></div></div>
       <div class="stable album" id="alSongs">${multiDisc ? discTables(songs) : songTable(songs, { cols: ['plays', 'noartist'], numbers: true })}</div>
-      <div class="t2 relnote">${album.year ? 'Released ' + album.year : ''}${album.recordLabels?.[0]?.name ? ' · ' + esc(album.recordLabels[0].name) : ''}</div>
+      <div class="t2 relnote">${relDate(album)}${album.recordLabels?.[0]?.name ? ' · ' + esc(album.recordLabels[0].name) : ''}</div>
       <div id="alMore1"></div><div id="alMore2"></div>`;
     const from = { type: 'album', id: album.id, name: album.name };
     wireSongs(main.querySelector('#alSongs'), () => songs, from);
