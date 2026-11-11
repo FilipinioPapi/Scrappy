@@ -265,7 +265,10 @@ function lyricTick() {
   box.querySelectorAll('p.on').forEach((p) => p.classList.remove('on'));
   const p = box.querySelector(`[data-li="${i}"]`); if (!p) return;
   p.classList.add('on');
-  box.scrollTo({ top: p.offsetTop - box.clientHeight / 2 + p.offsetHeight / 2, behavior: 'smooth' });
+  // Measure the line inside the lyrics box itself. offsetTop counts from the whole right-hand panel,
+  // so with the visualizer above it the current line was scrolled up out of sight.
+  const y = p.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+  box.scrollTo({ top: y - box.clientHeight / 2 + p.offsetHeight / 2, behavior: 'smooth' });
 }
 
 // ---------- Visualizer ----------
