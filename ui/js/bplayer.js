@@ -111,9 +111,18 @@ async function sync(close = false) {
 }
 async function closeSession() { if (B.session) await sync(true); }
 
-export function toggleBook() {
+export async function toggleBook() {
   if (!B.item) return;
-  if (!B.started || !B.session) return playBook(B.item.id, { at: B.pos });
+  // Starting again (e.g. after a restart): playBook asks the server where you are,
+  // so listening on another device in between isn't overwritten.
+  if (!B.started || !B.session) return playBook(B.item.id);
+  // Resuming after a while: if another device moved on since, jump to its spot first.
+  if (!B.playing && B.pausedAt && Date.now() - B.pausedAt > 20000) {
+    try {
+      const p = await api.abs(`/api/me/progress/${encodeURIComponent(B.item.id)}`);
+      if (p && !p.isFinished && (p.lastUpdate || 0) > B.lastSync + 2000 && Math.abs((p.currentTime || 0) - B.pos) > 5) seekBook(p.currentTime);
+    } catch {}
+  }
   invoke('music_command', { args: ['cycle', 'pause'] }).catch(fail);
 }
 export function pauseBook() { if (B.started && B.playing) invoke('music_set', { name: 'pause', value: 'yes' }).catch(() => {}); }
@@ -183,7 +192,7 @@ listen('music-prop', ({ payload: { name, value } }) => {
     B.track = value;
   } else if (name === 'pause') {
     const was = B.playing; B.playing = value === false;
-    if (was && !B.playing) { sync(); save(); }
+    if (was && !B.playing) { B.pausedAt = Date.now(); sync(); save(); }
     notify();
   }
 });
