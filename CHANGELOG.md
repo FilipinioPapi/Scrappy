@@ -7,6 +7,21 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 30 · Nov 11, 1:00 PM
+**Speed**
+- Tiles and their artwork now appear together on every page. Pictures you have already seen show instantly when you come back
+- Music, Songs tab: opens in about a tenth of a second instead of about three, scrolls smoothly, and searching and sorting no longer stutter
+- Music, Albums tab: opens right away and scrolls much more smoothly. Long playlists no longer freeze when opened
+- Music artist and genre pages, every Audiobooks page and the Movies & TV person page open from the saved copy instead of waiting on the server
+- Artist pictures no longer wait on the server when already saved
+- Home rows that popped in a second late now show with the page
+
+**Fixes**
+- Fixed: the play button on album and book cards could fire several times after browsing a while
+- Fixed: the A to Z strip on the Songs tab did nothing when clicked
+
+<sub>Built from 6fb3756 · includes: speed pass</sub>
+
 ### Preview 29 · Nov 11, 8:30 AM
 **Movies & TV**
 - Grid layout: episode names always show under each picture (the setting is gone)
