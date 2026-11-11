@@ -13,7 +13,6 @@ async function timed(fn) {
   catch (e) { return { ok: false, ms: Date.now() - t, error: e.message }; }
 }
 const embyGet = (path) => getJson(config.emby.url + path, { headers: { 'X-Emby-Token': config.emby.apiKey, accept: 'application/json' }, timeout: 8000 });
-const absGet = (path) => getJson(config.abs.url + path, { headers: { authorization: 'Bearer ' + config.abs.token, accept: 'application/json' }, timeout: 8000 });
 
 /** Compare "0.2.140"-style versions. */
 const newer = (a, b) => {
@@ -45,12 +44,22 @@ export async function health(latest = '') {
   out.servers.push({ key: 'navidrome', name: 'Navidrome', set: !!nd, ...(nd || {}) });
 
   const abs = config.abs.url && config.abs.token ? await timed(async () => {
-    await absGet('/api/libraries');
+    // Ask directly so a refusal can say who refused: Audiobookshelf itself, or something
+    // in front of it (a reverse proxy login page answers with HTML).
+    const r = await fetch(config.abs.url + '/api/libraries', { headers: { authorization: 'Bearer ' + config.abs.token, accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) {
+      const body = (await r.text().catch(() => '')).slice(0, 300);
+      const proxy = /<html|<!doctype/i.test(body) || r.headers.get('www-authenticate');
+      const k = config.abs.token;
+      throw new Error(proxy
+        ? `Something in front of Audiobookshelf asked for a login (${r.status}). ABS_URL should be an address that reaches Audiobookshelf directly.`
+        : r.status === 401
+          ? `Audiobookshelf turned down the key (key starts ${k.slice(0, 4)}…, ${k.length} characters). Check it's switched on (Active) and not expired, or make a new API key in Audiobookshelf (Settings, API Keys) and put it in ABS_TOKEN.`
+          : `Audiobookshelf answered ${r.status}${body ? ': ' + body.replace(/\s+/g, ' ').slice(0, 80) : ''}`);
+    }
     const st = await getJson(config.abs.url + '/status', { timeout: 8000 }).catch(() => null);
     return { version: st?.serverVersion || '' };
   }) : null;
-  // Audiobookshelf 2.26+ turned off old login tokens: it wants an API key instead.
-  if (abs && !abs.ok && /401/.test(abs.error || '')) abs.error = 'Audiobookshelf turned down the key. Make an API key in Audiobookshelf (Settings, API Keys) and put it in ABS_TOKEN.';
   out.servers.push({ key: 'audiobookshelf', name: 'Audiobookshelf', set: !!abs, ...(abs || {}) });
 
   // Who's using Scrappy: Emby's device list, Scrappy devices active in the last week.
