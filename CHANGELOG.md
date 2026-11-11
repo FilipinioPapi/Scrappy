@@ -11,7 +11,11 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 **App-wide**
 - Moving between pages (episodes, shows, menus) no longer flashes a blank page or a spinner: the old page stays until the new one is ready
 
-<sub>Built from e068b90 · includes: page changes</sub>
+**Home**
+- Smart home rows show up instantly when you switch tabs, with no flicker or reshuffling. They refresh every 30 minutes
+- Because you played shows real artist pictures and album counts, and leaves out artists with no albums in your library
+
+<sub>Built from 44fff3d · includes: page changes, Home</sub>
 
 ### Preview 24 · Nov 11, 1:10 AM
 **Home**
