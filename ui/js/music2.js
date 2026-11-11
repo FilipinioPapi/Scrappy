@@ -213,6 +213,7 @@ async function loadPlaylist(id) {
   return { songs: r.playlist.entry || [], name: r.playlist.name, pl: r.playlist };
 }
 
+const REC_CACHE = new Map();
 EXTRA.playlist = async (v, id) => {
   const { main, alive, params } = v;
   const { songs: loaded, pl, auto } = await loadPlaylist(id);
@@ -356,20 +357,31 @@ EXTRA.playlist = async (v, id) => {
     it.classList.add('gone');
     setTimeout(() => { songs.push(x); drawTable(); save(); drawRec(false); toast(`Added "${x.title}".`); }, 260);
   });
-  (async () => {
-    const have = new Set(songs.map((x) => x.id)), score = new Map();
-    const put = (arr, w) => (arr || []).forEach((x) => { if (x && x.id && !have.has(x.id)) score.set(x.id, { x, s: (score.get(x.id)?.s || 0) + w + Math.random() * 0.5 }); });
-    const seeds = shuffleArr(songs).slice(0, 4);
-    await Promise.all(seeds.map((x) => nd('getSimilarSongs2', { id: x.id, count: 15 }).then((r) => put(r.similarSongs2?.song, 3)).catch(() => {})));
-    const artists = [...new Set(songs.map((x) => x.artist).filter(Boolean))].slice(0, 5);
-    await Promise.all(artists.map((a) => nd('getTopSongs', { artist: a, count: 10 }).then((r) => put(r.topSongs?.song, 2)).catch(() => {})));
-    const genres = Object.entries(songs.reduce((m, x) => (x.genre ? ((m[x.genre] = (m[x.genre] || 0) + 1), m) : m), {})).sort((a, b) => b[1] - a[1]).slice(0, 2).map((g) => g[0]);
-    await Promise.all(genres.map((g) => nd('getSongsByGenre', { genre: g, count: 40 }).then((r) => put(shuffleArr(r.songsByGenre?.song || []).slice(0, 15), 1)).catch(() => {})));
-    if (score.size < 10) await nd('getRandomSongs', { size: 30 }).then((r) => put(r.randomSongs?.song, 0)).catch(() => {});
-    if (!alive()) return;
-    recPool = variety([...score.values()].sort((a, b) => b.s - a.s).map((o) => o.x), 3, 30).slice(0, 50);
-    drawRec(false);
-  })();
+  // Show a placeholder right away, reuse a recent result for this playlist, and run every
+  // lookup at once with a time limit (similar songs come from Last.fm and can be slow).
+  const cached = REC_CACHE.get(id);
+  if (cached && Date.now() - cached.t < 10 * 60e3) { recPool = cached.pool; drawRec(false); }
+  else {
+    recBox.innerHTML = `<section class="plrec"><div class="plrec-h"><div><h2>Recommended songs</h2><div class="t2">Finding songs that fit…</div></div></div><div class="plrec-l">${'<div class="plrec-it sk"><i></i><b></b></div>'.repeat(4)}</div></section>`;
+    (async () => {
+      const have = new Set(songs.map((x) => x.id)), score = new Map();
+      const put = (arr, w) => (arr || []).forEach((x) => { if (x && x.id && !have.has(x.id)) score.set(x.id, { x, s: (score.get(x.id)?.s || 0) + w + Math.random() * 0.5 }); });
+      const cap = (pr, ms = 2500) => Promise.race([pr, new Promise((r) => setTimeout(r, ms))]).catch(() => {});
+      const seeds = shuffleArr(songs).slice(0, 4);
+      const artists = [...new Set(songs.map((x) => x.artist).filter(Boolean))].slice(0, 5);
+      const genres = Object.entries(songs.reduce((m, x) => (x.genre ? ((m[x.genre] = (m[x.genre] || 0) + 1), m) : m), {})).sort((a, b) => b[1] - a[1]).slice(0, 2).map((g) => g[0]);
+      await Promise.all([
+        ...seeds.map((x) => cap(nd('getSimilarSongs2', { id: x.id, count: 15 }).then((r) => put(r.similarSongs2?.song, 3)))),
+        ...artists.map((a) => cap(nd('getTopSongs', { artist: a, count: 10 }).then((r) => put(r.topSongs?.song, 2)))),
+        ...genres.map((g) => cap(nd('getSongsByGenre', { genre: g, count: 40 }).then((r) => put(shuffleArr(r.songsByGenre?.song || []).slice(0, 15), 1)))),
+      ]);
+      if (score.size < 10) await cap(nd('getRandomSongs', { size: 30 }).then((r) => put(r.randomSongs?.song, 0)));
+      if (!alive()) return;
+      recPool = variety([...score.values()].sort((a, b) => b.s - a.s).map((o) => o.x), 3, 30).slice(0, 50);
+      REC_CACHE.set(id, { t: Date.now(), pool: recPool });
+      drawRec(true);
+    })();
+  }
   if (params.get('edit') === '1') setEditing(true);
   syncNow(); ready();
 };

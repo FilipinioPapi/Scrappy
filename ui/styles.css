@@ -1821,6 +1821,10 @@ body:not(.tab-music) .tp:not(.off) { transition-delay: .14s; }
 @keyframes plrecIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .plrec-it { display: grid; grid-template-columns: 44px minmax(0,1.3fr) minmax(0,1fr) 56px 86px; align-items: center; gap: 12px; height: 56px; padding: 0 10px; border-radius: 10px; color: var(--muted); font-size: 13.5px;
   transition: background .25s cubic-bezier(.2,.8,.2,1), opacity .26s, transform .26s cubic-bezier(.2,.8,.2,1); }
+.plrec-it.sk { display: flex; gap: 14px; pointer-events: none; }
+.plrec-it.sk i, .plrec-it.sk b { display: block; border-radius: 6px; background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.1), rgba(255,255,255,.05)); background-size: 200% 100%; animation: plsk 1.2s linear infinite; }
+.plrec-it.sk i { width: 44px; height: 44px; } .plrec-it.sk b { width: 38%; height: 14px; }
+@keyframes plsk { to { background-position: -200% 0; } }
 .plrec-it:hover { background: rgba(255,255,255,.05); }
 .plrec-it.gone { opacity: 0; transform: translateX(24px); }
 .plrec-it .t1 { color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
