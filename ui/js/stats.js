@@ -104,7 +104,7 @@ export async function statsPage(main, kind, alive) {
   window.__statsPer = per;
   const head = `${secBar(kind)}<div class="stx-h"><h1 class="disp">${TITLES[kind]}</h1><span class="t2" id="stxSub"></span><span class="sp"></span>
     <div class="seg" id="stxWho" hidden title="Only admins see this"><button type="button" data-w="me" class="on">Me</button><button type="button" data-w="all">Everyone</button></div>
-    <div class="seg" id="stxSeg">${PERIODS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === per ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
+    <div class="seg" id="stxSeg"${ALLTIME.has(kind) ? ' hidden' : ''}>${PERIODS.map(([k, l]) => `<button type="button" data-k="${k}" class="${k === per ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
   const prev = main.querySelector(':scope > .stx');
   if (prev) {
     // Switching category inside Stats: keep the page and fade the old numbers out while the new ones load.
@@ -125,11 +125,16 @@ export async function statsPage(main, kind, alive) {
       const w = who;
       if (!raws[w]) { if (w === 'all') body.innerHTML = '<div class="stx-load t2">Adding up everyone\'s stats…</div>'; raws[w] = await (w === 'all' ? src.loadAll() : loadRaw(kind)); }
       if (!alive() || my !== token) return;
-      const m = (w === 'all' ? src.buildAll || src.build : src.build)(raws[w], per);
+      const m = (w === 'all' ? src.buildAll || src.build : src.build)(raws[w], ALLTIME.has(kind) ? 'all' : per);
       main.querySelector('#stxSub').textContent = m.sub || '';
       main.querySelector('.stx-h h1').textContent = w === 'all' ? EVERYONE[kind] : TITLES[kind];
       show(body, html(m));
       if (m.year) yearHover(body, m.year);
+      body.querySelector('.stx-sf')?.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-sf]'); if (!b) return;
+        body.querySelectorAll('.stx-sf button').forEach((x) => x.classList.toggle('on', x === b));
+        body.querySelectorAll('.stx-show').forEach((r) => { r.hidden = b.dataset.sf !== 'all' && r.dataset.st !== b.dataset.sf; });
+      });
     } catch (e) {
       if (!alive()) return;
       show(body, `<div class="empty">Couldn't load your stats: ${esc(e.message || String(e))}</div>`);
@@ -179,6 +184,22 @@ function html(m) {
   const list = (t, meter) => `<ol class="stx-top">${t.items.map((x, i) => `<li>${x.href ? `<a href="${x.href}">` : '<span class="li">'}<span class="rk">${i + 1}</span><span class="cv ${x.shape || ''}" style="--h:${x.hue || 0}">${x.ini ? `<em>${esc(x.ini)}</em>` : ''}${x.img ? `<img loading="lazy" src="${x.img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span><span class="tx"><b>${esc(x.a)}</b><span>${esc(x.b || '')}</span></span>${meter ? `<span class="meter"><i style="width:${(x.w * 100).toFixed(1)}%"></i></span>` : ''}<span class="val">${esc(x.v)}</span>${x.href ? '</a>' : '</span>'}</li>`).join('')}</ol>`;
   const box = (title, sub, inner, cls = '') => `<section class="stx-box ${cls}"><div class="bh"><b>${esc(title)}</b>${sub ? `<span class="t2">${esc(sub)}</span>` : ''}</div>${inner}</section>`;
   const empty = (t) => `<div class="t2 stx-none">${esc(t)}</div>`;
+  const funBox = (wide) => box('Fun facts', '', `<div class="stx-fun${wide ? ' wide' : ''}">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Watch a bit more and these fill in.')}</div>`);
+  if (m.layout === 'tv') {
+    const S = m.shows, F = [['all', 'All'], ['on', 'Watching'], ['up', 'Up to date'], ['fin', 'Finished'], ['off', 'Stopped']].filter(([k]) => k === 'all' || S.counts[k]);
+    const shows = S.items.length ? `<div class="stx-sf" role="group">${F.map(([k, l], i) => `<button type="button" data-sf="${k}" class="${i ? '' : 'on'}">${l} ${S.counts[k]}</button>`).join('')}</div>
+      <div class="stx-shows">${S.items.map((x) => `<a class="stx-show" data-st="${x.st}" href="${x.href || '#'}"><span class="cv po" style="--h:${x.hue}">${x.img ? `<img loading="lazy" src="${x.img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span>
+        <span class="tx"><b>${esc(x.name)}</b><span>${esc(x.m)}</span><span class="pb ${x.st}"><i style="width:${(x.f * 100).toFixed(1)}%"></i></span></span><span class="chip ${x.st}">${esc(x.stl)}</span></a>`).join('')}</div>` : empty('No episodes watched yet.');
+    const decades = m.decades.length ? bars(m.decades) : empty('Nothing to show yet.');
+    const gens = m.genres.items.length ? `<div class="stx-gen">${m.genres.items.map((g) => `<div class="gr"><span class="nm">${esc(g.n)}</span><div class="tr"><i style="width:${Math.max(14, g.w * 100).toFixed(1)}%;${gStyle(g.n)}">${esc(g.v)}</i></div></div>`).join('')}</div>` : empty('No genres to show yet.');
+    return [
+      `<div class="stx-cards">${m.cards.map(card).join('')}</div>`,
+      `<div class="stx-g2">${box('Your shows', 'every show you\u2019ve started, most watched first', shows, 'stx-yshows')}${box(m.top2.title, 'most watched', m.top2.items.length ? list(m.top2, false) : empty(m.top2.none))}</div>`,
+      box(m.eps.title, m.eps.sub, m.eps.items.length ? list(m.eps, false) : empty(m.eps.none), 'stx-reps'),
+      `<div class="stx-g3">${box('Top genres', m.genres.sub, gens)}${box('Decades you watch', 'by release year', decades, 'stx-dec')}${box(m.faces.title, m.faces.sub, m.faces.items.length ? list(m.faces, false) : empty('Nobody yet.'), 'stx-faces')}</div>`,
+      funBox(true).replace('stx-fun wide', 'stx-fun wide five'),
+    ].join('');
+  }
   return [
     m.chip ? `<div class="stx-chip">${ICON}<span>${esc(m.chip)}</span></div>` : '',
     m.callout ? `<div class="stx-call"><div class="ic">📊</div><div><b>${esc(m.callout.t)}</b><div class="t2">${esc(m.callout.d)}</div></div></div>` : '',
@@ -466,8 +487,8 @@ async function tvModel_load() {
   const q = (types, extra = '') => api.get(`/Users/{userId}/Items?Recursive=true&IncludeItemTypes=${types}&Fields=Genres,UserData,RunTimeTicks,SeriesId,SeriesName,ImageTags,ParentIndexNumber,IndexNumber${extra}`);
   const [eps, movies, series, favs, resume] = await Promise.all([
     q('Episode', '&Filters=IsPlayed&SortBy=DatePlayed&SortOrder=Descending&Limit=8000'),
-    q('Movie', '&Filters=IsPlayed&SortBy=DatePlayed&SortOrder=Descending&Limit=3000'),
-    q('Series', '&Limit=3000'),
+    q('Movie', ',ProductionYear,People&Filters=IsPlayed&SortBy=DatePlayed&SortOrder=Descending&Limit=3000'),
+    q('Series', ',Status,ProductionYear,People&Limit=3000'),
     api.get('/Users/{userId}/Items?Recursive=true&Filters=IsFavorite&IncludeItemTypes=Movie,Series,Episode&Limit=0').catch(() => ({})),
     api.get('/Users/{userId}/Items/Resume?Limit=50&MediaTypes=Video').catch(() => ({})),
   ]);
@@ -488,58 +509,88 @@ async function tvModel_load() {
   } catch {}
   return { eps: eps.Items || [], movies: movies.Items || [], series: series.Items || [], favCount: favs.TotalRecordCount || 0, resume: resume.Items || [], pr, admin };
 }
-function tvModel_build({ eps, movies, series, favCount, resume, pr, admin }, p) {
-  const s0 = startOf(p), [ps, pe] = prevRange(p);
+// All time only (Jayden, Nov 11): people watch a film or a series once or a few times a year,
+// so periods say little. Built only from what Emby keeps per person, so it works for every account.
+const ALLTIME = new Set(['tv']);
+const days_h = (secs) => { const d = Math.floor(secs / 86400), h = Math.round((secs % 86400) / 3600); return d ? { v: String(d), u: ` day${d === 1 ? '' : 's'} ${h} h` } : { v: hm(secs), u: '' }; };
+function tvModel_build({ eps, movies, series }) {
   const when = (it) => Date.parse(it.UserData?.LastPlayedDate || '') || 0;
-  const epsP = eps.filter((e) => when(e) >= s0), movP = movies.filter((m) => when(m) >= s0);
-  const epsPrev = eps.filter((e) => { const t = when(e); return t >= ps && t < pe; }).length;
-  const byId = new Map(series.map((s) => [s.Id, s]));
+  const plays = (it) => Math.max(1, it.UserData?.PlayCount || 0);
+  const secsOf = (it) => (it.RunTimeTicks || 0) / 1e7;
+  const byId = new Map(series.map((x) => [x.Id, x]));
+  const total = [...eps, ...movies].reduce((a, it) => a + secsOf(it) * plays(it), 0);
+
+  // Your shows: every show with a watched episode, with a status.
   const shows = new Map();
-  epsP.forEach((e) => { const k = e.SeriesId || e.SeriesName; const o = shows.get(k) || { id: e.SeriesId, name: e.SeriesName || '', n: 0, secs: 0, last: 0 }; o.n++; o.secs += (e.RunTimeTicks || 0) / 1e7; o.last = Math.max(o.last, when(e)); shows.set(k, o); });
-  const finished = series.filter((s) => s.UserData?.Played && when(s) >= s0);
+  eps.forEach((e) => { const k = e.SeriesId || e.SeriesName; const o = shows.get(k) || { id: e.SeriesId, name: e.SeriesName || '', n: 0, secs: 0, last: 0 }; o.n++; o.secs += secsOf(e) * plays(e); o.last = Math.max(o.last, when(e)); shows.set(k, o); });
+  const now = Date.now(), STALE = 90 * DAY;
+  const showRows = [...shows.values()].map((o) => {
+    const it = byId.get(o.id), left = it?.UserData?.UnplayedItemCount ?? null;
+    const tot = left == null ? 0 : o.n + left;
+    const st = left === 0 ? (it?.Status === 'Continuing' ? 'up' : 'fin') : now - o.last < STALE ? 'on' : 'off';
+    return { ...o, it, tot, st };
+  }).sort((a, b) => b.secs - a.secs);
+  const cnt = (k) => showRows.filter((r) => r.st === k).length;
+  const ST = { fin: 'Finished', up: 'Up to date', on: 'Watching', off: 'Stopped' };
+
+  // Movies by rewatches, episodes rewatched.
+  const topMov = [...movies].sort((a, b) => plays(b) - plays(a) || when(b) - when(a)).slice(0, 6);
+  const rewMovies = movies.filter((m) => plays(m) > 1).length;
+  const favs = (it) => (it.UserData?.IsFavorite ? 1 : 0);
+  const rewEps = eps.filter((e) => plays(e) > 1).sort((a, b) => plays(b) - plays(a) || favs(b) - favs(a) || when(b) - when(a));
+  const epTag = (e) => [e.SeriesName, e.ParentIndexNumber != null && e.IndexNumber != null ? `S${e.ParentIndexNumber} E${e.IndexNumber}` : ''].filter(Boolean).join(' · ');
+
+  // Genres by time.
   const gen = new Map(); const addG = (gs, w) => (gs || []).forEach((g) => gen.set(g, (gen.get(g) || 0) + w));
-  epsP.forEach((e) => addG(byId.get(e.SeriesId)?.Genres || e.Genres, (e.RunTimeTicks || 0) / 1e7));
-  movP.forEach((m) => addG(m.Genres, (m.RunTimeTicks || 0) / 1e7));
+  eps.forEach((e) => addG(byId.get(e.SeriesId)?.Genres || e.Genres, secsOf(e) * plays(e)));
+  movies.forEach((m) => addG(m.Genres, secsOf(m) * plays(m)));
   const gM = mergeGenres(gen);
   const gList = [...gM.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6), gTot = [...gM.values()].reduce((a, b) => a + b, 0) || 1;
-  const binge = new Map(); epsP.forEach((e) => { const k = dkey(when(e)) + '|' + (e.SeriesName || ''); binge.set(k, (binge.get(k) || 0) + 1); });
-  const bg = [...binge.entries()].sort((a, b) => b[1] - a[1])[0];
-  const rew = [...eps, ...movies].filter((x) => (x.UserData?.PlayCount || 0) > 1).sort((a, b) => b.UserData.PlayCount - a.UserData.PlayCount)[0];
-  const top = [...shows.values()].sort((a, b) => (pr ? b.secs - a.secs : b.n - a.n)).slice(0, 6);
-  // Playback Reporting numbers when available
-  let watch = null, prev = 0, bars = null, wk = null;
-  if (pr) {
-    const inP = pr.filter((x) => x.t >= s0);
-    watch = inP.reduce((a, x) => a + x.d, 0); prev = pr.filter((x) => x.t >= ps && x.t < pe).reduce((a, x) => a + x.d, 0);
-    bars = { title: 'Watch time', sub: chartSub(p), list: buckets(pr.map((x) => [x.t, x.d]), p, hm) };
-    const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
-    inP.forEach((x) => { const d = new Date(x.t); grid[(d.getDay() + 6) % 7][d.getHours()] += x.d; });
-    const mx = Math.max(1, ...grid.flat());
-    let bd = 0, bh = 0; grid.forEach((r, di) => r.forEach((v, h) => { if (v > grid[bd][bh]) { bd = di; bh = h; } }));
-    const f = (x) => (x % 12 || 12) + (x < 12 ? ' am' : ' pm');
-    wk = { sub: grid[bd][bh] ? `Busiest: ${WEEKDAYS[(bd + 1) % 7]}s around ${f(bh)}` : '', rows: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => ({ d, c: grid[i].map((v) => v / mx) })) };
-  }
-  const days = p === 'all' ? Math.max(1, new Set(pr ? pr.map((x) => dkey(x.t)) : []).size) : Math.max(1, Math.ceil((Date.now() - s0) / DAY));
+
+  // Decades by release year, weighted by time.
+  const dec = new Map(); const addD = (y, w) => { if (y > 1900) { const d = Math.floor(y / 10) * 10; dec.set(d, (dec.get(d) || 0) + w); } };
+  eps.forEach((e) => addD(byId.get(e.SeriesId)?.ProductionYear, secsOf(e) * plays(e)));
+  movies.forEach((m) => addD(m.ProductionYear, secsOf(m) * plays(m)));
+  const dk = [...dec.keys()].sort((a, b) => a - b), decs = dk.length ? Array.from({ length: (dk[dk.length - 1] - dk[0]) / 10 + 1 }, (_, i) => dk[0] + i * 10) : [], dMax = Math.max(1, ...dec.values());
+  const decBars = decs.slice(-8).map((d) => ({ v: dec.get(d) || 0, h: ((dec.get(d) || 0) / dMax) * 100, tip: `${d}s: ${hm(dec.get(d) || 0)}`, axis: `${String(d).slice(2)}s` }));
+
+  // Faces: actors across watched movies and shows (a show counts once per watched episode).
+  const ppl = new Map(); const addP = (list, w, kind) => (list || []).filter((x) => x.Type === 'Actor').slice(0, 12).forEach((x) => { const o = ppl.get(x.Id) || { id: x.Id, name: x.Name, tag: x.PrimaryImageTag, w: 0, mv: 0, sh: 0 }; o.w += w; o[kind]++; ppl.set(x.Id, o); });
+  movies.forEach((m) => addP(m.People, 1, 'mv'));
+  showRows.forEach((r) => addP(r.it?.People, r.n, 'sh'));
+  const faces = [...ppl.values()].sort((a, b) => b.w - a.w).slice(0, 6);
+
+  const longest = [...movies].sort((a, b) => secsOf(b) - secsOf(a))[0];
+  const oldest = [...movies, ...showRows.map((r) => r.it).filter(Boolean)].filter((x) => x.ProductionYear > 1900).sort((a, b) => a.ProductionYear - b.ProductionYear)[0];
+  const topRew = movies.filter((m) => plays(m) > 1).sort((a, b) => plays(b) - plays(a))[0];
+  const fav = rewEps[0];
+  const T = days_h(total);
   return {
-    sub: pr ? 'From Emby + Playback Reporting' : 'From Emby',
-    // Only admins can install the plugin, so only they see how to turn the charts on.
-    callout: pr || !admin ? null : { t: 'Want charts of when you watch?', d: 'Emby only keeps play counts on its own. Install the free Playback Reporting plugin (Emby dashboard › Plugins › Catalog) and this page adds watch time per day, your busiest days and hours, and time per show.' },
+    layout: 'tv',
+    sub: 'All time · everything you’ve watched on Emby',
     cards: [
-      pr ? { hot: true, k: 'TIME WATCHED', v: hm(watch), d: vs(watch, prev, p), g: '📺' } : { hot: true, k: 'EPISODES WATCHED', v: n0(epsP.length), d: vs(epsP.length, epsPrev, p) || { t: `across ${plural(shows.size, 'show')}`, c: 'n' }, g: '📺' },
-      { k: 'MOVIES', v: n0(movP.length), d: { t: 'finished', c: 'n' }, g: '🎬' },
-      { k: 'SHOWS FINISHED', v: n0(finished.length), d: { t: finished[0] ? 'Latest: ' + finished.sort((a, b) => when(b) - when(a))[0].Name : '', c: 'n' }, g: '✔' },
-      pr ? { k: 'AVERAGE A DAY', v: hm(watch / days), d: null, g: '⏱' } : { k: 'IN PROGRESS', v: n0(resume.length), u: resume.length === 1 ? ' title' : ' titles', d: { t: 'see Continue watching', c: 'n' }, g: '⏱' },
+      { hot: true, k: 'TIME WATCHED', v: T.v, u: T.u, d: { t: `That's ${n0(Math.round(total / 3600))} hours of Movies & TV`, c: 'n' }, g: '📺' },
+      { k: 'EPISODES', v: n0(eps.length), d: { t: `across ${plural(shows.size, 'show')}`, c: 'n' }, g: '🎞' },
+      { k: 'MOVIES', v: n0(movies.length), d: { t: rewMovies ? `${n0(rewMovies)} watched more than once` : 'watched', c: 'n' }, g: '🎬' },
+      { k: 'SHOWS FINISHED', v: n0(cnt('fin')), d: { t: cnt('up') ? `and ${n0(cnt('up'))} you're up to date on` : '', c: 'n' }, g: '✔' },
     ],
-    bars, wk,
-    top: { title: 'Top shows', by: pr ? 'by time' : 'by episodes', none: `No episodes watched ${perWord(p)}.`, items: top.map((s) => { const it = byId.get(s.id); return { a: s.name, b: plural(s.n, 'episode'), shape: 'ps', img: it ? img(it.Id, 'Thumb', it.ImageTags?.Thumb, 200) || embyImg(it, 200) : '', hue: hue(s.name), w: (pr ? s.secs / (top[0]?.secs || 1) : s.n / (top[0]?.n || 1)), v: pr ? hm(s.secs) : plural(s.n, 'ep'), href: s.id ? `#/item/${encodeURIComponent(s.id)}` : '' }; }) },
-    top2: { title: 'Recently finished movies', none: `No movies ${perWord(p)}.`, items: movP.slice(0, 6).map((m) => ({ a: m.Name, b: [(m.Genres || [])[0], m.RunTimeTicks ? hm(m.RunTimeTicks / 1e7) : ''].filter(Boolean).join(' · '), shape: 'po', img: embyImg(m, 120), hue: hue(m.Name), v: new Date(when(m)).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), href: `#/item/${encodeURIComponent(m.Id)}` })) },
-    genres: { sub: 'share of what you watched', items: gList.map(([g, t]) => ({ n: g, w: t / (gList[0][1] || 1), v: Math.round((t / gTot) * 100) + '%' })) },
+    shows: { counts: { all: showRows.length, on: cnt('on'), up: cnt('up'), fin: cnt('fin'), off: cnt('off') }, items: showRows.map((r) => ({
+      st: r.st, stl: ST[r.st], name: r.name, href: r.id ? `#/item/${encodeURIComponent(r.id)}` : '',
+      img: r.it ? embyImg(r.it, 120) : '', hue: hue(r.name), f: r.tot ? Math.min(1, r.n / r.tot) : 1,
+      m: `${r.tot ? `${n0(r.n)} of ${n0(r.tot)}` : n0(r.n)} episodes · ${r.st === 'off' && r.last ? 'last watched ' + new Date(r.last).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : hm(r.secs)}`,
+    })) },
+    top2: { title: 'Top movies', none: 'No movies watched yet.', items: topMov.map((m) => ({ a: m.Name, b: [(m.Genres || [])[0], m.RunTimeTicks ? hm(secsOf(m)) : ''].filter(Boolean).join(' · '), shape: 'po', img: embyImg(m, 120), hue: hue(m.Name), v: `×${plays(m)}`, href: `#/item/${encodeURIComponent(m.Id)}` })) },
+    eps: { title: 'Episodes you rewatch', sub: 'Emby counts every time you finish an episode', none: 'No episode watched more than once yet.', items: rewEps.slice(0, 8).map((e) => ({ a: e.Name, b: epTag(e), shape: 'ps', img: embyImg(e, 200), hue: hue(e.SeriesName || e.Name), v: `×${plays(e)}`, href: `#/item/${encodeURIComponent(e.Id)}` })) },
+    genres: { sub: 'share of your time', items: gList.map(([g, t]) => ({ n: g, w: t / (gList[0][1] || 1), v: Math.round((t / gTot) * 100) + '%' })) },
+    decades: decBars,
+    faces: { title: 'Faces you see most', sub: 'top actors', items: faces.map((f) => ({ a: f.name, b: [f.sh ? plural(f.sh, 'show') : '', f.mv ? plural(f.mv, 'movie') : ''].filter(Boolean).join(', '), shape: 'rd', img: f.tag ? img(f.id, 'Primary', f.tag, 120) : '', ini: (f.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2), hue: hue(f.name), w: f.w / (faces[0]?.w || 1), v: '' })) },
     facts: [
-      { k: 'Biggest binge', v: bg && bg[1] > 1 ? plural(bg[1], 'episode') : '', s: bg ? `${bg[0].split('|')[1]}, ${new Date(bg[0].split('|')[0] + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : '' },
-      { k: 'Rewatched most', v: rew ? (rew.SeriesName ? `${rew.SeriesName}` : rew.Name) : '', s: rew ? `${rew.SeriesName ? rew.Name + ', ' : ''}played ${rew.UserData.PlayCount} times` : '' },
-      { k: 'Time in episodes', v: epsP.length ? hm(epsP.reduce((a, e) => a + (e.RunTimeTicks || 0) / 1e7, 0)) : '', s: perWord(p) },
+      { k: 'Favorite episode', v: fav ? fav.Name : '', s: fav ? `${epTag(fav)}, watched ${plays(fav)} times` : '' },
+      { k: 'Nonstop', v: total ? `${(total / 86400).toFixed(total > 864000 ? 0 : 1)} days` : '', s: 'if you watched it all back to back' },
+      { k: 'Rewatched most', v: topRew ? topRew.Name : '', s: topRew ? `${plays(topRew)} times` : '' },
+      { k: 'Longest movie', v: longest ? longest.Name : '', s: longest ? hm(secsOf(longest)) : '' },
+      { k: 'Oldest watch', v: oldest ? `${oldest.Name} (${oldest.ProductionYear})` : '', s: 'the earliest release you’ve seen' },
     ],
-    shelf: { title: 'Recently watched', sub: 'shows and movies', none: `Nothing watched ${perWord(p)}.`, items: [...[...shows.values()].map((s) => ({ last: s.last, it: byId.get(s.id), t: s.name, m: plural(s.n, 'episode') })), ...movP.map((m) => ({ last: when(m), it: m, t: m.Name, m: 'Movie' }))].sort((a, b) => b.last - a.last).slice(0, 20).map((x) => ({ wide: true, t: x.t, m: x.m, hue: hue(x.t), img: x.it ? img(x.it.Id, 'Thumb', x.it.ImageTags?.Thumb, 300) || img(x.it.Id, 'Backdrop', x.it.BackdropImageTags?.[0], 300) || embyImg(x.it, 300) : '', href: x.it ? `#/item/${encodeURIComponent(x.it.Id)}` : '' })) },
   };
 }
 // Everyone (admins): Playback Reporting records every user, so this view is built only from it.

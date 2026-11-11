@@ -3042,3 +3042,37 @@ a.rq-link { color: var(--text); font-weight: 600; }
 .menu .upd-seg button { width: auto; padding: 5px 11px; border-radius: 8px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
 .menu .upd-seg button:hover { padding-left: 11px; color: #fff; }
 .menu .upd-seg button.on { background: var(--red); color: #fff; }
+
+/* ---------- Movies & TV Stats, all time: Your shows, rewatched episodes, decades, faces ---------- */
+.stx-g3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+@media (max-width: 1100px) { .stx-g3 { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+.stx-sf { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 10px; }
+.stx-sf button { border: 0; border-radius: 999px; padding: 5px 11px; background: rgba(255,255,255,.07); color: var(--muted); font: 700 12.5px Inter, sans-serif; cursor: pointer; transition: background .2s, color .2s; }
+.stx-sf button:hover { color: #fff; }
+.stx-sf button.on { background: #fff; color: #000; }
+.stx-shows { max-height: 470px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #3A2526 transparent; padding-right: 4px; }
+.stx-show { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 6px 4px; border-radius: 10px; color: inherit; text-decoration: none; transition: background .2s; }
+.stx-show[hidden] { display: none; }
+.stx-show:hover { background: rgba(255,255,255,.05); }
+.stx-show .cv { position: relative; width: 40px; height: 58px; border-radius: 6px; overflow: hidden; background: linear-gradient(135deg, hsl(var(--h) 45% 38%), hsl(var(--h) 45% 16%)); box-shadow: 0 6px 12px rgba(0,0,0,.45); }
+.stx-show .cv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
+.stx-show .cv img.in { opacity: 1; }
+.stx-show .tx { min-width: 0; }
+.stx-show .tx b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stx-show .tx > span:not(.pb) { display: block; font-size: 12px; color: var(--muted); }
+.stx-show .pb { display: block; height: 5px; border-radius: 5px; background: var(--line); margin-top: 6px; overflow: hidden; }
+.stx-show .pb i { display: block; height: 100%; border-radius: 5px; background: var(--red); }
+.stx-show .pb.up i { background: #7CC0FF; } .stx-show .pb.off i { background: #6b5556; }
+.stx-show .chip { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.stx-show .chip.fin { background: rgba(79,201,122,.16); color: #4FC97A; }
+.stx-show .chip.up { background: rgba(124,192,255,.16); color: #7CC0FF; }
+.stx-show .chip.on { background: rgba(236,40,46,.18); color: #FF8A8D; }
+.stx-show .chip.off { background: rgba(255,255,255,.07); color: var(--muted); }
+.stx-reps .stx-top { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 28px; }
+@media (max-width: 1000px) { .stx-reps .stx-top { grid-template-columns: minmax(0, 1fr); } }
+.stx-reps .stx-top .cv.ps { width: 72px; height: 41px; }
+.stx-faces .stx-top .val:empty { display: none; }
+.stx-dec .stx-bars { height: 150px; }
+.stx-faces .stx-top .cv.rd em { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-weight: 800; font-size: 14px; color: #fff; }
+.stx-fun.wide.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .stx-fun.wide.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
