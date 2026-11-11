@@ -366,7 +366,7 @@ EXTRA.playlist = async (v, id) => {
     (async () => {
       const have = new Set(songs.map((x) => x.id)), score = new Map();
       const put = (arr, w) => (arr || []).forEach((x) => { if (x && x.id && !have.has(x.id)) score.set(x.id, { x, s: (score.get(x.id)?.s || 0) + w + Math.random() * 0.5 }); });
-      const cap = (pr, ms = 2500) => Promise.race([pr, new Promise((r) => setTimeout(r, ms))]).catch(() => {});
+      const cap = (pr, ms = 2500) => Promise.race([pr.catch(() => {}), new Promise((r) => setTimeout(r, ms))]).catch(() => {});
       const seeds = shuffleArr(songs).slice(0, 4);
       const artists = [...new Set(songs.map((x) => x.artist).filter(Boolean))].slice(0, 5);
       const genres = Object.entries(songs.reduce((m, x) => (x.genre ? ((m[x.genre] = (m[x.genre] || 0) + 1), m) : m), {})).sort((a, b) => b[1] - a[1]).slice(0, 2).map((g) => g[0]);
