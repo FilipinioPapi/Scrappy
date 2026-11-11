@@ -1,9 +1,16 @@
 //! Auto-updates from GitHub Releases. Each channel has a latest.json next to its download:
 //! Stable = the "latest" release (built from main), Preview = the "preview" release.
-//! A found update downloads in the background and is kept on disk (signature checked on
-//! download), so it can install straight away from "Restart now" or at the next start.
+//! A found update downloads in the background (signature checked by the plugin) and stays in
+//! memory, so "Restart now" installs at once. A small marker file remembers that this version
+//! was ready; at the next start it's downloaded again (and checked again) before installing,
+//! so nothing is ever installed from a file that wasn't just verified.
 use serde_json::{json, Value};
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
+
+/// The verified installer from this session: (version, bytes).
+#[derive(Default)]
+pub struct Ready(pub Mutex<Option<(String, Vec<u8>)>>);
 use tauri_plugin_updater::UpdaterExt;
 
 const BASE: &str = "https://github.com/FilipinioPapi/Scrappy/releases/download";
@@ -21,7 +28,7 @@ fn updater(app: &AppHandle, channel: &str) -> Result<tauri_plugin_updater::Updat
 fn saved(app: &AppHandle, version: &str) -> Result<std::path::PathBuf, String> {
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("updates");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join(format!("scrappy-{}.exe", version.replace(|c: char| !c.is_ascii_alphanumeric() && c != '.', "_"))))
+    Ok(dir.join(format!("ready-{}.txt", version.replace(|c: char| !c.is_ascii_alphanumeric() && c != '.', "_"))))
 }
 
 /// Remove downloads other than `keep` (older versions, or everything when up to date).
@@ -52,11 +59,11 @@ pub async fn upd_check(app: AppHandle, channel: String) -> Result<Value, String>
     };
     let path = saved(&app, &u.version)?;
     let was_saved = path.exists();
-    if !was_saved {
+    let have = app.state::<Ready>().0.lock().unwrap().as_ref().map(|(v, _)| v == &u.version).unwrap_or(false);
+    if !have && !was_saved {
         let bytes = u.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
-        let tmp = path.with_extension("part");
-        std::fs::write(&tmp, &bytes).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+        *app.state::<Ready>().0.lock().unwrap() = Some((u.version.clone(), bytes));
+        std::fs::write(&path, &u.version).map_err(|e| e.to_string())?;
     }
     tidy(&app, Some(&path));
     Ok(json!({
@@ -71,9 +78,10 @@ pub async fn upd_check(app: AppHandle, channel: String) -> Result<Value, String>
 pub async fn upd_install(app: AppHandle, channel: String) -> Result<(), String> {
     let u = updater(&app, &channel)?.check().await.map_err(|e| e.to_string())?.ok_or("Already up to date.")?;
     let path = saved(&app, &u.version)?;
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(_) => u.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?,
+    let mem = app.state::<Ready>().0.lock().unwrap().take().filter(|(v, _)| v == &u.version).map(|(_, b)| b);
+    let bytes = match mem {
+        Some(b) => b,
+        None => u.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?,
     };
     crate::music::quit(&app);
     u.install(bytes).map_err(|e| e.to_string())?;

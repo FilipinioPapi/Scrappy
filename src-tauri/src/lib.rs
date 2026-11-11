@@ -1242,6 +1242,7 @@ async fn tokio_sleep(secs: u64) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Ready::default())
         .register_asynchronous_uri_scheme_protocol("img", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let uri = request.uri().to_string();

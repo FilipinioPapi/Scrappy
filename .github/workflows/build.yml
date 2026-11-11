@@ -207,12 +207,12 @@ jobs:
           if (Test-Path Scrappy-setup.exe.sig) {
             $desk = ""
             if (Test-Path CHANGELOG.md) {
-              # The newest entry's Desktop section, as plain lines.
-              $lines = Get-Content CHANGELOG.md; $inTop = $false; $inDesk = $false; $out = @()
+              # The bullet points of the newest entry ("### ...") in the PC app section ("## ... PC app").
+              $lines = Get-Content CHANGELOG.md -Encoding utf8; $inPc = $false; $inEntry = $false; $out = @()
               foreach ($l in $lines) {
-                if ($l -match '^## ') { if ($inTop) { break }; $inTop = $true; continue }
-                if ($inTop -and $l -match '^### ') { $inDesk = $l -match 'Desktop'; continue }
-                if ($inDesk -and $l.Trim()) { $out += $l.Trim() }
+                if ($l -match '^## ') { if ($inEntry) { break }; $inPc = $l -match 'PC app|Desktop'; continue }
+                if ($inPc -and $l -match '^### ') { if ($inEntry) { break }; $inEntry = $true; continue }
+                if ($inEntry -and $l.Trim() -match '^[-*] ') { $out += $l.Trim() }
               }
               $desk = $out -join "`n"
             }
