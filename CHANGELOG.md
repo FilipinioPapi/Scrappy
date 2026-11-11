@@ -16,7 +16,11 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 - Because you played shows real artist pictures and album counts, and leaves out artists with no albums in your library
 - On repeat shows an album once instead of repeating its cover for each song
 
-<sub>Built from 174100c · includes: page changes, Home</sub>
+**Music**
+- Because you played no longer shows empty duplicate artists
+- Back on an artist or genre page returns to where you came from
+
+<sub>Built from b19a6b9 · includes: page changes, Home, Music</sub>
 
 ### Preview 24 · Nov 11, 1:10 AM
 **Home**
