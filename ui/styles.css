@@ -1535,7 +1535,7 @@ body.mnow-open #mbar { display: none; }
 @keyframes nowIn { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
 @keyframes nowOut { to { opacity: 0; transform: translateY(40px); } }
 .mn-bg { position: absolute; inset: 0; opacity: .28; filter: blur(80px) saturate(1.5); transform: scale(1.4); pointer-events: none; transition: opacity .5s; }
-.mn-bg img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s; } .mn-bg img.in { opacity: 1; }
+.mn-bg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s; } .mn-bg img.in { opacity: 1; }
 #mnow.dim .mn-bg { opacity: .08; }
 .mn-top { position: relative; display: flex; align-items: center; gap: 14px; }
 .mn-from { flex: 1; min-width: 0; } .mn-from .t1 { font-size: 15px; }

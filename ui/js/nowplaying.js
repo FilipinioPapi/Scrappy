@@ -57,10 +57,52 @@ window.addEventListener('hashchange', closeNow);
 window.addEventListener('keydown', (e) => { if (open && e.key === 'Escape') { e.preventDefault(); closeNow(); } });
 
 let builtFor = null;
+let artFor = '';
+let swapTok = 0;
+const fromLabel = () => (music.from ? `PLAYING FROM ${({ album: 'ALBUM', artist: 'ARTIST', playlist: 'PLAYLIST', genre: 'GENRE', mix: 'MIX', songs: 'YOUR LIBRARY', genremix: 'MIX', artistfav: 'FAVORITES' })[music.from.type] || ''}` : 'NOW PLAYING');
+const metaHtml = (s) => `${s.artistId ? `<a href="${href('artist', s.artistId)}">${esc(s.artist)}</a>` : esc(s.artist || '')}${s.album ? ` · <a class="plain" href="${href('album', s.albumId)}?song=${encodeURIComponent(s.id)}">${esc(s.album)}</a>` : ''}${s.year ? ' · ' + s.year : ''}`;
+
+// Track changed while the page is open: swap the words in place and keep the
+// old cover up until the new one has loaded, then fade it in on top.
+function swapTrack(s) {
+  builtFor = s.id;
+  const $ = (q) => el.querySelector(q);
+  el.style.setProperty('--h', hue(s.album || s.title));
+  $('.mn-from .kicker').textContent = fromLabel();
+  $('.mn-from .t1').textContent = music.from?.name || s.album || '';
+  $('#mnT').textContent = s.title;
+  $('.mn-meta').innerHTML = metaHtml(s);
+  const id = s.coverArt || '';
+  if (id !== artFor) {
+    artFor = id;
+    const tok = ++swapTok;
+    const slots = [['.mn-bg', 600], ['.dlabel', 300], ['.mn-cover', 600]];
+    const done = () => {
+      if (tok !== swapTok || !open) return;
+      const lbl = $('.dlabel'); if (lbl) lbl.style.setProperty('--h', hue(s.album || s.title));
+      const cv = $('.mn-cover'); if (cv) { cv.style.setProperty('--h', hue(s.album || s.title)); const sp = cv.querySelector('span'); if (sp) sp.textContent = s.album || s.title || ''; }
+      for (const [q, w] of slots) {
+        const box = $(q); if (!box) continue;
+        const olds = [...box.querySelectorAll(':scope > img')];
+        if (!id) { olds.forEach((o) => o.remove()); continue; }
+        const im = new Image(); im.alt = ''; im.src = cover(id, w); im.className = 'swap'; im.onerror = () => im.remove();
+        // Sit on top of the old picture, which stays fully visible underneath.
+        const ref = q === '.dlabel' ? box.querySelector('.gloss') : null;
+        box.insertBefore(im, ref);
+        requestAnimationFrame(() => requestAnimationFrame(() => im.classList.add('in')));
+        setTimeout(() => olds.forEach((o) => o.remove()), 700);
+      }
+    };
+    if (!id) done();
+    else Promise.all(slots.map(([, w]) => { const im = new Image(); im.src = cover(id, w); return im.decode().catch(() => {}); })).then(done);
+  }
+  // Up next redraws in sync(); only the lyrics need fetching again. The visualizer keeps running.
+  const ly = $('#lyr'); if (ly) { ly.innerHTML = '<div class="t2">Looking for lyrics…</div>'; loadLyrics(); }
+}
 function build() {
   const s = current(); if (!s) return closeNow();
-  builtFor = s.id;
-  const fromLbl = music.from ? `PLAYING FROM ${({ album: 'ALBUM', artist: 'ARTIST', playlist: 'PLAYLIST', genre: 'GENRE', mix: 'MIX', songs: 'YOUR LIBRARY', genremix: 'MIX', artistfav: 'FAVORITES' })[music.from.type] || ''}` : 'NOW PLAYING';
+  builtFor = s.id; artFor = s.coverArt || '';
+  const fromLbl = fromLabel();
   el.style.setProperty('--h', hue(s.album || s.title));
   el.innerHTML = `
     <div class="mn-bg"><img src="${cover(s.coverArt, 600)}" alt="" onload="this.classList.add('in')" onerror="this.remove()"></div>
@@ -71,7 +113,7 @@ function build() {
       <div class="mn-left">
         <div class="mn-art${music.playing ? ' on' : ''}" id="mnArt"><div class="vin"><div class="vdisc"><div class="shine"></div><div class="dlabel" style="--h:${hue(s.album || s.title)}">${s.coverArt ? `<img src="${cover(s.coverArt, 300)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}<i class="gloss"></i><i class="hole"></i></div></div></div>${coverHtml(s.coverArt, s.album || s.title, 600, 'mn-cover')}</div>
         <div class="mn-title"><div class="disp" id="mnT">${esc(s.title)}</div><button type="button" class="gb lg${s.starred ? ' on' : ''}" id="mnFav" title="${s.starred ? 'Remove from Favorites' : 'Add to Favorites'}">${s.starred ? IC.heartOn : IC.heart}</button></div>
-        <div class="meta mn-meta">${s.artistId ? `<a href="${href('artist', s.artistId)}">${esc(s.artist)}</a>` : esc(s.artist || '')}${s.album ? ` · <a class="plain" href="${href('album', s.albumId)}?song=${encodeURIComponent(s.id)}">${esc(s.album)}</a>` : ''}${s.year ? ' · ' + s.year : ''}</div>
+        <div class="meta mn-meta">${metaHtml(s)}</div>
         <div class="mb-seek mn-seek"><span id="mnPos">0:00</span><div class="mseek" id="mnSeek"><div class="track"><i></i></div><b></b></div><span id="mnDur">0:00</span></div>
         <div class="mn-ctl"><button type="button" class="gb lg" id="mnShuf" aria-label="Shuffle">${IC.shuffle}</button><button type="button" class="gb sq xl" id="mnPrev" aria-label="Previous">${IC.prev}</button>
           <button type="button" class="mb-play xl" id="mnPlay" aria-label="Play">${IC.play}</button><button type="button" class="gb sq xl" id="mnNext" aria-label="Next">${IC.next}</button><button type="button" class="gb lg" id="mnRep" aria-label="Repeat">${IC.repeat}<i class="one">1</i></button></div>
@@ -119,7 +161,7 @@ function slider(s, onMove, onDone) {
 function sync() {
   if (!open) return;
   const s = current(); if (!s) return closeNow();
-  if (s.id !== builtFor) return build();
+  if (s.id !== builtFor) swapTrack(s);
   const $ = (q) => el.querySelector(q);
   const p = $('#mnPlay'); const showPause = music.playing && music.started;
   if (p.dataset.st !== String(showPause)) { p.dataset.st = String(showPause); p.innerHTML = showPause ? IC.pause : IC.play; }
