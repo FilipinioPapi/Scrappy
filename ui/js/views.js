@@ -929,8 +929,9 @@ export async function libraryView(root, ctx, id, genreId = '') {
 
 // ---------------- Item detail ----------------
 
-const itemKey = (it) => JSON.stringify([it.Id, it.Name, it.Overview, it.ImageTags, it.BackdropImageTags, it.ChildCount, it.RunTimeTicks, it.Genres, it.People?.length,
-  it.MediaSources?.length, it.UserData?.Played, it.UserData?.IsFavorite, Math.round((it.UserData?.PlaybackPositionTicks || 0) / 6e8), it.UserData?.UnplayedItemCount]);
+// Everything about the item except the play-history details that change on their own
+// (last played time, play count), so an edit to any field (year, rating, tagline, cast...) redraws.
+const itemKey = (it) => { const { UserData: u = {}, ...rest } = it; return JSON.stringify([rest, u.Played, u.IsFavorite, Math.round((u.PlaybackPositionTicks || 0) / 6e8), u.UnplayedItemCount]); };
 export async function itemView(root, ctx, id, seasonId = '') {
   root.innerHTML = loadingHtml();
   let moved = false, shownKey = '';
