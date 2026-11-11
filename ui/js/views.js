@@ -1361,12 +1361,11 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
       // Every episode as a small picture with its number and name; long seasons
       // split into blocks of 100, opening on the block with your next episode.
       const upNext = eps.find((e) => e.UserData?.PlaybackPositionTicks > 0 && !e.UserData?.Played) || eps.find((e) => !e.UserData?.Played);
-      const names = pref('epGridNames') === 'on';
       const thumb = (e, i) => `
             <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
               ${card(e, { shape: 'wide', noTitle: true })}
               <span class="ep-num">${e.IndexNumber ?? '•'}</span>
-              ${names ? `<div class="ep-name">${esc(e.Name)}</div>` : ''}
+              <div class="ep-name">${esc(e.Name)}</div>
             </div>`;
       if (all) {
         // Every episode, season by season, in one long grid.
