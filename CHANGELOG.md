@@ -10,14 +10,13 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 ### Preview 25 · Nov 11, 2:20 AM
 **App-wide**
 - Moving between pages (episodes, shows, menus) no longer flashes a blank page or a spinner: the old page stays until the new one is ready
+- Back returns you to the same spot on the page instead of the top
 
 **Home**
 - Smart home rows show up instantly when you switch tabs, with no flicker or reshuffling. They refresh every 30 minutes
 - Because you played shows real artist pictures and album counts, and leaves out artists with no albums in your library
 - On repeat shows an album once instead of repeating its cover for each song
-
-**Music**
-- Because you played no longer shows empty duplicate artists
+- Smart rows load in the background, so covers and the page you open co<sub>Built from cb15c91 · includes: page changes, Home, Music</sub>icate artists
 - Back on an artist or genre page returns to where you came from
 
 <sub>Built from b19a6b9 · includes: page changes, Home, Music</sub>
