@@ -64,7 +64,7 @@ export function openDb(file) {
 const j = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 function shape(r) {
   if (!r) return null;
-  const users = db.prepare('SELECT user, note, created_at FROM requesters WHERE request_id = ? ORDER BY created_at').all(r.id);
+  const users = db.prepare('SELECT user, note, created_at FROM requesters WHERE request_id = ? ORDER BY created_at, rowid').all(r.id);
   return {
     id: r.id, type: r.type, extId: r.ext_id, source: r.source, title: r.title, subtitle: r.subtitle, year: r.year, poster: r.poster,
     info: j(r.info, {}), parts: j(r.parts, {}), release: r.release, status: r.status, adminNote: r.admin_note, libRef: r.lib_ref,
