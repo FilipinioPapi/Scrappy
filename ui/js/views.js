@@ -923,9 +923,11 @@ export async function libraryView(root, ctx, id, genreId = '') {
 
 // ---------------- Item detail ----------------
 
+const itemKey = (it) => JSON.stringify([it.Id, it.Name, it.Overview, it.ImageTags, it.BackdropImageTags, it.ChildCount, it.RunTimeTicks, it.Genres, it.People?.length,
+  it.MediaSources?.length, it.UserData?.Played, it.UserData?.IsFavorite, Math.round((it.UserData?.PlaybackPositionTicks || 0) / 6e8), it.UserData?.UnplayedItemCount]);
 export async function itemView(root, ctx, id, seasonId = '') {
   root.innerHTML = loadingHtml();
-  let moved = false;
+  let moved = false, shownKey = '';
   try {
     await load(`/Users/{userId}/Items/${id}`, (it) => {
       // A season opens as its show's page with that season's tab picked,
@@ -934,6 +936,11 @@ export async function itemView(root, ctx, id, seasonId = '') {
         if (!moved) { moved = true; location.replace(`#/item/${encodeURIComponent(it.SeriesId)}/${encodeURIComponent(it.Id)}`); }
         return;
       }
+      // Fresh data that only differs in small details (last played time, etc.) doesn't redraw
+      // the whole page; that redraw is what made it blink.
+      const key = itemKey(it);
+      if (key === shownKey) return;
+      shownKey = key;
       renderItem(root, ctx, it, seasonId);
     }, () => ctx.alive() && !moved);
   } catch (e) {

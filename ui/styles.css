@@ -3230,3 +3230,7 @@ label.set-row { cursor: pointer; }
 @keyframes hedIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes hedFade { from { opacity: 0; } to { opacity: 1; } }
 .smart-sub { font-size: 13.5px; color: var(--muted); font-weight: 500; margin-left: 10px; }
+
+/* The page you're leaving stays up until the next one has drawn (no blank flash). */
+.view-ghost { position: fixed; z-index: 5; overflow: hidden; pointer-events: none; background: var(--bg); transition: opacity .16s ease; }
+.view-ghost.out { opacity: 0; }

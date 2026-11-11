@@ -91,6 +91,34 @@ function moveTabPill() {
 }
 window.addEventListener('resize', moveTabPill);
 
+// Keep the page you're leaving on screen until the next one has drawn something
+// real, instead of flashing an empty page or a spinner in between.
+let ghost = null, ghostObs = null, ghostTimer = 0;
+function dropGhost() {
+  clearTimeout(ghostTimer); ghostObs?.disconnect(); ghostObs = null;
+  const g = ghost; ghost = null;
+  if (g) { g.classList.add('out'); setTimeout(() => g.remove(), 180); }
+}
+function holdOldPage() {
+  dropGhost();
+  if (!viewEl.firstElementChild || viewEl.querySelector(':scope > .loading') || viewEl.getElementsByTagName('*').length > 5000) return;
+  const r = viewEl.getBoundingClientRect();
+  const g = document.createElement('div');
+  g.className = 'view-ghost'; g.setAttribute('aria-hidden', 'true');
+  g.style.cssText = `left:${r.left}px;top:${Math.max(r.top, 0)}px;width:${r.width}px;height:${window.innerHeight - Math.max(r.top, 0)}px`;
+  const inner = document.createElement('div');
+  inner.style.transform = `translateY(${Math.min(r.top, 0)}px)`;
+  inner.append(...[...viewEl.childNodes].map((n) => n.cloneNode(true)));
+  g.appendChild(inner);
+  document.body.appendChild(g);
+  ghost = g;
+  // Real content = anything that isn't just the loading spinner.
+  const ready = () => [...viewEl.children].some((c) => !c.classList.contains('loading') && c.textContent.trim().length + c.querySelectorAll('img,canvas').length > 0 && !c.matches('.mshell:not(:has(.mmain > :not(.loading)))'));
+  ghostObs = new MutationObserver(() => { if (ready()) dropGhost(); });
+  ghostObs.observe(viewEl, { childList: true, subtree: true });
+  ghostTimer = setTimeout(dropGhost, 1200);
+}
+
 let lastRouteName = '';
 async function route(opts = {}) {
   if (!session) await refreshSession();
@@ -128,6 +156,7 @@ async function route(opts = {}) {
     a.classList.toggle('active', !statsKind && name !== 'requests' && name !== 'settings' && a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
 
+  if (!opts.keepScroll && !statsSwitch) holdOldPage();
   const ctx = makeCtx();
   if (opts.keepScroll) quiet();
   const id = arg ? decodeURIComponent(arg) : '';
