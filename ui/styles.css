@@ -2459,6 +2459,18 @@ body.bnow-open #bbar { display: none; }
 .y-stk{position:absolute;top:-22px;right:-26px;transform:rotate(10deg);background:#FFD43B;color:#2a0d0f;font-family:"Luckiest Guy",Inter,sans-serif;font-size:40px;line-height:1;padding:14px 18px 10px;border-radius:14px;box-shadow:0 6px 0 rgba(0,0,0,.25);animation:y-pop .5s .4s cubic-bezier(.3,1.5,.5,1) both}
 .y-lst .y-it.y-first{background:rgba(255,255,255,.18);transform:scale(1.03);transform-origin:left center}
 .y-lst .y-it.y-first .y-n{color:#FFD43B}
+.y-lst .y-it.y-on{box-shadow:inset 0 0 0 2px rgba(255,255,255,.4);animation:yOn 1.6s ease-in-out infinite}
+@keyframes yOn{50%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.12)}}
+.calm .y-lst .y-it.y-on{animation:none}
+.y-np{display:flex;align-items:center;gap:8px;min-width:0;max-width:420px;margin-left:16px;padding:6px 14px;border-radius:999px;background:rgba(0,0,0,.35);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);color:#fff;font-size:13.5px}
+.y-np b,.y-np span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.y-np>span:last-child{opacity:.75}
+.y-np.off{opacity:.45}
+.y-eq{display:flex;align-items:flex-end;gap:3px;height:14px;flex:none}
+.y-eq i{width:3px;height:5px;border-radius:2px;background:#fff;animation:yEq .9s ease-in-out infinite}
+.y-eq i:nth-child(2){animation-delay:.3s}.y-eq i:nth-child(3){animation-delay:.6s}
+.y-np.off .y-eq i,.calm .y-eq i{animation:none}
+@keyframes yEq{50%{height:14px}}
 .y-foot{position:absolute;left:40px;right:40px;bottom:24px;display:flex;align-items:center;gap:14px;font-size:13.5px;color:rgba(255,255,255,.85)}
 .y-foot kbd{display:inline-grid;place-items:center;min-width:26px;height:24px;padding:0 7px;border-radius:6px;background:rgba(0,0,0,.25);font:700 12px Inter,sans-serif;color:#fff;margin:0 2px}
 .y-mid.sm{font-size:50px}.y-mid.xs{font-size:40px;line-height:1}

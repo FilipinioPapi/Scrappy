@@ -154,7 +154,7 @@ function musicYear(raw, y) {
   L.forEach((x) => {
     const d = new Date(x.t); mon[d.getMonth()] += x.d; h24[d.getHours()] += x.d || 180;
     dayT.set(dkey(x.t), (dayT.get(dkey(x.t)) || 0) + x.d);
-    const s = bump(songs, x.id, 1, () => ({ ti: x.ti, ar: x.ar, cv: x.cv, al: x.al, alId: x.alId, hrs: new Array(24).fill(0) })); s.hrs[d.getHours()]++;
+    const s = bump(songs, x.id, 1, () => ({ ti: x.ti, ar: x.ar, cv: x.cv, al: x.al, alId: x.alId, d: x.d, hrs: new Array(24).fill(0) })); s.hrs[d.getHours()]++;
     bump(albums, x.alId, 1, () => ({ id: x.alId, name: x.al, ar: x.ar, cv: x.cv }));
     const a = bump(artists, x.ar, 1, () => ({ id: x.arId, secs: 0, days: new Set() })); if (a) { a.secs += x.d; a.days.add(dkey(x.t)); }
     if (x.g) genres.set(x.g, (genres.get(x.g) || 0) + 1);
@@ -191,6 +191,22 @@ function musicYear(raw, y) {
     { k: 'LONGEST STREAK', v: plural(streak, 'day') },
   ], q: 'One more for the road.' });
   s.push({ t: 'sum', bg: 'RED', q: 'What a year of tunes.' });
+  // Song snippets (approved mock): each slide about one song plays a bit of it; the others
+  // keep the last one going. Never the same song twice in a row where there's a choice.
+  const ranked = [...songs.values()].filter((x) => x.d > 20).sort((a, b) => b.t - a.t), used = new Set();
+  const pick = (f = () => true) => { const x = ranked.find((y) => f(y) && !used.has(y.k)) || ranked.find(f); if (x) used.add(x.k); return x ? { id: x.k, d: x.d, ti: x.ti, ar: x.ar } : null; };
+  const SND = {
+    'Music': () => pick((x) => x !== ranked[0] && x !== ranked[1]),
+    'Your song of the year': () => pick((x) => x.k === song.k),
+    'Your top songs': () => pick((x) => x.k === tS[1]?.k) || pick(),
+    'Your top albums': () => pick((x) => x.alId === tA[0]?.k),
+    'Your artist of the year': () => pick((x) => x.ar === ar.k),
+    'Your top artists': () => pick((x) => x.ar === tR[1]?.k),
+    'Bookends': () => pick((x) => x.k === first.id),
+  };
+  s.forEach((sl) => { const f = SND[sl.k]; if (f) sl.snd = f(); });
+  const ts = s.find((sl) => sl.k === 'Your top songs'); if (ts?.snd) ts.playRow = tS.findIndex((x) => x.k === ts.snd.id);
+  s[s.length - 1].snd = pick((x) => x.k === song.k);
   const card = {
     fan: fan3([...tS.map((x) => ({ k: x.alId, url: x.cv && ndImg(x.cv, 300), seed: x.al })), ...tA.map((x) => ({ k: x.id, url: x.cv && ndImg(x.cv, 300), seed: x.name }))]), po: false,
     av: { url: ndImg(ar.id || ar.cv, 300), seed: ar.k, ini: ini(ar.k), name: ar.k, pp: false },
@@ -336,6 +352,8 @@ export async function yirBanner(slot, kind, alive) {
 const SVG = {
   play: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>',
   pause: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></svg>',
+  snd: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  mute: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>',
   close: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   prev: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   next: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>',
@@ -355,7 +373,7 @@ function right(s) {
     case 'big': return bars(s.mb);
     case 'clock': return bars(s.clock, true);
     case 'hero': { const hasImg = s.art.st.includes('url('); return `<div class="y-artw"><div class="y-art y-anim2${s.art.cls ? ' y-' + s.art.cls : ''}" style="${esc(s.art.st)}">${hasImg ? '' : esc(s.art.t)}</div><span class="y-stk">#1</span></div>`; }
-    case 'list': return `<div class="y-lst">${s.items.map((x, k) => `<div class="y-it y-anim2${k === 0 ? ' y-first' : ''}" style="animation-delay:${0.12 + k * 0.06}s"><span class="y-n">${k + 1}</span><i class="y-c${x.cc ? ' y-' + x.cc : ''}" style="${esc(x.st)}"></i><div><b>${esc(x.a)}</b><span>${esc(x.b)}</span></div></div>`).join('')}</div>`;
+    case 'list': return `<div class="y-lst">${s.items.map((x, k) => `<div class="y-it y-anim2${k === 0 ? ' y-first' : ''}${k === s.playRow ? ' y-on' : ''}" style="animation-delay:${0.12 + k * 0.06}s"><span class="y-n">${k + 1}</span><i class="y-c${x.cc ? ' y-' + x.cc : ''}" style="${esc(x.st)}"></i><div><b>${esc(x.a)}</b><span>${esc(x.b)}</span></div></div>`).join('')}</div>`;
     case 'wall': return `<div class="y-wall y-anim2">${s.wall.map((w) => `<i style="${esc(w)}"></i>`).join('')}</div>`;
     case 'facts': return `<div class="y-facts y-anim2">${s.facts.map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b></div>`).join('')}</div>`;
     case 'hbars': return `<div class="y-hb">${s.hb.map(([t, v], k) => `<div class="y-r"><span>${esc(t)}</span><div class="y-tr"><i style="width:${Math.round((v / s.hb[0][1]) * 100)}%;animation-delay:${k * 80}ms"></i></div><span class="y-v">${v}%</span></div>`).join('')}</div>`;
@@ -379,6 +397,55 @@ function cardHtml(kind, y, c) {
   </div>`;
 }
 
+// ---------- Song snippets (Music only) ----------
+// Two audio players crossfade: each slide's song starts about 40% in (the part people know)
+// and plays while the slide is up. The sound switch is remembered.
+const soundOn = () => { try { return localStorage.getItem('yirSound') !== 'off'; } catch { return true; } };
+function snippets() {
+  const { invoke } = window.__TAURI__.core;
+  const A = [new Audio(), new Audio()], timers = new Map();
+  let cur = 0, curId = '', on = soundOn(), held = false, gen = 0, now = null;
+  const VOL = 0.85;
+  const ramp = (a, to, ms, done) => {
+    clearInterval(timers.get(a));
+    const from = a.volume, t0 = performance.now();
+    timers.set(a, setInterval(() => {
+      const p = Math.min(1, (performance.now() - t0) / ms);
+      a.volume = Math.max(0, Math.min(1, from + (to - from) * p));
+      if (p >= 1) { clearInterval(timers.get(a)); done?.(); }
+    }, 30));
+  };
+  const live = () => A[cur];
+  const start = (a) => { if (on && !held && a.src) a.play().then(() => ramp(a, VOL, 900)).catch(() => {}); };
+  return {
+    play(snd) {
+      if (!snd || snd.id === curId) return;
+      curId = snd.id; now = snd; const my = ++gen;
+      const old = live(); cur = 1 - cur; const next = live();
+      ramp(old, 0, 700, () => old.pause());
+      invoke('nd_snippet_url', { id: snd.id, at: Math.floor((snd.d || 0) * 0.4) }).then((u) => {
+        if (my !== gen) return;
+        next.pause(); next.volume = 0; next.src = u; start(next);
+      }).catch(() => {});
+    },
+    hold(h) { held = h; const a = live(); if (h) ramp(a, 0, 300, () => a.pause()); else start(a); },
+    toggle() { on = !on; try { localStorage.setItem('yirSound', on ? 'on' : 'off'); } catch {} const a = live(); if (on) start(a); else ramp(a, 0, 300, () => a.pause()); return on; },
+    get on() { return on; },
+    get now() { return now; },
+    stop() { gen++; A.forEach((a) => ramp(a, 0, 250, () => { a.pause(); a.removeAttribute('src'); a.load(); })); },
+  };
+}
+/** Pause whatever Scrappy is playing while the review plays; returns a function that resumes it. */
+async function hushMusic() {
+  const { invoke } = window.__TAURI__.core;
+  try {
+    const [p, idle] = await Promise.all([invoke('music_get', { name: 'pause' }), invoke('music_get', { name: 'idle-active' })]);
+    if (p !== false || idle !== false) return () => {};
+    await invoke('music_command', { args: ['set', 'pause', 'yes'] });
+    return () => invoke('music_command', { args: ['set', 'pause', 'no'] }).catch(() => {});
+  } catch { return () => {}; }
+}
+
 let openNow = null;
 /** Opens the Year in Review slideshow for `kind` ('abs', 'music' or 'tv') and `year`. */
 export async function openYir(kind, year) {
@@ -399,6 +466,9 @@ export async function openYir(kind, year) {
   if (!el.isConnected) return;
   if (!m || m.err) { stage.innerHTML = `<div class="y-wait">Nothing to show for ${year} yet.<button type="button" class="y-btn y-g" data-a="close">Close</button></div>`; }
   const L = m?.slides || [];
+  const snd = kind === 'music' && L.some((x) => x.snd) ? snippets() : null;
+  const unhush = snd ? await hushMusic() : () => {};
+  if (!el.isConnected) { unhush(); return; }
   let i = 0, paused = false, to = 0, left = D, t0 = 0, raf = 0;
   const arm = (ms) => { clearTimeout(to); left = ms; t0 = Date.now(); to = setTimeout(() => { if (!paused && i < L.length - 1) go(i + 1); }, ms); };
   const draw = () => {
@@ -419,6 +489,7 @@ export async function openYir(kind, year) {
     const big = s.t === 'big' || s.t === 'wall';
     stage.innerHTML = `<div class="y-bars">${L.map((_, j) => `<i class="${j < i ? 'y-done' : j === i ? 'y-cur' + (paused ? ' y-hold' : '') : ''}"></i>`).join('')}</div>
       <div class="y-shead"><span class="y-lab">${NAMES[kind]} · YOUR ${year} YEAR IN REVIEW</span><span class="y-sp"></span>
+        ${snd ? `<button type="button" class="y-ib" data-a="snd" aria-label="${snd.on ? 'Turn sound off' : 'Turn sound on'}"${tv ? ' tabindex="-1"' : ''}>${snd.on ? SVG.snd : SVG.mute}</button>` : ''}
         <button type="button" class="y-ib" data-a="pause" aria-label="${paused ? 'Play' : 'Pause'}"${tv ? ' tabindex="-1"' : ''}>${paused ? SVG.play : SVG.pause}</button>
         <button type="button" class="y-ib" data-a="close" aria-label="Close"${tv ? ' tabindex="-1"' : ''}>${SVG.close}</button></div>
       ${sum ? `<div class="y-slide">${cardHtml(kind, year, m.card)}${left}</div>` : `<div class="y-slide"><div>
@@ -435,6 +506,11 @@ export async function openYir(kind, year) {
       <button type="button" class="y-nav y-r" data-a="next" aria-label="Next">${SVG.next}</button>
       <div class="y-foot">${tv ? `<span><b>◀ ▶</b>Move</span><span><b>OK</b>${sum ? 'Select' : paused ? 'Play' : 'Pause'}</span><span><b>Back</b>Close</span>` : `<span>Moves on by itself every 7 seconds.</span><span style="flex:1"></span><span><kbd>←</kbd><kbd>→</kbd> move</span><span><kbd>Space</kbd> pause</span><span><kbd>Esc</kbd> close</span>`}</div>`;
     stage.style.setProperty('--dur', D + 'ms');
+    if (snd) {
+      snd.play(s.snd);
+      const np = snd.now;
+      if (np && !sum) stage.querySelector('.y-sp')?.insertAdjacentHTML('beforebegin', `<div class="y-np${snd.on ? '' : ' off'}" aria-hidden="true"><span class="y-eq"><i></i><i></i><i></i></span><b>${esc(np.ti)}</b><span>${esc(np.ar || '')}</span></div>`);
+    }
     // Big numbers count up.
     const n = stage.querySelector('[data-n]');
     cancelAnimationFrame(raf);
@@ -445,12 +521,14 @@ export async function openYir(kind, year) {
   const togglePause = () => {
     paused = !paused;
     if (paused) { clearTimeout(to); left = Math.max(300, left - (Date.now() - t0)); } else arm(left || D);
+    snd?.hold(paused);
     stage.querySelector('.y-cur')?.classList.toggle('y-hold', paused);
     const b = stage.querySelector('[data-a="pause"]'); if (b) { b.innerHTML = paused ? SVG.play : SVG.pause; b.setAttribute('aria-label', paused ? 'Play' : 'Pause'); }
     if (tv && L[i]?.t !== 'sum') { const f = stage.querySelectorAll('.y-foot b')[1]; if (f) f.nextSibling.textContent = paused ? 'Play' : 'Pause'; }
   };
   const close = () => {
     clearTimeout(to); cancelAnimationFrame(raf);
+    snd?.stop(); unhush();
     removeEventListener('keydown', onKey, true); removeEventListener('keyup', onKeyUp, true); removeEventListener('resize', fit);
     el.classList.add('out'); setTimeout(() => el.remove(), 250);
     openNow = null;
@@ -461,7 +539,8 @@ export async function openYir(kind, year) {
     else if (a === 'pause') togglePause();
     else if (a === 'prev') go(i - 1);
     else if (a === 'next') { if (i >= L.length - 1) close(); else go(i + 1); }
-    else if (a === 'again') { paused = false; go(0); }
+    else if (a === 'again') { if (paused) snd?.hold(false); paused = false; go(0); }
+    else if (a === 'snd' && snd) { const o = snd.toggle(); stage.querySelector('.y-np')?.classList.toggle('off', !o); btn.innerHTML = o ? SVG.snd : SVG.mute; btn.setAttribute('aria-label', o ? 'Turn sound off' : 'Turn sound on'); }
     else if (a === 'save') saveCard(kind, year, m.card, btn);
   };
   el.addEventListener('click', (e) => { const b = e.target.closest('[data-a]'); if (!b) return; act(b.dataset.a, b); if (!tv) b.blur(); });

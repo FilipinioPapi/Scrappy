@@ -1396,6 +1396,7 @@ pub fn run() {
             lyrics_find,
             nd_native_get,
             music::music_play,
+            music::nd_snippet_url,
             music::music_upnext,
             music::music_command,
             music::music_set,

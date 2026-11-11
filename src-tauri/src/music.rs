@@ -100,6 +100,17 @@ fn stream_url(state: &AppState, id: &str) -> String {
     servers::nd_url(&cfg, "stream", &format!("id={}", servers::enc(id)))
 }
 
+/// A short preview of a song for Your Year in Review, starting `at` seconds in.
+/// Navidrome converts it to mp3 so the page's own audio player can play any file.
+#[tauri::command]
+pub fn nd_snippet_url(state: State<'_, AppState>, id: String, at: u32) -> Result<String, String> {
+    let cfg = state.cfg();
+    if !cfg.nd_logged_in() {
+        return Err("ND_SESSION_EXPIRED".into());
+    }
+    Ok(servers::nd_url(&cfg, "stream", &format!("id={}&format=mp3&maxBitRate=192&timeOffset={at}", servers::enc(&id))))
+}
+
 /// Start playing `ids` from the first one. Replaces whatever was playing.
 #[tauri::command]
 pub fn music_play(app: AppHandle, state: State<'_, AppState>, ids: Vec<String>, volume: Option<f64>) -> Result<(), String> {
