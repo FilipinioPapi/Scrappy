@@ -10,8 +10,9 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 ### Preview 22 · Nov 11, 12:30 AM
 **Music**
 - Skipping tracks on the Now playing screen no longer flashes placeholder art: the old cover stays until the new one is ready, then fades in
+- Album pages show the full release date (for example "Released August 25, 2017") when the music file has it, otherwise the year as before
 
-<sub>Built from dad60fb · includes: Music</sub>
+<sub>Built from 06c734b · includes: Music</sub>
 
 ### Stable · Nov 11, 2026 (everything from Preview 1 to 21)
 **⚠️ Install this one by hand**
