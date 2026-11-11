@@ -11,7 +11,7 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 **App-wide**
 - Moving between pages (episodes, shows, menus) no longer flashes a blank page or a spinner: the old page stays until the new one is ready
 
-<sub>Built from 0127a63 · includes: page changes</sub>
+<sub>Built from e068b90 · includes: page changes</sub>
 
 ### Preview 24 · Nov 11, 1:10 AM
 **Home**
