@@ -230,6 +230,7 @@ jobs:
           # A file, so quotes and line breaks in the notes reach GitHub as written.
           $notes | Set-Content -Encoding utf8 release-notes.md
           gh release create $tag @files --title $title --notes-file release-notes.md --prerelease --target ${{ github.sha }}
+          if ($LASTEXITCODE -ne 0) { throw "Creating the '$tag' release failed (see the error above)." }
           # gh sometimes leaves the new release as an untagged draft (Nov 11). Make sure it ends up published.
           for ($i = 0; $i -lt 6; $i++) {
             $d = Get-Drafts
@@ -238,5 +239,5 @@ jobs:
             $d | ForEach-Object { gh api -X PATCH "repos/$repo/releases/$($_.id)" -F draft=false -f tag_name=$tag | Out-Null }
           }
           $live = gh api "repos/$repo/releases/tags/$tag" | ConvertFrom-Json
-          if (-not $live -or $live.draft) { throw "The '$tag' release didn't get published. Check the Releases page." }
+          if (-not $live -or $live.tag_name -ne $tag -or $live.draft) { throw "The '$tag' release didn't get published. Check the Releases page." }
           Write-Host "Published: $($live.html_url)"

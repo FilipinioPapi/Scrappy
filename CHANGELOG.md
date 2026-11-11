@@ -237,6 +237,11 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🗄️ Request service (server)
 
+### Nov 11, 12:00 AM
+- Server health explains why Audiobookshelf isn't answering: the key, or a login page in front of it
+
+<sub>Built from f7fbfae</sub>
+
 ### Nov 10, 10:33 PM
 - Server health explains the Audiobookshelf sign-in error and how to fix it (needs an Audiobookshelf API key in the Unraid settings)
 
