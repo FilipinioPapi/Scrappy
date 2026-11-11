@@ -5,6 +5,7 @@ import { esc, toast, loadingHtml } from './components.js';
 import { IC } from './mplayer.js';
 import { MI, hue } from './music.js';
 import { fanTile, fanBanner, learnColors } from './gtiles.js';
+import { loadBookmarks, bookmarksFor, onBookmarks, listHtml, wireList } from './bookmarks.js';
 import { book, playBook, toggleBook, seekBook, setFinished, onBook, absCover, absAuthorImg, hm, clock, chapterAt, BI } from './bplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -269,7 +270,7 @@ function wireMore(main, textId, btnId) {
 // ---------- One book ----------
 async function bookPage(v, id) {
   const { main, alive } = v;
-  let item = null, unsub = null, tick = null;
+  let item = null, unsub = null, tick = null, unBm = null;
   await absLoad(`/api/items/${encodeURIComponent(id)}?expanded=1&include=progress`, (it) => {
     item = it;
     const m = md(it), chapters = it.media?.chapters || [], dur = it.media?.duration || 0;
@@ -292,8 +293,11 @@ async function bookPage(v, id) {
           ${seriesOf(it) ? `<div class="kicker bk-k">SERIES</div><div class="bk-line">${esc(seriesOf(it))}</div>` : ''}
           ${(m.genres || []).length ? `<div class="kicker bk-k">GENRES</div><div class="bk-chips">${m.genres.map((g) => `<a class="bk-chip" href="${H('genre/' + encodeURIComponent(g))}">${esc(g)}</a>`).join('')}</div>` : ''}
         </div>
-        ${chapters.length ? `<div><div class="bk-chh"><h2 class="bk-h2">Chapters</h2><span class="t2">${plural(chapters.length, 'chapter')}</span></div>
-          <div class="bk-chl" id="bkChl">${chapters.map((c, i) => `<button type="button" class="bk-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div></div>` : ''}
+        <div><div class="bk-chh"><div class="bk-tabs" role="tablist">
+            ${chapters.length ? `<button type="button" role="tab" data-tab="ch">Chapters <em>${chapters.length}</em></button>` : ''}
+            <button type="button" role="tab" data-tab="bm">Bookmarks <em id="bkBmN"></em></button></div></div>
+          ${chapters.length ? `<div class="bk-chl" id="bkChl">${chapters.map((c, i) => `<button type="button" class="bk-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div>` : ''}
+          <div class="bk-chl bm-list bk-bml" id="bkBml"></div></div>
       </div>`;
     wireMore(main, 'bkDesc', 'bkDescMore');
     const here = () => book.item?.id === id && book.started;
@@ -337,6 +341,27 @@ async function bookPage(v, id) {
       const c = chapters[Number(b.dataset.i)]; if (!c) return;
       if (here()) seekBook(c.start); else playBook(id, { at: c.start });
     });
+    // Chapters / Bookmarks switch (remembered). Bookmarks come from Audiobookshelf.
+    let bmEdit = null;
+    const tabs = main.querySelectorAll('.bk-tabs [data-tab]');
+    const setTab = (k) => {
+      if (!chapters.length) k = 'bm';
+      tabs.forEach((b) => b.classList.toggle('on', b.dataset.tab === k));
+      const chl = main.querySelector('#bkChl'); if (chl) chl.hidden = k !== 'ch';
+      main.querySelector('#bkBml').hidden = k !== 'bm';
+    };
+    tabs.forEach((b) => (b.onclick = () => { try { localStorage.setItem('bkTab', b.dataset.tab); } catch {} setTab(b.dataset.tab); }));
+    const drawMarks = () => {
+      if (!alive()) { unBm?.(); return; }
+      const n = bookmarksFor(id).length;
+      main.querySelector('#bkBmN').textContent = n; main.querySelector('#bkBmN').hidden = !n;
+      const box = main.querySelector('#bkBml');
+      box.innerHTML = listHtml(id, chapters, { playBtn: true, editing: bmEdit });
+      wireList(box, id, (t) => (here() ? seekBook(t) : playBook(id, { at: t })), (t) => { bmEdit = t; drawMarks(); });
+    };
+    unBm?.(); unBm = onBookmarks(drawMarks);
+    setTab(localStorage.getItem('bkTab') === 'bm' ? 'bm' : 'ch');
+    drawMarks(); loadBookmarks();
     unsub?.(); unsub = onBook(refresh);
     // While this book plays, keep the progress and the current chapter moving.
     clearInterval(tick); tick = setInterval(() => { if (!alive()) { clearInterval(tick); unsub?.(); return; } if (here() && book.playing) refresh(); }, 1000);

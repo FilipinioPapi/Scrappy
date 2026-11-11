@@ -8,6 +8,7 @@ import { api, listen, IMG_BASE } from './api.js';
 const { emit } = window.__TAURI__.event;
 import { esc, toast } from './components.js';
 import { followHTML, followBind, followActive, followRoot, openSettings, FOLLOW_ICON, POP_ICON } from './follow.js';
+import { loadBookmarks, bookmarksFor, onBookmarks, addBookmark, listHtml, wireList, actionToast, MARK } from './bookmarks.js';
 import { mode, enterBookMode, music as M, setVolume, toggleMute, onMusic, IC } from './mplayer.js';
 
 const { invoke } = window.__TAURI__.core;
@@ -244,6 +245,7 @@ bar.innerHTML = `
   <div class="mb-right">
     <span class="bb-left" id="bbLeft"></span>
     <button type="button" class="gb bb-fa" id="bbFa" title="Follow along" aria-label="Follow along">${FOLLOW_ICON}</button>
+    <button type="button" class="gb bb-mark" id="bbMark" title="Bookmarks (B)" aria-label="Bookmarks">${MARK}<i class="bb-bn"></i></button>
     <button type="button" class="gb" id="bbChap" title="Chapters" aria-label="Chapters">${BI.chapters}</button>
     <button type="button" class="gb" id="bbMute" title="Mute" aria-label="Mute">${IC.vol}</button>
     <div class="mseek vol" id="bbVol"><div class="track"><i></i></div><b></b></div>
@@ -282,6 +284,7 @@ function draw() {
   $('bbPrev').disabled = $('bbNext').disabled = !B.chapters.length;
   $('bbChap').hidden = !B.chapters.length;
   drawSleep();
+  drawMarkBadge();
   drawProgress();
   if (pop.dataset.kind && !pop.classList.contains('off')) fillPop(pop.dataset.kind);
 }
@@ -310,6 +313,8 @@ function drawProgress() {
   const { start, end } = span();
   $('bbPos').textContent = clock(B.pos - start); $('bbRem').textContent = '-' + clock(end - B.pos);
   setFill($('bbSeek'), (B.pos - start) / Math.max(1, end - start));
+  drawTicks($('bbSeek'));
+  if (pop.dataset.kind === 'marks' && !pop.classList.contains('off')) markAt();
   if (pop.dataset.kind === 'chapters' && !pop.classList.contains('off')) markChapter();
 }
 function slider(el, onMove, onDone) {
@@ -335,6 +340,7 @@ $('bbMute').onclick = () => { toggleMute(); draw(); };
 $('bbSpd').onclick = (e) => togglePop('speed', e.currentTarget);
 $('bbSleep').onclick = (e) => togglePop('sleep', e.currentTarget);
 $('bbChap').onclick = (e) => togglePop('chapters', e.currentTarget);
+$('bbMark').onclick = (e) => togglePop('marks', e.currentTarget);
 onMusic(() => { if (mode.book) draw(); });
 bar.addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap'); });
 
@@ -420,7 +426,7 @@ function togglePop(kind, anchor) {
   if (kind === 'chapters') pop.querySelector('.cur')?.scrollIntoView({ block: 'center' });
 }
 function closePop() { pop.classList.add('off'); document.querySelectorAll('.pop-on').forEach((b) => b.classList.remove('pop-on')); }
-document.addEventListener('pointerdown', (e) => { if (!pop.classList.contains('off') && !pop.contains(e.target) && !e.target.closest('#bbSpd,#bbSleep,#bbChap,#bnSpd,#bnSleep,#tbSpd')) closePop(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.classList.contains('off') && !pop.contains(e.target) && !e.target.closest('#bbSpd,#bbSleep,#bbChap,#bbMark,#bnSpd,#bnSleep,#tbSpd,.bm-toast')) closePop(); });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 
 const STOPS = Array.from({ length: Math.round((SPEED_MAX - SPEED_MIN) / SPEED_STEP) + 1 }, (_, i) => Math.round((SPEED_MIN + i * SPEED_STEP) * 100) / 100);
@@ -458,6 +464,8 @@ function fillPop(kind) {
     const opts = [[null, 'Off'], [15, '15 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'], ['chapter', 'End of chapter']];
     pop.innerHTML = `<div class="bb-ph">Sleep timer</div>` + opts.map(([v, l]) => `<button type="button" class="bb-mi${cur === v ? ' on' : ''}" data-sl="${v ?? ''}">${l}${cur === v ? BI.check : ''}</button>`).join('');
     pop.querySelectorAll('[data-sl]').forEach((b) => (b.onclick = () => { const v = b.dataset.sl; setSleep(v === '' ? null : v === 'chapter' ? 'chapter' : Number(v)); closePop(); }));
+  } else if (kind === 'marks') {
+    fillMarks();
   } else if (kind === 'chapters') {
     if (pop.dataset.for !== B.item?.id || pop.querySelectorAll('.bb-chi').length !== B.chapters.length) {
       pop.dataset.for = B.item?.id || '';
@@ -474,12 +482,91 @@ function markChapter() {
   const n = pop.querySelector('#bbChN'); if (n) n.textContent = ci >= 0 ? `${ci + 1} of ${B.chapters.length}` : '';
 }
 
+// ---------- Bookmarks (kept in Audiobookshelf, see bookmarks.js) ----------
+let markEdit = null, markFresh = null, markKey = '';
+const markJump = (t) => { if (!B.item) return; if (!B.started) playBook(B.item.id, { at: t }); else seekBook(t); };
+function drawMarkBadge() {
+  const n = B.item ? bookmarksFor(B.item.id).length : 0;
+  const i = $('bbMark').querySelector('.bb-bn'); i.textContent = n || ''; i.hidden = !n;
+  $('bbMark').title = n ? `Bookmarks (${n}) · press B to save your spot` : 'Bookmarks · press B to save your spot';
+}
+/** Small gold ticks on a seek bar for bookmarks inside the part it shows. */
+function drawTicks(el) {
+  if (!el || !B.item) return;
+  const { start, end } = span();
+  const ts = bookmarksFor(B.item.id).map((b) => b.time).filter((t) => t >= start && t <= end);
+  const key = `${start}|${end}|${ts.join(',')}`;
+  if (el.dataset.ticks === key) return;
+  el.dataset.ticks = key;
+  el.querySelectorAll('.bm-tick').forEach((x) => x.remove());
+  ts.forEach((t) => { const x = document.createElement('span'); x.className = 'bm-tick'; x.style.left = ((t - start) / Math.max(1, end - start)) * 100 + '%'; el.appendChild(x); });
+}
+function markAt() { const a = pop.querySelector('#bmAt'); if (a) a.textContent = `Saves your spot at ${clock(B.pos)}`; const inp = pop.querySelector('#bmName'); if (inp && document.activeElement !== inp && !inp.dataset.typed) inp.value = curChapter()?.title || ''; }
+function fillMarks() {
+  if (!B.item) return;
+  const id = B.item.id, list = bookmarksFor(id);
+  const key = `${id}|${list.map((b) => b.time + ':' + b.title).join(',')}|${markEdit}|${markFresh}`;
+  if (key !== markKey || !pop.querySelector('#bmList')) {
+    markKey = key;
+    if (!pop.querySelector('#bmList') || pop.dataset.for !== 'marks:' + id) {
+      pop.dataset.for = 'marks:' + id;
+      pop.innerHTML = `<div class="bb-ph"><span>Bookmarks</span><span class="t2" id="bmN"></span></div>
+        <form class="bm-add" id="bmAdd"><input id="bmName" maxlength="120" placeholder="Name this bookmark" aria-label="Bookmark name" autocomplete="off"><button type="submit" class="btn small">${line('<path d="M12 5v14M5 12h14"/>', 16)}<span>Add</span></button></form>
+        <div class="bm-at" id="bmAt"></div>
+        <div class="bm-list" id="bmList"></div>
+        <div class="bm-sync">${line('<path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5"/>', 13)}Synced with Audiobookshelf</div>`;
+      const inp = pop.querySelector('#bmName');
+      inp.oninput = () => { inp.dataset.typed = inp.value ? '1' : ''; };
+      inp.onkeydown = (e) => e.stopPropagation();
+      pop.querySelector('#bmAdd').onsubmit = (e) => {
+        e.preventDefault();
+        saveMark(inp.value || curChapter()?.title).then(() => { inp.dataset.typed = ''; inp.value = ''; inp.blur(); markAt(); });
+      };
+    }
+    pop.querySelector('#bmN').textContent = list.length ? `${list.length} in this book` : '';
+    const box = pop.querySelector('#bmList');
+    box.innerHTML = listHtml(id, B.chapters, { editing: markEdit, fresh: markFresh });
+    wireList(box, id, markJump, (t) => { markEdit = t; fillMarks(); });
+  }
+  markAt();
+}
+async function saveMark(title) {
+  if (!B.item) return null;
+  try {
+    const t = await addBookmark(B.item.id, B.pos, title || curChapter()?.title || 'Bookmark');
+    markFresh = t; return t;
+  } catch (e) { toast(String(e), true); return null; }
+}
+/** The B key: save the spot right away, with a Rename button in the note. */
+async function quickMark() {
+  const t = await saveMark();
+  if (t == null) return;
+  actionToast(`Bookmark saved at ${clock(t)}`, 'Rename', () => {
+    markEdit = t;
+    const a = nowOpen ? null : $('bbMark');
+    if (nowOpen) { nowPane = 'marks'; drawPane(); drawNowMarks(); }
+    else if (pop.dataset.kind !== 'marks' || pop.classList.contains('off')) togglePop('marks', a); else fillMarks();
+  });
+}
+onBookmarks(() => {
+  if (!B.item) return;
+  drawMarkBadge(); drawTicks($('bbSeek'));
+  if (pop.dataset.kind === 'marks' && !pop.classList.contains('off')) fillMarks();
+  if (nowOpen) { drawTicks(n$('bnSeek')); drawNowMarks(); }
+});
+// Refresh from Audiobookshelf when a book loads and now and then (bookmarks made on the phone show up).
+let marksFor = null;
+onBook(() => { if (B.item && B.item.id !== marksFor) { marksFor = B.item.id; markEdit = markFresh = null; loadBookmarks(true); } });
+if (B.item) { marksFor = B.item.id; loadBookmarks(true); }
+setInterval(() => { if (B.item && mode.book) loadBookmarks(); }, 60000);
+
 // Space = play/pause while a book owns the player (not while typing or watching video).
 window.addEventListener('keydown', (e) => {
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
   const vp = document.getElementById('player');
   if (typing || (vp && !vp.hidden) || !mode.book) return;
   if (e.code === 'Space' && B.item && location.hash.startsWith('#/audiobooks')) { e.preventDefault(); toggleBook(); }
+  if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey && !e.altKey && B.item && (B.started || nowOpen)) { e.preventDefault(); quickMark(); }
 });
 
 // After a restart, show the last book in the bar (paused) if a book was the last thing playing.
@@ -490,7 +577,7 @@ draw();
 const now = document.createElement('div');
 now.id = 'bnow'; now.hidden = true;
 document.body.appendChild(now);
-let nowOpen = false, nowFor = null, nowPane = ['about', 'follow'].includes(localStorage.getItem('bnowPane')) ? localStorage.getItem('bnowPane') : 'chapters';
+let nowOpen = false, nowFor = null, nowPane = ['about', 'follow', 'marks'].includes(localStorage.getItem('bnowPane')) ? localStorage.getItem('bnowPane') : 'chapters';
 const plain = (html) => { const d = new DOMParser().parseFromString(String(html || ''), 'text/html'); d.querySelectorAll('br,p,div,li').forEach((n) => n.append('\n')); return (d.body.textContent || '').replace(/\n{3,}/g, '\n\n').trim(); };
 export function openBookNow(pane) {
   if (!B.item) return;
@@ -540,12 +627,18 @@ function buildNow() {
         <div class="mn-bot bn-bot"><button type="button" class="gb" id="bnMute" aria-label="Mute">${IC.vol}</button><div class="mseek vol" id="bnVol"><div class="track"><i></i></div><b></b></div>
           <span class="sp"></span>
           <button type="button" class="gb mode" data-pane="follow" title="Follow along" aria-label="Follow along">${FOLLOW_ICON}</button>
+          <button type="button" class="gb mode bn-markbtn" data-pane="marks" title="Bookmarks (B)" aria-label="Bookmarks">${MARK}<i class="bb-bn"></i></button>
           ${B.chapters.length ? `<button type="button" class="gb mode" data-pane="chapters" title="Chapters" aria-label="Chapters">${BI.chapters}</button>` : ''}
           <button type="button" class="gb mode" data-pane="about" title="About this book" aria-label="About this book">${line('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>')}</button></div>
       </div>
       <div class="bn-right">
         ${B.chapters.length ? `<div class="bn-pane" data-pane="chapters"><div class="bn-card"><div class="bn-head"><h2 class="disp">CHAPTERS</h2><span class="t2" id="bnChN"></span></div>
           <div class="bn-list" id="bnList">${B.chapters.map((c, i) => `<button type="button" class="bk-chi bn-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div></div></div>` : ''}
+        <div class="bn-pane" data-pane="marks"><div class="bn-card"><div class="bn-head"><h2 class="disp">BOOKMARKS</h2><span class="t2" id="bnMkN"></span></div>
+          <form class="bm-add" id="bnMkAdd"><input id="bnMkName" maxlength="120" placeholder="Name this bookmark" aria-label="Bookmark name" autocomplete="off"><button type="submit" class="btn small">${line('<path d="M12 5v14M5 12h14"/>', 16)}<span>Add</span></button></form>
+          <div class="bm-at" id="bnMkAt"></div>
+          <div class="bn-list bm-list" id="bnMkList"></div>
+          <div class="bm-sync">${line('<path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5"/>', 13)}Synced with Audiobookshelf</div></div></div>
         ${followHTML('now', `<button type="button" class="gb sq fa-popbtn" title="Pop out into its own window" aria-label="Pop out into its own window">${POP_ICON}</button>`)}
         <div class="bn-pane" data-pane="about"><div class="bn-card bn-about"><div class="bn-head"><h2 class="disp">ABOUT THIS BOOK</h2></div>
           <div class="bn-scroll">${desc ? `<p>${esc(desc)}</p>` : '<p class="t2">No description.</p>'}
@@ -568,7 +661,11 @@ function buildNow() {
   now.querySelectorAll('.mode[data-pane]').forEach((b) => (b.onclick = () => { nowPane = b.dataset.pane; try { localStorage.setItem('bnowPane', nowPane); } catch {} drawPane(); }));
   n$('bnList')?.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const c = B.chapters[Number(b.dataset.i)]; if (!c) return; if (!B.started) playBook(B.item.id, { at: c.start }); else seekBook(c.start); });
   now.querySelector('.fa-popbtn').onclick = popOut;
-  fBound = null; drawPane(); drawNow(true);
+  const mkIn = n$('bnMkName');
+  mkIn.oninput = () => { mkIn.dataset.typed = mkIn.value ? '1' : ''; };
+  mkIn.onkeydown = (e) => e.stopPropagation();
+  n$('bnMkAdd').onsubmit = (e) => { e.preventDefault(); saveMark(mkIn.value || curChapter()?.title).then(() => { mkIn.dataset.typed = ''; mkIn.value = ''; mkIn.blur(); }); };
+  nowMarkKey = ''; fBound = null; drawPane(); drawNow(true); drawNowMarks();
 }
 let nowDrag = false, nowCh = -2;
 function drawPane() {
@@ -594,6 +691,8 @@ function drawNow(first) {
   setFill(n$('bnVol'), M.muted ? 0 : M.volume / 100);
   const c = curChapter(), ci = chapterAt(B.chapters, B.pos);
   n$('bnCh').textContent = c?.title || '';
+  drawTicks(n$('bnSeek'));
+  const mkAt = n$('bnMkAt'); if (mkAt) { mkAt.textContent = `Saves your spot at ${clock(B.pos)}`; const mi = n$('bnMkName'); if (document.activeElement !== mi && !mi.dataset.typed) mi.value = c?.title || ''; }
   if (!nowDrag) { const { start, end } = span(); n$('bnPos').textContent = clock(B.pos - start); n$('bnRem').textContent = '-' + clock(end - B.pos); setFill(n$('bnSeek'), (B.pos - start) / Math.max(1, end - start)); }
   const f = B.duration ? B.pos / B.duration : 0;
   n$('bnBookBar').style.width = (f * 100).toFixed(2) + '%';
@@ -606,6 +705,19 @@ function drawNow(first) {
   if (ci !== nowCh) { const was = nowCh; nowCh = ci; if (!first && was !== -2) scrollCur(false); }
 }
 const plural = (n) => `${n} chapter${n === 1 ? '' : 's'}`;
+let nowMarkKey = '';
+function drawNowMarks() {
+  if (!nowOpen || !B.item) return;
+  const id = B.item.id, list = bookmarksFor(id);
+  const key = `${id}|${list.map((b) => b.time + ':' + b.title).join(',')}|${markEdit}|${markFresh}`;
+  const n = now.querySelector('.bn-markbtn .bb-bn'); if (n) { n.textContent = list.length || ''; n.hidden = !list.length; }
+  if (key === nowMarkKey) return;
+  nowMarkKey = key;
+  n$('bnMkN').textContent = list.length ? `${list.length} in this book` : '';
+  const box = n$('bnMkList');
+  box.innerHTML = listHtml(id, B.chapters, { editing: markEdit, fresh: markFresh });
+  wireList(box, id, markJump, (t) => { markEdit = t; drawNowMarks(); });
+}
 onBook(() => drawNow());
 onMusic(() => { if (mode.book) drawNow(); });
 setInterval(() => { if (nowOpen && B.playing) drawNow(); }, 1000);
