@@ -2,13 +2,16 @@
 const { invoke } = window.__TAURI__.core;
 export const { listen } = window.__TAURI__.event;
 
+// Smart home rows saved for the signed-in person; a sign-out wipes them so the next person never sees them.
+function clearRowCache() { try { Object.keys(localStorage).filter((k) => k.startsWith('hr:')).forEach((k) => localStorage.removeItem(k)); } catch {} window.dispatchEvent(new Event('scrappy:rowcache-clear')); }
+
 export const api = {
   session: () => invoke('get_session'),
   login: (server, username, password) => invoke('login', { server, username, password }),
-  logout: () => invoke('logout'),
+  logout: () => { clearRowCache(); return invoke('logout'); },
   serverCheck: (kind, address) => invoke('server_check', { kind, address }),
   serverLogin: (kind, address, username, password) => invoke('server_login', { kind, address, username, password }),
-  serverLogout: (kind) => invoke('server_logout', { kind }),
+  serverLogout: (kind) => { clearRowCache(); return invoke('server_logout', { kind }); },
   nd: (endpoint, query = '') => invoke('nd_get', { endpoint, query }),
   ndCached: (endpoint, query = '') => invoke('nd_cached', { endpoint, query }),
   abs: (path) => invoke('abs_get', { path }),

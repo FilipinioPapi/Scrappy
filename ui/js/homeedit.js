@@ -99,6 +99,7 @@ function openEditor(box, tab, rows, tabName) {
 // Smart rows remember what they showed for a while, so switching tabs draws them straight
 // away instead of rows popping in one by one (and shuffled rows don't reshuffle each visit).
 const MEM = new Map();
+window.addEventListener('scrappy:rowcache-clear', () => MEM.clear());
 export function rowCache(tab, id, ttl = 30 * 60e3) {
   const k = `hr:${tab}:${id}`;
   return {

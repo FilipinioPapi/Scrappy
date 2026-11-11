@@ -710,7 +710,7 @@ function smartMusicRows(main, alive) {
   const off = (id) => rowOff('music', id);
   const put = (sel, html) => { if (!alive()) return; const el = main.querySelector(sel); if (el) el.innerHTML = html; };
   const DAY = 864e5;
-  const row_ = (id, fetcher, render) => { if (!off(id)) cachedRow('music', id, () => fetcher().catch(() => null), render).catch(() => {}); };
+  const row_ = (id, fetcher, render, key = id) => { if (!off(id)) cachedRow('music', key, () => fetcher().catch(() => null), render).catch(() => {}); };
   // On repeat: most played songs in the last 30 days (Navidrome's dated history); if that
   // isn't available, your most played albums of all time.
   row_('onrepeat', async () => {
@@ -719,24 +719,32 @@ function smartMusicRows(main, alive) {
       const { ndHistory } = await import('./stats.js');
       const since = (Date.now() - 30 * DAY) / 1000, n = new Map();
       (await ndHistory()).forEach(([t, id]) => { if (t >= since) n.set(id, (n.get(id) || 0) + 1); });
-      ids = [...n.entries()].filter((e) => e[1] > 1).sort((a, b) => b[1] - a[1]).slice(0, 14).map((e) => e[0]);
+      ids = [...n.entries()].filter((e) => e[1] > 1).sort((a, b) => b[1] - a[1]).slice(0, 40).map((e) => e[0]);
     } catch {}
     if (ids.length >= 4) {
       const songs = (await Promise.all(ids.map((id) => nd('getSong', { id }).then((r) => r.song).catch(() => null)))).filter(Boolean);
-      return { songs: songs.map(({ id, title, artist, artistId, album, albumId, coverArt, duration, genre, year, starred }) => ({ id, title, artist, artistId, album, albumId, coverArt, duration, genre, year, starred })) };
+      // Two or more songs from one album show as that album (where its top song sits), not a run of the same cover.
+      const per = new Map(); songs.forEach((x) => per.set(x.albumId, (per.get(x.albumId) || 0) + 1));
+      const seen = new Set(), list = [];
+      for (const x of songs) {
+        if (per.get(x.albumId) > 1) { if (seen.has(x.albumId)) continue; seen.add(x.albumId); list.push({ album: { id: x.albumId, name: x.album, artist: x.artist, coverArt: x.coverArt } }); }
+        else list.push({ song: (({ id, title, artist, artistId, album, albumId, coverArt, duration, genre, year, starred }) => ({ id, title, artist, artistId, album, albumId, coverArt, duration, genre, year, starred }))(x) });
+        if (list.length >= 14) break;
+      }
+      return { mixed: list };
     }
     const r = await nd('getAlbumList2', { type: 'frequent', size: 14 });
     return { albums: r?.albumList2?.album || [] };
   }, (d) => {
-    if (d.songs) {
-      const songs = d.songs;
-      put('#hRepeat', srow('On repeat', "What you've played most in the last 30 days", songs.map((x, i) => `<a class="mcard" href="${href('album', x.albumId)}?song=${encodeURIComponent(x.id)}">
-        <div class="mcard-art">${coverHtml(x.coverArt, x.title, 300)}<button type="button" class="hoverplay" data-repeat="${i}" aria-label="Play">${IC.play}</button></div>
-        <div class="t1">${esc(x.title)}</div><div class="t2">${esc(x.artist || '')}</div></a>`).join('')));
+    if (d.mixed) {
+      const songs = d.mixed.filter((m) => m.song).map((m) => m.song);
+      put('#hRepeat', srow('On repeat', "What you've played most in the last 30 days", d.mixed.map((m) => m.album ? albumCard(m.album) : `<a class="mcard" href="${href('album', m.song.albumId)}?song=${encodeURIComponent(m.song.id)}">
+        <div class="mcard-art">${coverHtml(m.song.coverArt, m.song.title, 300)}<button type="button" class="hoverplay" data-repeat="${songs.indexOf(m.song)}" aria-label="Play">${IC.play}</button></div>
+        <div class="t1">${esc(m.song.title)}</div><div class="t2">${esc(m.song.artist || '')}</div></a>`).join('')));
       const el = main.querySelector('#hRepeat');
       if (el) el.onclick = (e) => { const b = e.target.closest('[data-repeat]'); if (!b) return; e.preventDefault(); e.stopPropagation(); playSongs(songs, +b.dataset.repeat, { shuffle: false }); };
     } else put('#hRepeat', d.albums?.length ? srow('On repeat', 'Your most played albums', d.albums.map((a) => albumCard(a)).join('')) : '');
-  });
+   }, 'onrepeat2');
   // Because you played: artists like the one you played last, using each artist's real
   // picture and album count from your library (artists with no albums here are left out).
   row_('because', async () => {
