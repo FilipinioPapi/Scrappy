@@ -7,7 +7,14 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
-### Preview 23 · Nov 11, 12:55 AM
+### Preview 24 · Nov 11, 1:10 AM
+**Home**
+- Smart home rows. Movies & TV: Next Up, Because you watched…, your top genre you haven't seen, and Watch again. Music: On repeat, Because you played…, New from artists you love, Forgotten favorites, and Albums you haven't played. Audiobooks: Because you finished… and Short listens
+- Edit home: a button at the bottom of each home page. Drag rows into any order, switch rows off, or reset. Each tab keeps its own layout
+
+<sub>Built from dc02b47 · includes: Home</sub>
+
+### Preview 23 · Nov 11, 12:49 AM
 **Music**
 - Recommended songs on playlists got a cleanup: labelled columns, and the artist, album and genre now open their pages. The year sits under the album, and Your plays shows "New to you" for songs you've never played
 - New filters: Best match, Same artists, Same genres, New to you, Your favorites. There's also an Add all button
