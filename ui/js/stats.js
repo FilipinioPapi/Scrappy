@@ -414,7 +414,7 @@ const ndImg = (id, w = 120) => (id ? `${IMG_BASE}/nd/${encodeURIComponent(id)}?w
 const { invoke } = window.__TAURI__.core;
 // Navidrome (0.59+) keeps a dated history of every play, from every app, for each user.
 // We keep a copy on disk and only ask for plays newer than the last one we have.
-async function ndHistory() {
+export async function ndHistory() {
   const me = (await api.session())?.servers?.navidrome?.user || '';
   let c = null; try { c = JSON.parse(localStorage.getItem('ndHist') || 'null'); } catch {}
   if (!c || c.u !== me) c = { u: me, l: [] };

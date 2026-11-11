@@ -2,6 +2,7 @@
 // Screens follow the approved mock-ups on the Music design canvas.
 import { api, quiet } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
+import { homeRows, rowOff } from './homeedit.js';
 import { history, music, onMusic, current, playSongs, playNext, addToQueue, playAt, removeAt, moveInQueue, clearUpNext, setFavorite, togglePlay, cover, fmt, IC } from './mplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -641,7 +642,17 @@ async function homePage(v) {
       <div class="mix" id="mix"></div>
       <div class="jump"><h2>Jump back in</h2><div class="jump-grid" id="jump"></div></div>
     </div>
-    <div id="hRecent"></div><div id="hHistory"></div><div id="hMood"></div>`;
+    <div id="hRecent" data-hrow="recent"></div><div id="hRepeat" data-hrow="onrepeat"></div><div id="hBecause" data-hrow="because"></div>
+    <div id="hNewFrom" data-hrow="newfrom"></div><div id="hForgot" data-hrow="forgotten"></div><div id="hUnplayed" data-hrow="unplayed"></div>
+    <div id="hHistory" data-hrow="history"></div><div id="hMood" data-hrow="mood"></div>`;
+  main.querySelector('.mhome-top').dataset.hrow = 'top';
+  homeRows(main, 'music', [
+    { id: 'top', label: 'Mix and Jump back in' }, { id: 'recent', label: 'Recently added' }, { id: 'onrepeat', label: 'On repeat', smart: true },
+    { id: 'because', label: 'Because you played…', smart: true }, { id: 'newfrom', label: 'New from artists you love', smart: true },
+    { id: 'forgotten', label: 'Forgotten favorites', smart: true }, { id: 'unplayed', label: "Albums you haven't played", smart: true },
+    { id: 'history', label: 'Listening history' }, { id: 'mood', label: 'What are you in the mood for?' },
+  ], 'Music');
+  smartMusicRows(main, alive);
   wireCards(main);
   // Mix card with arrows.
   let mi = 0;
@@ -692,6 +703,64 @@ async function homePage(v) {
     }, alive),
   ]).catch((e) => { if (alive()) toast(String(e), true); });
   wireMoods(main);
+}
+// ---------- Smart rows (approved mock) ----------
+const srow = (title, sub, inner) => `<section class="msec"><div class="msec-h"><h2>${esc(title)}${sub ? `<span class="smart-sub">${esc(sub)}</span>` : ''}</h2></div><div class="mrow">${inner}</div></section>`;
+function smartMusicRows(main, alive) {
+  const off = (id) => rowOff('music', id);
+  const put = (sel, html) => { if (!alive()) return; const el = main.querySelector(sel); if (el) el.innerHTML = html; };
+  const DAY = 864e5;
+  // On repeat: most played songs in the last 30 days (Navidrome's dated history); if that
+  // isn't available, your most played albums of all time.
+  if (!off('onrepeat')) (async () => {
+    let ids = [];
+    try {
+      const { ndHistory } = await import('./stats.js');
+      const since = (Date.now() - 30 * DAY) / 1000, n = new Map();
+      (await ndHistory()).forEach(([t, id]) => { if (t >= since) n.set(id, (n.get(id) || 0) + 1); });
+      ids = [...n.entries()].filter((e) => e[1] > 1).sort((a, b) => b[1] - a[1]).slice(0, 14).map((e) => e[0]);
+    } catch {}
+    if (ids.length >= 4) {
+      const songs = (await Promise.all(ids.map((id) => nd('getSong', { id }).then((r) => r.song).catch(() => null)))).filter(Boolean);
+      put('#hRepeat', srow('On repeat', "What you've played most in the last 30 days", songs.map((x, i) => `<a class="mcard" href="${href('album', x.albumId)}?song=${encodeURIComponent(x.id)}">
+        <div class="mcard-art">${coverHtml(x.coverArt, x.title, 300)}<button type="button" class="hoverplay" data-repeat="${i}" aria-label="Play">${IC.play}</button></div>
+        <div class="t1">${esc(x.title)}</div><div class="t2">${esc(x.artist || '')}</div></a>`).join('')));
+      main.querySelector('#hRepeat')?.addEventListener('click', (e) => { const b = e.target.closest('[data-repeat]'); if (!b) return; e.preventDefault(); e.stopPropagation(); playSongs(songs, +b.dataset.repeat, { shuffle: false }); });
+    } else {
+      const r = await nd('getAlbumList2', { type: 'frequent', size: 14 }).catch(() => null);
+      const al = r?.albumList2?.album || [];
+      put('#hRepeat', al.length ? srow('On repeat', 'Your most played albums', al.map((a) => albumCard(a)).join('')) : '');
+    }
+  })();
+  // Because you played: artists like the one you played last.
+  if (!off('because')) nd('getAlbumList2', { type: 'recent', size: 1 }).then(async (r) => {
+    const a = r.albumList2?.album?.[0]; if (!a?.artistId) return;
+    const info = await nd('getArtistInfo2', { id: a.artistId, count: 20 });
+    const sim = (info.artistInfo2?.similarArtist || []).filter((x) => x.id).map((x) => ({ ...x, coverArt: x.coverArt || 'ar-' + x.id }));
+    put('#hBecause', sim.length ? srow(`Because you played ${a.artist}`, 'Similar artists in your library', sim.map(artistCard).join('')) : '');
+  }).catch(() => {});
+  // New from artists you love: recently added albums by the artists you play most.
+  if (!off('newfrom')) Promise.all([nd('getAlbumList2', { type: 'frequent', size: 60 }), nd('getAlbumList2', { type: 'newest', size: 200 })]).then(([f, n]) => {
+    const fav = new Set((f.albumList2?.album || []).map((a) => a.artistId).filter(Boolean).slice(0, 30));
+    const list = (n.albumList2?.album || []).filter((a) => fav.has(a.artistId)).slice(0, 14);
+    put('#hNewFrom', list.length ? srow('New from artists you love', 'Recently added albums by artists you play a lot', list.map((a) => albumCard(a)).join('')) : '');
+  }).catch(() => {});
+  // Forgotten favorites: favorite albums (or albums of favorite songs) not played in 3+ months.
+  if (!off('forgotten')) nd('getStarred2').then((r) => {
+    const old = (p) => !p || Date.now() - new Date(p).getTime() > 90 * DAY;
+    let list = (r.starred2?.album || []).filter((a) => old(a.played));
+    if (list.length < 4) {
+      const seen = new Set(list.map((a) => a.id));
+      (r.starred2?.song || []).filter((x) => old(x.played) && x.albumId && !seen.has(x.albumId) && seen.add(x.albumId))
+        .forEach((x) => list.push({ id: x.albumId, name: x.album, artist: x.artist, coverArt: x.coverArt }));
+    }
+    list = list.sort(() => Math.random() - 0.5).slice(0, 14);
+    put('#hForgot', list.length ? srow('Forgotten favorites', "Favorites you haven't played in 3+ months", list.map((a) => albumCard(a)).join('')) : '');
+  }).catch(() => {});
+  if (!off('unplayed')) nd('getAlbumList2', { type: 'random', size: 200 }).then((r) => {
+    const list = (r.albumList2?.album || []).filter((a) => !a.playCount).slice(0, 14);
+    put('#hUnplayed', list.length ? srow("Albums you haven't played", 'Still waiting for their first spin', list.map((a) => albumCard(a)).join('')) : '');
+  }).catch(() => {});
 }
 // History cards: a little badge says what kind of thing it is, plus when you played it.
 const HB = { song: MI.note, album: MI.album, artist: MI.artist, playlist: MI.playlist, mix: IC.shuffle, genre: MI.genres };

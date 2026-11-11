@@ -1,6 +1,7 @@
 import { api, load, img, imgAny } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
+import { homeRows, rowOff } from './homeedit.js';
 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
 const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
@@ -207,18 +208,30 @@ export async function homeView(root, ctx) {
     // Keep already-loaded rows when the library list is refreshed.
     const oldRows = {};
     root.querySelectorAll('[data-row]').forEach((r) => (oldRows[r.dataset.row] = r));
+    const latest = views.filter((v) => !NO_LATEST.has(v.CollectionType));
     root.innerHTML = `
-      <div data-row="hero"><section class="hero hero-wait"></section></div>
-      <div data-row="resume"></div>
-      <section class="section">
+      <div data-row="hero" data-hrow="hero"><section class="hero hero-wait"></section></div>
+      <div data-row="resume" data-hrow="resume"></div>
+      <div data-row="nextup" data-hrow="nextup"></div>
+      <div data-row="because" data-hrow="because"></div>
+      <div data-hrow="library"><section class="section">
         <div class="section-head"><h2>Library</h2></div>
         <div class="row">${views.map(libTile).join('')}</div>
-      </section>
-      ${views.filter((v) => !NO_LATEST.has(v.CollectionType)).map((v) => `<div data-row="latest-${esc(v.Id)}"></div>`).join('')}
-      <div data-row="genres"></div>`;
+      </section></div>
+      ${latest.map((v) => `<div data-row="latest-${esc(v.Id)}" data-hrow="latest-${esc(v.Id)}"></div>`).join('')}
+      <div data-row="unseen" data-hrow="unseen"></div>
+      <div data-row="again" data-hrow="again"></div>
+      <div data-row="genres" data-hrow="genres"></div>`;
     root.querySelectorAll('[data-row]').forEach((r) => {
       if (oldRows[r.dataset.row]) r.replaceWith(oldRows[r.dataset.row]);
     });
+    homeRows(root, 'tv', [
+      { id: 'hero', label: 'Banner' }, { id: 'resume', label: 'Continue Watching' }, { id: 'nextup', label: 'Next Up', smart: true },
+      { id: 'because', label: 'Because you watched…', smart: true }, { id: 'library', label: 'Library' },
+      ...latest.map((v) => ({ id: 'latest-' + v.Id, label: 'Latest ' + v.Name })),
+      { id: 'unseen', label: "Your top genre you haven't seen", smart: true }, { id: 'again', label: 'Watch again', smart: true },
+      { id: 'genres', label: 'Browse by genre' },
+    ], 'Movies & TV');
     loadRows(root, ctx, views);
   }, ctx.alive).catch((e) => ctx.fail(e));
 }
@@ -243,6 +256,8 @@ function loadRows(root, ctx, views) {
       : '';
   }, ctx.alive).catch(() => {});
 
+  smartRows(root, ctx, q);
+
   // Libraries you've hidden from "Latest" in Emby stay hidden here too.
   api.get('/Users/{userId}').then((u) => u?.Configuration?.LatestItemsExcludes || []).catch(() => [])
     .then((excluded) => {
@@ -262,6 +277,41 @@ function loadRows(root, ctx, views) {
         }, ctx.alive).catch(() => {});
       }
     });
+}
+
+// ---------------- Smart rows (approved mock) ----------------
+function smartRow(root, slot, title, sub, items, opts) {
+  const s = root.querySelector(`[data-row="${slot}"]`);
+  if (!s) return;
+  s.innerHTML = items.length
+    ? `<section class="section"><div class="section-head"><h2>${title}${sub ? `<span class="smart-sub">${esc(sub)}</span>` : ''}</h2></div>
+        <div class="row">${items.map((i) => card(i, opts)).join('')}</div></section>`
+    : '';
+}
+function smartRows(root, ctx, q) {
+  const off = (id) => rowOff('tv', id);
+  const types = 'IncludeItemTypes=Movie,Series&Recursive=true';
+  if (!off('nextup')) load(`/Shows/NextUp?UserId={userId}&Limit=20&${q}`, (d) => smartRow(root, 'nextup', 'Next Up', 'The next episode of every show you\'re watching', d?.Items || [], { shape: 'wide', clickPlay: true }), ctx.alive).catch(() => {});
+  // Because you watched: the last thing you finished (a show, if it was an episode).
+  if (!off('because')) api.get(`/Users/{userId}/Items?Recursive=true&IncludeItemTypes=Movie,Episode&Filters=IsPlayed&SortBy=DatePlayed&SortOrder=Descending&Limit=1&Fields=SeriesId`)
+    .then(async (d) => {
+      const last = d?.Items?.[0]; if (!last) return;
+      const id = last.Type === 'Episode' ? last.SeriesId : last.Id, name = last.Type === 'Episode' ? last.SeriesName : last.Name;
+      if (!id) return;
+      const r = await api.get(`/Items/${id}/Similar?UserId={userId}&Limit=20&${q}`);
+      if (ctx.alive()) smartRow(root, 'because', `Because you watched ${esc(name || '')}`, '', (r?.Items || []).filter((i) => !i.UserData?.Played), {});
+    }).catch(() => {});
+  // Your most watched genre, things you haven't seen yet. Watch again: favorites, oldest watch first.
+  if (!off('unseen')) api.get(`/Users/{userId}/Items?${types}&Filters=IsPlayed&Fields=Genres&Limit=300`)
+    .then(async (d) => {
+      const n = new Map();
+      (d?.Items || []).forEach((i) => (i.Genres || []).forEach((g) => n.set(g, (n.get(g) || 0) + 1)));
+      const top = [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]; if (!top) return;
+      const r = await api.get(`/Users/{userId}/Items?${types}&Genres=${encodeURIComponent(top)}&Filters=IsUnplayed&SortBy=Random&Limit=20&${q}`);
+      if (ctx.alive()) smartRow(root, 'unseen', `${esc(top)} you haven't seen`, 'Your most watched genre', r?.Items || [], {});
+    }).catch(() => {});
+  if (!off('again')) load(`/Users/{userId}/Items?${types}&Filters=IsFavorite,IsPlayed&SortBy=DatePlayed&SortOrder=Ascending&Limit=20&${q}`,
+    (d) => smartRow(root, 'again', 'Watch again', "Favorites you haven't seen in a while", d?.Items || [], {}), ctx.alive).catch(() => {});
 }
 
 // ---------------- Browse by genre ----------------

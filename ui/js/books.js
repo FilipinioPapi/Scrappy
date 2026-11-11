@@ -2,6 +2,7 @@
 // Playback and the bottom bar live in bplayer.js.
 import { api } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
+import { homeRows } from './homeedit.js';
 import { IC } from './mplayer.js';
 import { MI, hue } from './music.js';
 import { fanTile, fanBanner, learnColors } from './gtiles.js';
@@ -186,15 +187,41 @@ async function homePage(v) {
   const authors = (authorsR.authors || []).slice().sort((a, b) => (b.numBooks || 0) - (a.numBooks || 0)).slice(0, 14);
   const again = [...PROG.values()].filter((p) => p.isFinished && byId.has(p.libraryItemId)).sort((a, b) => (b.finishedAt || b.lastUpdate || 0) - (a.finishedAt || a.lastUpdate || 0)).slice(0, 14).map((p) => byId.get(p.libraryItemId));
 
+  // Smart rows (approved mock). Because you finished: books you haven't started that share the
+  // author, series, narrator or genre of the last book you finished. Short listens: under 5 hours.
+  const lastDone = again[0];
+  let because = [];
+  if (lastDone) {
+    const L = md(lastDone), sn = (m) => (seriesOf({ media: { metadata: m } }) || '').replace(/ · Book .*$/, '');
+    const lg = new Set(L.genres || []), ls = sn(L);
+    because = fresh.map((it) => {
+      const m = md(it); let sc = 0;
+      if (L.authorName && m.authorName === L.authorName) sc += 3;
+      if (ls && sn(m) === ls) sc += 3;
+      if (L.narratorName && m.narratorName === L.narratorName) sc += 2;
+      (m.genres || []).forEach((g) => { if (lg.has(g)) sc += 1; });
+      return [it, sc + Math.random() * 0.5];
+    }).filter((e) => e[1] >= 1).sort((a, b) => b[1] - a[1]).slice(0, 14).map((e) => e[0]);
+  }
+  const short = all.filter((it) => { const d = it.media?.duration || 0; const p = progOf(it.id); return d > 0 && d < 5 * 3600 && !p?.isFinished; })
+    .sort(() => Math.random() - 0.5).slice(0, 14);
+  const W = (id, html) => `<div data-hrow="${id}">${html}</div>`;
   main.innerHTML = [
-    cont.length ? section('Continue listening', plural(cont.length, 'book') + ' in progress', `<div class="bk-conts">${cont.map(contCard).join('')}</div>`) : '',
-    section('Recently added', '', `<div class="mrow">${recent.map((it) => bookCard(it)).join('')}</div>`, `<a class="seeall" href="${H('library')}">See all</a>`),
-    genres.length ? section('Genres', 'From your library', `<div class="bk-genres">${genres.map(([g, l]) => genreTile(g, l)).join('')}</div>`, '', 'row-genres') : '',
-    fresh.length ? section('Discover', "Books you haven't started yet", `<div class="mrow" id="bkDisc">${pick().map((it) => bookCard(it)).join('')}</div>`, '<button type="button" class="btn secondary small" id="bkShuf">Shuffle picks</button>') : '',
-    series.length ? section('Continue a series', 'Next book in series you\'ve started', `<div class="bk-conts">${series.map((it) => seriesCard(it, it.series?.name || it.media?.metadata?.series?.name)).join('')}</div>`) : '',
-    authors.length ? section('Authors', 'Click one to see all their books', `<div class="mrow">${authors.map(authorCard).join('')}</div>`, '', 'row-authors') : '',
-    again.length ? section('Listen again', "Books you've finished", `<div class="mrow">${again.map((it) => bookCard(it)).join('')}</div>`) : '',
+    W('cont', cont.length ? section('Continue listening', plural(cont.length, 'book') + ' in progress', `<div class="bk-conts">${cont.map(contCard).join('')}</div>`) : ''),
+    W('because', because.length ? section(`Because you finished ${md(lastDone).title || ''}`, 'Same author, series, narrator or genre', `<div class="mrow">${because.map((it) => bookCard(it)).join('')}</div>`) : ''),
+    W('recent', section('Recently added', '', `<div class="mrow">${recent.map((it) => bookCard(it)).join('')}</div>`, `<a class="seeall" href="${H('library')}">See all</a>`)),
+    W('short', short.length ? section('Short listens', 'Under 5 hours', `<div class="mrow">${short.map((it) => bookCard(it)).join('')}</div>`) : ''),
+    W('genres', genres.length ? section('Genres', 'From your library', `<div class="bk-genres">${genres.map(([g, l]) => genreTile(g, l)).join('')}</div>`, '', 'row-genres') : ''),
+    W('disc', fresh.length ? section('Discover', "Books you haven't started yet", `<div class="mrow" id="bkDisc">${pick().map((it) => bookCard(it)).join('')}</div>`, '<button type="button" class="btn secondary small" id="bkShuf">Shuffle picks</button>') : ''),
+    W('series', series.length ? section('Continue a series', 'Next book in series you\'ve started', `<div class="bk-conts">${series.map((it) => seriesCard(it, it.series?.name || it.media?.metadata?.series?.name)).join('')}</div>`) : ''),
+    W('authors', authors.length ? section('Authors', 'Click one to see all their books', `<div class="mrow">${authors.map(authorCard).join('')}</div>`, '', 'row-authors') : ''),
+    W('again', again.length ? section('Listen again', "Books you've finished", `<div class="mrow">${again.map((it) => bookCard(it)).join('')}</div>`) : ''),
   ].join('');
+  homeRows(main, 'books', [
+    { id: 'cont', label: 'Continue listening' }, { id: 'because', label: 'Because you finished…', smart: true }, { id: 'recent', label: 'Recently added' },
+    { id: 'short', label: 'Short listens', smart: true }, { id: 'genres', label: 'Genres' }, { id: 'disc', label: 'Discover' },
+    { id: 'series', label: 'Continue a series' }, { id: 'authors', label: 'Authors' }, { id: 'again', label: 'Listen again' },
+  ], 'Audiobooks');
   learnColors(main);
   main.querySelector('#bkShuf')?.addEventListener('click', () => { main.querySelector('#bkDisc').innerHTML = pick().map((it) => bookCard(it)).join(''); });
   wirePlay(main);
