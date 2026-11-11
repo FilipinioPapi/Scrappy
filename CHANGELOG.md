@@ -7,6 +7,23 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Stable · Nov 11, 2026 (everything from Preview 1 to 21)
+**⚠️ Install this one by hand**
+- The previous Stable build can't update itself. Install this one once, and future updates arrive in the app
+
+**New**
+- Audiobooks: home, library, authors, series, book pages, player, bookmarks and Follow-along text
+- Stats for Movies & TV, Music and Audiobooks, and Your Year in Review with song snippets
+- Requests: ask for missing films, shows, music and audiobooks, with an admin page
+- Full Settings page, auto-updates, and opening Scrappy again brings the open window to the front
+
+**Better**
+- Video player rebuilt: smoother seeking, faster starts, subtitles in the right language, Up next, ends-at time
+- Search covers people, audiobooks and typos, with results grouped by category
+- Smoother scrolling and faster pages throughout, and lyrics that follow the song
+
+<sub>Built from the same code as Preview 21 · Preview-by-Preview details below</sub>
+
 ### Preview 21 · Nov 10, 10:45 PM
 **Movies & TV**
 - Mark watched updates the episode list straight away, with no reload or blink
