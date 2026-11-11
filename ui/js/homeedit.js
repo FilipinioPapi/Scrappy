@@ -62,7 +62,7 @@ function openEditor(box, tab, rows, tabName) {
   const byId = new Map(rows.map((r) => [r.id, r]));
   const draw = () => {
     const off = hiddenSet(tab);
-    list.innerHTML = ordered(tab, rows).map((id) => { const r = byId.get(id); return `<div class="hed-it${off.has(id) ? ' off' : ''}" draggable="true" data-id="${esc(id)}">
+    list.innerHTML = ordered(tab, rows).map((id) => { const r = byId.get(id); return `<div class="hed-it${off.has(id) ? ' off' : ''}" data-id="${esc(id)}">
       <span class="hed-grip" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/></svg></span>
       <span class="hed-n">${esc(r.label)}</span>${r.smart ? '<span class="hed-smart">Smart</span>' : ''}
       <button type="button" class="hed-sw" role="switch" aria-checked="${!off.has(id)}" aria-label="Show ${esc(r.label)}"><i></i></button></div>`; }).join('');
@@ -77,16 +77,46 @@ function openEditor(box, tab, rows, tabName) {
     it.classList.toggle('off'); sw.setAttribute('aria-checked', String(!off.has(it.dataset.id)));
     save(current(), off);
   });
-  // Drag to reorder: the row follows the pointer and the page updates when you let go.
-  let drag = null;
-  list.addEventListener('dragstart', (e) => { drag = e.target.closest('.hed-it'); if (!drag) return; drag.classList.add('drag'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', drag.dataset.id); } catch {} });
-  list.addEventListener('dragover', (e) => {
-    if (!drag) return; e.preventDefault();
-    const over = e.target.closest('.hed-it'); if (!over || over === drag) return;
-    const r = over.getBoundingClientRect();
-    list.insertBefore(drag, e.clientY < r.top + r.height / 2 ? over : over.nextSibling);
+  // Drag to reorder with the pointer (the desktop app's file-drop handling blocks the
+  // browser's own drag and drop, so this doesn't use it). The row follows the pointer,
+  // the others slide out of the way, and the page updates when you let go.
+  list.addEventListener('pointerdown', (e) => {
+    const it = e.target.closest('.hed-it');
+    if (!it || e.button !== 0 || e.target.closest('.hed-sw')) return;
+    e.preventDefault();
+    const items = () => [...list.querySelectorAll('.hed-it')];
+    const r0 = it.getBoundingClientRect(), y0 = e.clientY;
+    let moved = false;
+    // Capture on the list, not the row: moving the row in the DOM would drop its capture.
+    list.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const dy = ev.clientY - y0;
+      if (!moved && Math.abs(dy) < 4) return;
+      if (!moved) { moved = true; it.classList.add('drag'); }
+      // Swap with a neighbour once the pointer passes its middle.
+      const mid = r0.top + dy + r0.height / 2;
+      const others = items().filter((x) => x !== it);
+      let before = null;
+      for (const o of others) { const r = o.getBoundingClientRect(); if (mid < r.top + r.height / 2) { before = o; break; } }
+      const first = new Map(others.map((o) => [o, o.getBoundingClientRect().top]));
+      if (before !== it.nextElementSibling || (!before && it !== list.lastElementChild)) {
+        list.insertBefore(it, before);
+        // Slide the rows that moved instead of jumping.
+        others.forEach((o) => { const d = first.get(o) - o.getBoundingClientRect().top; if (d) o.animate([{ transform: `translateY(${d}px)` }, { transform: 'none' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' }); });
+      }
+      const now = it.getBoundingClientRect().top;
+      it.style.transform = `translateY(${r0.top + dy - now}px)`;
+    };
+    const up = () => {
+      list.removeEventListener('pointermove', move); list.removeEventListener('pointerup', up); list.removeEventListener('pointercancel', up);
+      if (!moved) return;
+      const off = parseFloat((it.style.transform.match(/-?[\d.]+/) || [0])[0]) || 0;
+      it.animate([{ transform: `translateY(${off}px)` }, { transform: 'none' }], { duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      it.style.transform = ''; it.classList.remove('drag');
+      save(current(), hiddenSet(tab));
+    };
+    list.addEventListener('pointermove', move); list.addEventListener('pointerup', up); list.addEventListener('pointercancel', up);
   });
-  list.addEventListener('dragend', () => { if (!drag) return; drag.classList.remove('drag'); drag = null; save(current(), hiddenSet(tab)); });
   const close = () => { shade.classList.add('closing'); setTimeout(() => shade.remove(), 220); window.removeEventListener('keydown', esc_); window.removeEventListener('hashchange', close); };
   const esc_ = (e) => { if (e.key === 'Escape') close(); };
   window.addEventListener('keydown', esc_); window.addEventListener('hashchange', close);
