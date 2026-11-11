@@ -25,7 +25,7 @@ No accounts of its own: Scrappy sends each person's Emby sign-in, and the servic
    Traefik: add a router for `Host(<emby host>) && PathPrefix(/requests)` pointing at port 8095.
 4. **Check it**: open `https://<your Emby address>/requests/api/health`. You should see `"ok": true` and `true` next to each server you set up.
 
-Scrappy finds the service on its own at your Emby address plus `/requests`. If you run it somewhere else, set the address in Scrappy: Settings, then Requests.
+Scrappy finds the service on its own at your Emby address plus `/requests`. If you run it somewhere else, open the Request button in Scrappy: when it can't reach the service it shows a box to type the address.
 
 ## Settings
 
