@@ -33,6 +33,8 @@ pub struct Config {
     pub abs_name: String,
     pub abs_user: String,
     pub abs_token: String,
+    /// Request service address; empty = the Emby address + /requests.
+    pub requests_url: String,
 }
 
 impl Config {

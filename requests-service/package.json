@@ -1,0 +1,10 @@
+{
+  "name": "scrappy-requests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Scrappy's request service: stores requests, searches TMDB / MusicBrainz / Audible, checks Emby, Navidrome and Audiobookshelf.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": { "start": "node src/server.js", "test": "node --test test/*.test.js" },
+  "engines": { "node": ">=22.13" }
+}

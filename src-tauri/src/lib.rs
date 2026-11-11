@@ -2,6 +2,7 @@ mod emby;
 mod follow;
 mod mpv;
 mod music;
+mod requests;
 mod servers;
 
 use emby::Config;
@@ -355,6 +356,27 @@ async fn abs_get(state: State<'_, AppState>, path: String) -> Result<Value, Stri
     let v = servers::abs_get(&state.http, &cfg, &path).await?;
     save_cache(&cache_file(&state, &format!("abs|{}|{}|{}", cfg.abs_server, cfg.abs_user, path)), &v);
     Ok(v)
+}
+
+#[tauri::command]
+async fn req_call(state: State<'_, AppState>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+    let cfg = state.cfg();
+    requests::call(&state.http, &cfg, &method, &path, body).await
+}
+
+/// Where the request service is: (address in use, whether it was set by hand).
+#[tauri::command]
+fn req_address(state: State<'_, AppState>) -> Value {
+    let c = state.cfg();
+    json!({ "address": requests::base(&c), "custom": !c.requests_url.trim().is_empty() })
+}
+
+/// Set the request service address by hand (empty = back to the Emby address + /requests).
+#[tauri::command]
+fn req_set_address(state: State<'_, AppState>, address: String) -> Result<(), String> {
+    let mut c = state.cfg.lock().unwrap();
+    c.requests_url = address.trim().trim_end_matches('/').to_string();
+    c.save(&state.cfg_path)
 }
 
 #[tauri::command]
@@ -1315,6 +1337,9 @@ pub fn run() {
             abs_get,
             abs_cached,
             abs_send,
+            req_call,
+            req_address,
+            req_set_address,
             refresh_covers,
             music::book_play,
             follow::fa_info,

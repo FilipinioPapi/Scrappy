@@ -6,6 +6,7 @@ import { booksView } from './books.js';
 import './music2.js';
 import './nowplaying.js';
 import { mountSearch, setSearchSession, searchPage } from './search.js';
+import { requestsPage, mountRequests } from './requests.js';
 import './menu.js';
 import './topfit.js';
 import { toast } from './components.js';
@@ -48,6 +49,7 @@ async function refreshSession() {
   // Every tab always shows; a tab whose server isn't signed in offers a sign-in instead.
   document.querySelectorAll('.tabs a').forEach((a) => (a.classList.toggle('off', !sv[tabFor[a.dataset.tab]]?.signedIn)));
   const pill = document.querySelector('.tab-pill'); if (pill) pill.classList.remove('ready');
+  mountRequests(session).catch(() => {});
 }
 const escapeText = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
@@ -91,7 +93,9 @@ let lastRouteName = '';
 async function route(opts = {}) {
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
-  const [, name, arg, arg2] = hash.split('/');
+  const [, rawName, arg, arg2] = hash.split('/');
+  // "#/search?q=…" and "#/requests?scope=all": the page name is the part before the "?".
+  const name = (rawName || '').split('?')[0];
   // Stats are their own section now: the old per-tab addresses move there.
   if ((name === 'music' || name === 'audiobooks') && (arg || '').split('?')[0] === 'stats') { location.replace(`#/stats/${name}`); return; }
   const statsKind = name === 'stats' ? ({ music: 'music', audiobooks: 'abs' }[arg] || 'tv') : '';
@@ -113,9 +117,10 @@ async function route(opts = {}) {
   lastRouteName = name;
   document.body.classList.toggle('tab-music', audioTab);
   // Stats act as their own section: no side bars, no bottom bar, no tab lit up.
-  document.body.classList.toggle('tab-stats', !!statsKind);
+  // Requests act the same way.
+  document.body.classList.toggle('tab-stats', !!statsKind || name === 'requests');
   document.querySelectorAll('.tabs a').forEach((a) =>
-    a.classList.toggle('active', !statsKind && a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
+    a.classList.toggle('active', !statsKind && name !== 'requests' && a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
   document.getElementById('userMenu').hidden = true;
 
@@ -143,6 +148,7 @@ async function route(opts = {}) {
     case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
     case 'person': return personView(viewEl, ctx, id);
     case 'search': return searchPage(viewEl, ctx);
+    case 'requests': return requestsPage(viewEl, ctx, (arg || '').split('?')[0], arg2 ? decodeURIComponent(arg2.split('?')[0]) : '');
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return booksView(viewEl, ctx);
     case 'stats': if (!statsSwitch) viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
