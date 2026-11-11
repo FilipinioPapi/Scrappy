@@ -6,13 +6,15 @@ const UA = 'ScrappyRequests/1.0';
 const c = cache(24 * 3600 * 1000, 3000);
 let last = 0, chain = Promise.resolve();
 
-function mb(path, params = {}) {
+function mb(path, params = {}, stale = null) {
   const u = new URL('https://musicbrainz.org/ws/2' + path);
   for (const [k, v] of Object.entries({ ...params, fmt: 'json' })) u.searchParams.set(k, v);
   const key = u.toString();
   const hit = c.get(key);
   if (hit) return Promise.resolve(hit);
   const run = chain.then(async () => {
+    // Someone typed more since this search started: skip it rather than make the next one wait.
+    if (stale?.()) throw Object.assign(new Error('A newer search replaced this one.'), { stale: true });
     const wait = last + 1100 - Date.now();
     if (wait > 0) await sleep(wait);
     last = Date.now();
@@ -48,11 +50,11 @@ const rgShape = (rg) => ({
   year: year(rg['first-release-date']), kind: kindOf(rg), kindLabel: kindLabel[kindOf(rg)], cover: cover(rg.id),
 });
 
-export async function searchMusic(q, all = false) {
+export async function searchMusic(q, all = false, stale = null) {
   // One at a time (MusicBrainz's limit), artists first since they're what people usually mean.
-  const artists = await mb('/artist', { query: q, limit: 6 });
-  const groups = await mb('/release-group', { query: `releasegroup:(${esc(q)}) OR artist:(${esc(q)})`, limit: 40 });
-  const recs = await mb('/recording', { query: `recording:(${esc(q)}) AND status:official`, limit: 25 });
+  const artists = await mb('/artist', { query: q, limit: 6 }, stale);
+  const groups = await mb('/release-group', { query: `releasegroup:(${esc(q)}) OR artist:(${esc(q)})`, limit: 40 }, stale);
+  const recs = await mb('/recording', { query: `recording:(${esc(q)}) AND status:official`, limit: 25 }, stale);
   const seen = new Set();
   const albums = (groups['release-groups'] || [])
     .filter((rg) => all || isMain(rg))

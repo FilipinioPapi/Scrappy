@@ -1,6 +1,6 @@
 // What's already on Emby, matched by TMDB number (Emby stores it for each film and show).
 import { config } from './config.js';
-import { getJson, norm } from './util.js';
+import { getJson, norm, keeper } from './util.js';
 
 const on = () => !!(config.emby.url && config.emby.apiKey);
 const get = (path) => getJson(config.emby.url + path, { headers: { 'X-Emby-Token': config.emby.apiKey, accept: 'application/json' }, timeout: 60000 });
@@ -8,7 +8,7 @@ const get = (path) => getJson(config.emby.url + path, { headers: { 'X-Emby-Token
 let index = { movies: new Map(), shows: new Map(), byName: new Map(), at: 0 };
 
 /** Re-read every film and show (ids only, so it's quick even for big libraries). */
-export async function refreshEmby() {
+async function refreshEmbyNow() {
   if (!on()) return index;
   const movies = new Map(), shows = new Map(), byName = new Map();
   let start = 0;
@@ -27,10 +27,9 @@ export async function refreshEmby() {
   index = { movies, shows, byName, at: Date.now() };
   return index;
 }
-export async function embyIndex() {
-  if (Date.now() - index.at > 5 * 60 * 1000) { try { await refreshEmby(); } catch (e) { console.warn('Emby:', e.message); } }
-  return index;
-}
+const K = keeper(refreshEmbyNow, () => index, 'Emby');
+export const refreshEmby = () => K.refresh();
+export const embyIndex = () => K.get();
 export const embyOn = on;
 
 /** Film on the server? Matches by TMDB number, then by name + year. */

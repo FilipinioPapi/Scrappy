@@ -36,3 +36,19 @@ export async function getJson(u, opts = {}) {
     return txt ? JSON.parse(txt) : null;
   } finally { clearTimeout(t); }
 }
+
+/** Library index helper: only one refresh runs at a time, and a stale index is refreshed in the
+ *  background (searches use the copy they have instead of waiting). Only the very first load waits. */
+export function keeper(refresh, getIndex, label, maxAge = 5 * 60 * 1000) {
+  let running = null, tried = 0;
+  const go = () => (running ||= (tried = Date.now(), refresh()).catch((e) => { console.warn(label + ':', e.message); return getIndex(); }).finally(() => { running = null; }));
+  return {
+    refresh: go,
+    async get() {
+      const i = getIndex();
+      if (!i.at) { if (running || Date.now() - tried > 60 * 1000) await go(); }
+      else if (Date.now() - i.at > maxAge) go();
+      return getIndex();
+    },
+  };
+}

@@ -1,7 +1,7 @@
 // What's already on Navidrome, matched by artist + album name (and song title for songs).
 import { createHash, randomBytes } from 'node:crypto';
 import { config } from './config.js';
-import { getJson, norm } from './util.js';
+import { getJson, norm, keeper } from './util.js';
 
 const on = () => !!(config.navidrome.url && config.navidrome.user && config.navidrome.pass);
 function nd(endpoint, params = {}) {
@@ -17,7 +17,7 @@ function nd(endpoint, params = {}) {
 }
 
 let index = { albums: new Map(), byArtist: new Map(), at: 0 };
-export async function refreshNavidrome() {
+async function refreshNavidromeNow() {
   if (!on()) return index;
   const albums = new Map(), byArtist = new Map();
   for (let offset = 0; offset < 200000; offset += 500) {
@@ -35,10 +35,9 @@ export async function refreshNavidrome() {
   index = { albums, byArtist, at: Date.now() };
   return index;
 }
-async function ix() {
-  if (Date.now() - index.at > 5 * 60 * 1000) { try { await refreshNavidrome(); } catch (e) { console.warn('Navidrome:', e.message); } }
-  return index;
-}
+const K = keeper(refreshNavidromeNow, () => index, 'Navidrome');
+export const refreshNavidrome = () => K.refresh();
+const ix = () => K.get();
 export const navidromeOn = on;
 
 /** Album on the server? Artist names are matched loosely ("Beyoncé" = "Beyonce", "The" ignored). */

@@ -142,6 +142,7 @@ async function requestOne(it) {
 
 // ---------- Pages ----------
 export async function requestsPage(root, ctx, sub, id) {
+  root.onclick = null; // a handler left by another requests page would catch clicks here
   try { await whoami(); } catch (e) { return fail(root, e); }
   if (sub === 'new' || !sub && location.hash.includes('/new')) return makePage(root, ctx);
   if (sub === 'collection') return groupPage(root, ctx, 'collection', id);

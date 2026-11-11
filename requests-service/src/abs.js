@@ -1,12 +1,12 @@
 // What's already on Audiobookshelf, matched by Audible number (ASIN), then title + author.
 import { config } from './config.js';
-import { getJson, norm } from './util.js';
+import { getJson, norm, keeper } from './util.js';
 
 const on = () => !!(config.abs.url && config.abs.token);
 const get = (path) => getJson(config.abs.url + path, { headers: { authorization: 'Bearer ' + config.abs.token, accept: 'application/json' }, timeout: 60000 });
 
 let index = { asin: new Map(), title: new Map(), at: 0 };
-export async function refreshAbs() {
+async function refreshAbsNow() {
   if (!on()) return index;
   const asin = new Map(), title = new Map();
   const libs = ((await get('/api/libraries')).libraries || []).filter((l) => l.mediaType === 'book');
@@ -26,10 +26,9 @@ export async function refreshAbs() {
   index = { asin, title, at: Date.now() };
   return index;
 }
-async function ix() {
-  if (Date.now() - index.at > 5 * 60 * 1000) { try { await refreshAbs(); } catch (e) { console.warn('Audiobookshelf:', e.message); } }
-  return index;
-}
+const K = keeper(refreshAbsNow, () => index, 'Audiobookshelf');
+export const refreshAbs = () => K.refresh();
+const ix = () => K.get();
 export const absOn = on;
 
 export async function findBook(asin, title, author) {

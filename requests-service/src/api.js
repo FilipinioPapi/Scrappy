@@ -124,8 +124,12 @@ async function searchTv(q) {
   return { items };
 }
 
-async function searchMusic(q, all) {
-  const r = await MB.searchMusic(q, all);
+const musicSearches = new Map(); // newest music search per person
+async function searchMusic(q, all, who = '') {
+  const n = (musicSearches.get(who) || 0) + 1; musicSearches.set(who, n);
+  let r;
+  try { r = await MB.searchMusic(q, all, () => musicSearches.get(who) !== n); }
+  catch (e) { if (e.stale) throw new HttpError(409, e.message); throw e; }
   const albumReqs = db.latestFor('album', r.albums.map((a) => a.id)), songReqs = db.latestFor('song', r.songs.map((s) => s.id));
   const albums = await Promise.all(r.albums.map(async (a) => ({ type: 'album', ...a, poster: a.cover, subtitle: [a.kind === 'album' ? '' : a.kindLabel, a.artist, a.year].filter(Boolean).join(' · '), onServer: (await findAlbum(a.artist, a.title))?.id || null, request: reqState(albumReqs, a.id), release: { out: true, label: '' } })));
   const songs = await Promise.all(r.songs.map(async (s) => {
@@ -213,7 +217,7 @@ export async function route(method, path, query, body, req) {
     if (q.length < 2) return { items: [] };
     if (query.type === 'movie') return searchMovies(q);
     if (query.type === 'tv') return searchTv(q);
-    if (query.type === 'music') return searchMusic(q, query.all === '1');
+    if (query.type === 'music') return searchMusic(q, query.all === '1', me.name);
     if (query.type === 'book') { const r = await AU.searchBooks(q); return { ...r, books: await bookCards(r.books) }; }
     throw new HttpError(400, 'Pick a category first.');
   }
