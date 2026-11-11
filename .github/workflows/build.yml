@@ -183,6 +183,20 @@ jobs:
             git merge-base --is-ancestor $old HEAD
             if ($LASTEXITCODE -ne 0) { throw "Blocked: '$tag' changed to $old during this build and this code doesn't contain it." }
           }
+          $repo = "${{ github.repository }}"
+          # Drafts with this title are leftovers from a publish that didn't finish. Clear them first.
+          function Get-Drafts { (gh api "repos/$repo/releases?per_page=50" | ConvertFrom-Json) | Where-Object { $_.draft -and $_.name -eq $title } }
+          Get-Drafts | ForEach-Object { gh api -X DELETE "repos/$repo/releases/$($_.id)" | Out-Null }
           gh release delete $tag --yes --cleanup-tag 2>$null
           $notes = "Built from ${{ github.ref_name }} at commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
           gh release create $tag Scrappy-setup.exe Scrappy-portable.zip --title $title --notes $notes --prerelease --target ${{ github.sha }}
+          # gh sometimes leaves the new release as an untagged draft (Nov 11). Make sure it ends up published.
+          for ($i = 0; $i -lt 6; $i++) {
+            $d = Get-Drafts
+            if (-not $d) { break }
+            Start-Sleep 5
+            $d | ForEach-Object { gh api -X PATCH "repos/$repo/releases/$($_.id)" -F draft=false -f tag_name=$tag | Out-Null }
+          }
+          $live = gh api "repos/$repo/releases/tags/$tag" | ConvertFrom-Json
+          if (-not $live -or $live.draft) { throw "The '$tag' release didn't get published. Check the Releases page." }
+          Write-Host "Published: $($live.html_url)"
