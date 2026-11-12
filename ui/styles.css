@@ -3493,3 +3493,7 @@ html.tv .set-seg button:focus, html.tv .set-dd:focus, html.tv .set-row .btn:focu
 html.tv .set-dd { height: 50px; min-width: 240px; max-width: 340px; font-size: 18px; border-radius: 12px; }
 html.tv .set-row .btn, html.tv .set-srv .btn { min-height: 46px; font-size: 18px; padding: 0 20px; }
 html.tv .set-ic { width: 52px; height: 52px; font-size: 20px; }
+
+/* Google TV: nothing from the app stays over the video. */
+html.tv.playing #tvrail, html.tv.playing .tvaz { display: none !important; }
+html.tv-rail.playing body { padding-left: 0; }
