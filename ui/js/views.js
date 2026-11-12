@@ -1220,8 +1220,12 @@ function renderItem(root, ctx, it, seasonId = '') {
   if (creators.length) facts.push(['Created by', creators.join(', ')]);
   if (it.Studios?.length) facts.push([isSeries ? 'Network' : 'Studio', it.Studios.map((s) => s.Name).join(', ')]);
 
+  // Google TV (approved mock): the movie's artwork fills the screen with the poster on the
+  // left; Down glides to Cast & crew, and a slim strip keeps the title in view.
+  const tvMovie = document.documentElement.classList.contains('tv') && it.Type === 'Movie';
   root.innerHTML = `
-    <div class="detail">
+    <div class="detail${tvMovie ? ' tvd' : ''}">
+      ${tvMovie ? `<div class="tvd-strip">${poster ? `<img src="${esc(poster)}" alt="">` : ''}<div><b>${esc(it.Name)}</b><span>${[it.ProductionYear, runtime(it.RunTimeTicks), resumable && it.RunTimeTicks ? `${runtime(it.RunTimeTicks - ud.PlaybackPositionTicks)} left` : ''].filter(Boolean).join(' · ')}</span></div></div>` : ''}
       <div class="backdrop">${backdrop ? `<img src="${esc(backdrop)}" alt="" onload="this.classList.add('loaded')">` : ''}</div>
       <div class="detail-main">
         <div class="detail-poster ${wide ? 'wide' : ''}">
@@ -1246,6 +1250,12 @@ function renderItem(root, ctx, it, seasonId = '') {
       <div id="similar"></div>
     </div>`;
 
+  if (tvMovie) {
+    const strip = root.querySelector('.tvd-strip'); const main = root.querySelector('.detail-main');
+    const onScroll = () => strip.classList.toggle('show', main.getBoundingClientRect().bottom < innerHeight * 0.55);
+    addEventListener('scroll', onScroll, { passive: true });
+    ctx.onLeave(() => removeEventListener('scroll', onScroll));
+  }
   root.querySelector('#backBtn').addEventListener('click', () => {
     if (history.length > 1) history.back(); else location.hash = '#/home';
   });
@@ -1542,6 +1552,12 @@ export async function personView(root, ctx, id) {
       </div>
       <section class="section" id="credits">${loadingHtml()}</section>
     </div>`;
+  if (tvMovie) {
+    const strip = root.querySelector('.tvd-strip'); const main = root.querySelector('.detail-main');
+    const onScroll = () => strip.classList.toggle('show', main.getBoundingClientRect().bottom < innerHeight * 0.55);
+    addEventListener('scroll', onScroll, { passive: true });
+    ctx.onLeave(() => removeEventListener('scroll', onScroll));
+  }
   root.querySelector('#backBtn').addEventListener('click', () => { if (history.length > 1) history.back(); else location.hash = '#/home'; });
   const box = root.querySelector('#credits');
   let views = [];

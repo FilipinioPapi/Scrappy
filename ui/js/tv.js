@@ -13,7 +13,7 @@ const inRail = (el) => !!railApi && railApi.inRail(el);
 // The PC layout is made for a window about 1440 points wide. TVs report less,
 // so scale the whole page to fit.
 const BASE_W = 1440;
-function fit() { root.style.zoom = innerWidth < BASE_W ? String(innerWidth / BASE_W) : ''; }
+function fit() { const z = innerWidth < BASE_W ? innerWidth / BASE_W : 1; root.style.zoom = z < 1 ? String(z) : ''; root.style.setProperty('--tvzoom', String(z)); }
 fit();
 addEventListener('resize', () => { root.style.zoom = ''; fit(); });
 
@@ -84,7 +84,14 @@ function glideTo(box, prop, to) {
   glides.set(box, g);
   const step = (now) => {
     const dt = Math.min(64, now - g.t); g.t = now;
-    g.pos += (g.to - g.pos) * (1 - Math.exp(-dt / 85));
+    // Ease out toward the destination, and ease in from a standstill, so a long move
+    // (a whole screen) starts gently and reads as one clean slide.
+    const far = Math.abs(g.to - g.pos);
+    let d = (g.to - g.pos) * (1 - Math.exp(-dt / (far > 320 ? 130 : 85)));
+    const cap = (g.v || 0) + 0.55 * dt;
+    if (Math.abs(d) > cap) d = Math.sign(d) * cap;
+    g.v = Math.abs(d);
+    g.pos += d;
     if (Math.abs(g.to - g.pos) < 0.6) { write(g.to); glides.delete(box); return; }
     write(g.pos);
     requestAnimationFrame(step);
@@ -110,14 +117,14 @@ function go(el) {
   if (el.closest(LAYERS)) return;
   const row = el.closest('.row, .mrow');
   const hero = el.closest('[data-row="hero"], .hero');
-  if (hero) { glideTo(window, '', 0); return; }
+  if (hero || el.closest('.tvd .detail-main')) { glideTo(window, '', 0); return; }
   if (!row) { glideTo(window, '', pageTarget(el, 'center')); return; }
   warm(row);
   const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2;
   glideTo(row, 'scrollLeft', Math.max(0, Math.min(left, row.scrollWidth - row.clientWidth)));
   const sec = row.closest('section, [data-row]') || row;
   const tall = sec.offsetHeight > (innerHeight / (parseFloat(root.style.zoom) || 1)) * 0.9;
-  glideTo(window, '', pageTarget(sec, tall ? 'start' : 'center'));
+  glideTo(window, '', pageTarget(sec, tall || sec.closest('.tvd') ? 'start' : 'center'));
 }
 
 function first(scope) {
@@ -170,7 +177,12 @@ addEventListener('keydown', (e) => {
   if (k === 'ArrowRight' && cur.closest('.set-side')) { const f = candidates(scope).find((el) => el.closest('.set-body')); if (f) go(f); return; }
   if (k === 'ArrowLeft' && cur.closest('.set-body')) { const f = nearest(cur, k, candidates(scope).filter((el) => el.closest('.set-body')), true) || document.querySelector('.set-side a.on'); if (f) { go(f); return; } }
   const next = nearest(cur, k, candidates(scope).filter((el) => !inRail(el)), scope === pageScope());
-  if (next) { go(next); return; }
+  if (next) {
+    // Coming down (or up) into a row of posters from buttons lands on the row's first one.
+    const r = next.closest('.row, .mrow');
+    if (r && (k === 'ArrowDown' || k === 'ArrowUp') && !cur.closest('.row, .mrow') && r.scrollLeft < 4) { go(candidates(r)[0] || next); return; }
+    go(next); return;
+  }
   // Nothing further left on the page: Left opens the rail on the screen you're on.
   if (k === 'ArrowLeft' && railApi && scope === pageScope()) { fromPage = cur; railApi.railCurrent()?.focus({ preventScroll: true }); }
 });

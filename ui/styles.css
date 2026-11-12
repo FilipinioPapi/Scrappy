@@ -3497,3 +3497,38 @@ html.tv .set-ic { width: 52px; height: 52px; font-size: 20px; }
 /* Google TV: nothing from the app stays over the video. */
 html.tv.playing #tvrail, html.tv.playing .tvaz { display: none !important; }
 html.tv-rail.playing body { padding-left: 0; }
+
+/* ---------- Google TV: movie page (approved mock) ---------- */
+/* Artwork fills the TV, poster on the left with the details beside it, buttons one press
+   away. Down glides to Cast & crew; a slim strip keeps the movie's name on screen. */
+html.tv .tvd { margin-top: -8px; }
+html.tv .tvd .backdrop { height: calc(100vh / var(--tvzoom, 1)); }
+html.tv .tvd .backdrop img { object-position: center top; transform: none; transition: opacity .3s linear; }
+html.tv .tvd .backdrop img.loaded { opacity: .9; }
+html.tv .tvd .backdrop::after { background: linear-gradient(to right, var(--bg) 0%, rgba(18,12,12,.92) 30%, rgba(18,12,12,.2) 70%, rgba(18,12,12,0) 100%), linear-gradient(to top, var(--bg) 0%, rgba(18,12,12,.85) 28%, rgba(18,12,12,0) 62%); }
+html.tv .tvd .detail-main { min-height: calc(100vh / var(--tvzoom, 1)); align-items: flex-end; gap: 44px; padding: 40px 90px 100px 54px; position: relative; }
+html.tv .tvd .detail-main::after { content: "▼  Cast & crew · More like this"; position: absolute; left: 54px; bottom: 34px; font-size: 15px; color: #A8979A; }
+html.tv .tvd .detail-poster { width: 256px; }
+html.tv .tvd .detail-poster .art { border-radius: 16px; animation: none; box-shadow: 0 24px 48px rgba(0,0,0,.6); }
+html.tv .tvd .detail-info { max-width: 900px; padding: 0; }
+html.tv .tvd .detail-info h1 { font-size: 60px; margin-bottom: 12px; }
+html.tv .tvd .detail-info h1.title-logo img { max-height: 150px; }
+html.tv .tvd .meta { font-size: 18px; margin-bottom: 14px; }
+html.tv .tvd .overview { font-size: 18px; max-width: 640px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; order: 1; }
+html.tv .tvd .detail-info { display: flex; flex-direction: column; align-items: flex-start; }
+html.tv .tvd .detail-info > .kicker, html.tv .tvd .detail-info > h1, html.tv .tvd .detail-info > .meta { order: 0; }
+html.tv .tvd .resume-bar { order: 2; margin: 18px 0 0; width: 320px; }
+html.tv .tvd .detail-buttons { order: 3; margin: 22px 0 0; gap: 12px; }
+html.tv .tvd #streams { order: 4; margin-top: 18px; }
+html.tv .tvd .facts, html.tv .tvd .detail-info > p { display: none; }
+html.tv .tvd .stream span { font-size: 16px; }
+html.tv .tvd .pick { height: 44px; font-size: 16px; border-radius: 999px; padding: 0 40px 0 18px; }
+html.tv .tvd #cast .section, html.tv .tvd #similar .section { padding-top: 6px; }
+.tvd-strip { display: none; }
+html.tv .tvd-strip { display: flex; align-items: center; gap: 18px; position: fixed; left: 88px; right: 0; top: 0; z-index: 12; padding: 26px 54px 34px; background: linear-gradient(var(--bg) 62%, rgba(18,12,12,0)); opacity: 0; transform: translateY(-14px); transition: opacity .22s ease-out, transform .22s ease-out; pointer-events: none; }
+html.tv .tvd-strip.show { opacity: 1; transform: none; }
+html.tv .tvd-strip img { width: 54px; height: 81px; object-fit: cover; border-radius: 8px; }
+html.tv .tvd-strip b { display: block; font-size: 30px; font-weight: 800; }
+html.tv .tvd-strip span { font-size: 15px; color: var(--muted); }
+html.tv .tvd #cast .section, html.tv .tvd #similar .section, html.tv .tvd #children .section { scroll-margin-top: 150px; }
+html.tv .tvd #similar { padding-bottom: 40vh; }
