@@ -1222,10 +1222,11 @@ function renderItem(root, ctx, it, seasonId = '') {
 
   // Google TV (approved mock): the movie's artwork fills the screen with the poster on the
   // left; Down glides to Cast & crew, and a slim strip keeps the title in view.
-  const tvMovie = document.documentElement.classList.contains('tv') && it.Type === 'Movie';
+  const tvShow = document.documentElement.classList.contains('tv') && isSeries;
+  const tvMovie = (document.documentElement.classList.contains('tv') && it.Type === 'Movie') || tvShow;
   root.innerHTML = `
-    <div class="detail${tvMovie ? ' tvd' : ''}">
-      ${tvMovie ? `<div class="tvd-strip">${poster ? `<img src="${esc(poster)}" alt="">` : ''}<div><b>${esc(it.Name)}</b><span>${[it.ProductionYear, runtime(it.RunTimeTicks), resumable && it.RunTimeTicks ? `${runtime(it.RunTimeTicks - ud.PlaybackPositionTicks)} left` : ''].filter(Boolean).join(' · ')}</span></div></div>` : ''}
+    <div class="detail${tvMovie ? ' tvd' : ''}${tvShow ? ' tvs' : ''}">
+      ${tvMovie ? `<div class="tvd-strip">${poster ? `<img src="${esc(poster)}" alt="">` : ''}<div><b>${esc(it.Name)}</b><span>${[it.ProductionYear, isSeries ? '' : runtime(it.RunTimeTicks), resumable && it.RunTimeTicks ? `${runtime(it.RunTimeTicks - ud.PlaybackPositionTicks)} left` : ''].filter(Boolean).join(' · ')}</span></div></div>` : ''}
       <div class="backdrop">${backdrop ? `<img src="${esc(backdrop)}" alt="" onload="this.classList.add('loaded')">` : ''}</div>
       <div class="detail-main">
         <div class="detail-poster ${wide ? 'wide' : ''}">
@@ -1237,7 +1238,7 @@ function renderItem(root, ctx, it, seasonId = '') {
           ${titleHtml(it)}
           <div class="meta">${detailMeta(it)}</div>
           ${resumable && it.RunTimeTicks ? `<div class="resume-bar"><i style="width:${(100 * ud.PlaybackPositionTicks / it.RunTimeTicks).toFixed(1)}%"></i></div>` : ''}
-          <div class="detail-buttons">${buttons}${canToggle ? iconButtonsHtml(it) : ''}</div>
+          <div class="detail-buttons">${buttons}${canToggle ? iconButtonsHtml(it) : ''}${tvShow ? '<button class="btn secondary" id="tvAv" hidden>Audio &amp; subtitles</button>' : ''}</div>
           ${isSeries ? '<div class="play-sub" id="playSub"></div>' : ''}
           <div id="streams">${isPlayable(it) ? streamPickersHtml(it, it) : ''}</div>
           ${it.Taglines?.[0] ? `<p><i>${esc(it.Taglines[0])}</i></p>` : ''}
@@ -1250,9 +1251,25 @@ function renderItem(root, ctx, it, seasonId = '') {
       <div id="similar"></div>
     </div>`;
 
+  // Show page on the TV (approved mock): one "Audio & subtitles" button stands in for the two pickers.
+  root.querySelector('#tvAv')?.addEventListener('click', async () => {
+    const sels = [...root.querySelectorAll('#streams select')];
+    if (!sels.length) return;
+    const { tvPick } = await import('./tvmenu.js');
+    const name = (x) => (x.closest('label, .stream')?.querySelector('span')?.textContent || x.getAttribute('aria-label') || 'Choose').trim();
+    const cur = (x) => x.options[x.selectedIndex]?.textContent.trim() || '';
+    const which = sels.length > 1 ? await tvPick('Audio & subtitles', sels.map((x) => `${name(x)} · ${cur(x)}`), -1) : 0;
+    const sel = sels[which];
+    if (which != null && sel) {
+      const opts = [...sel.options];
+      const i = await tvPick(name(sel), opts.map((o) => o.textContent.trim()), sel.selectedIndex);
+      if (i != null && sel.isConnected) { sel.value = opts[i].value; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
+    root.querySelector('#tvAv')?.focus({ preventScroll: true });
+  });
   if (tvMovie) {
     const strip = root.querySelector('.tvd-strip'); const main = root.querySelector('.detail-main');
-    const onScroll = () => strip.classList.toggle('show', main.getBoundingClientRect().bottom < innerHeight * 0.55);
+    const onScroll = () => strip.classList.toggle('show', main.getBoundingClientRect().bottom < innerHeight * (tvShow ? 0.12 : 0.55));
     addEventListener('scroll', onScroll, { passive: true });
     ctx.onLeave(() => removeEventListener('scroll', onScroll));
   }
@@ -1291,7 +1308,7 @@ async function fillSeriesButtons(root, ctx, it) {
     const q = root.querySelector('.qtags');
     if (q) q.innerHTML = qualityTags(full);
     const box = root.querySelector('#streams');
-    if (box) { box.innerHTML = streamPickersHtml(it, full); wireStreamPickers(box, it, full); }
+    if (box) { box.innerHTML = streamPickersHtml(it, full); wireStreamPickers(box, it, full); const av = root.querySelector('#tvAv'); if (av) av.hidden = !box.querySelector('select'); }
   } catch {}
 }
 
@@ -1307,7 +1324,9 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
   if (!seriesId) return;
   let selected = '';
   const viewKey = 'epView:' + seriesId;
-  let view = localStorage.getItem(viewKey) || 'list';
+  const TVS = document.documentElement.classList.contains('tv');
+  let view = localStorage.getItem(viewKey) || (TVS ? '' : 'list');
+  if (TVS && view === 'list') view = 'row';
   await load(`/Shows/${seriesId}/Seasons?UserId={userId}&Fields=${FIELDS},ChildCount`, (data) => {
     let seasons = data?.Items || [];
     // Specials go last.
@@ -1320,7 +1339,9 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       seasons[0];
     // Shows with more than one season get an "All" tab at the end: every episode in one
     // long list. The Grid layout opens on it.
-    selected = many && (selected === 'all' || (!selected && view === 'grid')) ? 'all' : pick.Id;
+    // TV: Row unless the season is long, then Grid (your own choice per show wins). Grid stays on the season.
+    if (TVS && !view) view = (pick.ChildCount || 0) > 30 ? 'grid' : 'row';
+    selected = many && (selected === 'all' || (!selected && view === 'grid' && !TVS)) ? 'all' : pick.Id;
     const total = seasons.reduce((n, s) => n + (s.ChildCount || 0), 0);
     const tabs = many
       ? `<div class="season-tabs" role="tablist">${[...seasons, { Id: 'all', Name: 'All', ChildCount: total }].map((s) => `
@@ -1330,11 +1351,11 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       : '';
     const seasonName = (id) => (id === 'all' ? 'All episodes' : (seasons.find((s) => s.Id === id) || pick).Name);
     el.innerHTML = `
-      <section class="section">
+      <section class="section${TVS ? ' tvs-eps' : ''}">
         <div class="section-head"><h2>${seasons.length > 1 ? 'Episodes' : esc(pick.Name || 'Episodes')}</h2><span class="count" id="epCount"></span><span class="spacer"></span>
-          <div class="seg" role="group" aria-label="Episode layout">${EP_VIEWS.map(([k, n, ic]) => `<button class="${k === view ? 'on' : ''}" data-view="${k}">${ic}${n}</button>`).join('')}</div>
+          <div class="seg" role="group" aria-label="Episode layout">${EP_VIEWS.filter(([k]) => !TVS || k !== 'list').map(([k, n, ic]) => `<button class="${k === view ? 'on' : ''}" data-view="${k}">${ic}${n}</button>`).join('')}</div>
         </div>
-        ${tabs}
+        ${TVS ? `<div class="tvs-bar">${tabs || `<b class="tvs-one">${esc(pick.Name || 'Episodes')}</b>`}<span class="spacer"></span><div class="seg tvs-seg" role="group" aria-label="Episode layout">${EP_VIEWS.filter(([k]) => k !== 'list').map(([k, n]) => `<button class="${k === view ? 'on' : ''}" data-view="${k}">${n}</button>`).join('')}</div></div>` : tabs}
         <div class="episodes view-${view}" id="epList"></div>
       </section>`;
     const list = el.querySelector('#epList');
@@ -1364,7 +1385,7 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       el.querySelectorAll('[data-view]').forEach((x) => x.classList.toggle('on', x === b));
       list.className = `episodes view-${view}`;
       // Picking Grid opens on All.
-      if (view === 'grid' && many && selected !== 'all') {
+      if (view === 'grid' && many && selected !== 'all' && !TVS) {
         selected = 'all';
         el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t.dataset.season === 'all'));
         setCrumb(seasonName(selected), true);
@@ -1377,7 +1398,6 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
   }, ctx.alive).catch(() => {});
 }
 
-const GRID_BLOCK = 100;
 let epListToken = 0;
 async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId, live, view = 'list') {
   const my = ++epListToken;
@@ -1404,7 +1424,7 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
       // split into blocks of 100, opening on the block with your next episode.
       const upNext = eps.find((e) => e.UserData?.PlaybackPositionTicks > 0 && !e.UserData?.Played) || eps.find((e) => !e.UserData?.Played);
       const thumb = (e, i) => `
-            <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
+            <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" ${e === upNext ? 'data-tvhere' : ''} data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
               ${card(e, { shape: 'wide', noTitle: true })}
               <span class="ep-num">${e.IndexNumber ?? '•'}</span>
               <div class="ep-name">${esc(e.Name)}</div>
@@ -1415,6 +1435,7 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
         list.innerHTML = groups.map((g) => `<div class="ep-sgroup">${head(g)}<div class="ep-grid">${g.eps.map((e) => thumb(e, i++)).join('')}</div></div>`).join('');
         return;
       }
+      const GRID_BLOCK = document.documentElement.classList.contains('tv') ? 50 : 100;
       const blocks = Math.ceil(eps.length / GRID_BLOCK);
       let block = Math.max(0, Math.floor(Math.max(0, eps.indexOf(upNext)) / GRID_BLOCK));
       const draw = () => {
@@ -1436,8 +1457,9 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
           <div class="ep-meta">${metaOf(e)}</div>
           <div class="ep-overview">${esc(e.Overview || '')}</div>
         </div>`).join('')}</div>`;
-      const cur = list.querySelector('.ep-card.current') || list.querySelector('.ep-card:has(.progress)');
-      cur?.scrollIntoView({ block: 'nearest', inline: 'start' });
+      const nextEp = eps.find((e) => e.UserData?.PlaybackPositionTicks > 0 && !e.UserData?.Played) || eps.find((e) => !e.UserData?.Played);
+      const cur = list.querySelector('.ep-card.current') || (nextEp && list.querySelector(`.ep-card[data-ep="${CSS.escape(nextEp.Id)}"]`)) || list.querySelector('.ep-card:has(.progress)');
+      if (cur) { cur.setAttribute('data-tvhere', ''); const r = cur.parentElement; r.scrollLeft = Math.max(0, cur.offsetLeft - r.offsetLeft - 4); }
     } else {
       let n = 0;
       list.innerHTML = groups.map((g) => head(g) + g.eps.map((e) => [e, n++]).map(([e, i]) => `

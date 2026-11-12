@@ -179,6 +179,14 @@ addEventListener('keydown', (e) => {
   const next = nearest(cur, k, candidates(scope).filter((el) => !inRail(el)), scope === pageScope());
   if (next) {
     // Coming down (or up) into a row of posters from buttons lands on the row's first one.
+    // Coming down into a show's episodes lands on the one you are up to.
+    const here = k === 'ArrowDown' && !cur.closest('#epList') ? next.closest('#epList')?.querySelector('[data-tvhere] .card') : null;
+    if (here) { go(here); return; }
+    // Up from the top line of an episode grid goes to its jump buttons, or the Row and Grid switch.
+    if (k === 'ArrowUp' && cur.closest('.ep-grid') && !next.closest('.ep-grid')) { const up = document.querySelector('#epList .ep-block.on') || document.querySelector('.tvs-bar .season-tab.active') || document.querySelector('.tvs-seg .on'); if (up && shown(up)) { go(up); return; } }
+    if (k === 'ArrowUp' && cur.closest('#epList') && !next.closest('#children')) { const up = document.querySelector('.tvs-bar .season-tab.active') || document.querySelector('.tvs-seg .on'); if (up && shown(up)) { go(up); return; } }
+    const tabs = (k === 'ArrowDown' || k === 'ArrowUp') ? next.closest('.season-tabs') : null;
+    if (tabs && !cur.closest('.season-tabs')) { go(tabs.querySelector('.season-tab.active') || next); return; }
     const r = next.closest('.row, .mrow');
     if (r && (k === 'ArrowDown' || k === 'ArrowUp') && !cur.closest('.row, .mrow') && r.scrollLeft < 4) { go(candidates(r)[0] || next); return; }
     go(next); return;

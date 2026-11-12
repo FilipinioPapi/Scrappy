@@ -3586,3 +3586,33 @@ html.tv .tvgen-tv .tvgen:focus { outline: 4px solid #fff; outline-offset: 4px; b
 .tvfan i { position: absolute; bottom: 0; width: 80px; height: 120px; border-radius: 9px; box-shadow: 0 10px 22px rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.22); background: linear-gradient(150deg, rgba(255,255,255,.2), rgba(0,0,0,.4)) center / cover; }
 .tvfan i:nth-child(1) { right: 62px; transform: rotate(-11deg); }
 .tvfan i:nth-child(2) { right: 4px; transform: rotate(10deg); }
+
+/* ---------- Google TV: show page (approved: short top half, seasons and episodes on the first screen, Row or Grid) ---------- */
+html.tv .tvs .backdrop { height: calc(72vh / var(--tvzoom, 1)); }
+html.tv .tvs .detail-main { min-height: 0; padding: 34px 90px 22px 54px; gap: 32px; }
+html.tv .tvs .detail-main::after { content: none; }
+html.tv .tvs .detail-poster { width: 160px; }
+html.tv .tvs .detail-info h1 { font-size: 46px; margin-bottom: 8px; }
+html.tv .tvs .detail-info h1.title-logo img { max-height: 96px; }
+html.tv .tvs .meta { margin-bottom: 8px; }
+html.tv .tvs .overview { font-size: 16px; max-width: 720px; -webkit-line-clamp: 2; }
+html.tv .tvs .detail-buttons { margin-top: 14px; }
+html.tv .tvs .play-sub { order: 4; margin-top: 10px; font-size: 15px; }
+html.tv .tvs #streams { display: none; }
+html.tv .tvs-eps { padding-top: 0; }
+html.tv .tvs-eps .section-head { display: none; }
+html.tv .tvs-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; padding-right: 64px; }
+html.tv .tvs-bar .season-tabs { margin: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+html.tv .tvs-bar .spacer { flex: 1; }
+html.tv .tvs-one { font-size: 22px; font-weight: 800; }
+html.tv .tvs-seg { display: inline-flex; flex: none; padding: 4px; gap: 0; border: 0; border-radius: 999px; background: rgba(255,255,255,.09); margin: 0; }
+html.tv .tvs-seg button { height: 38px; padding: 0 20px; border: 0; border-radius: 999px; background: none; color: #E9DADB; font: inherit; font-size: 16px; font-weight: 700; }
+html.tv .tvs-seg button.on { background: #F6E9E9; color: #120C0C; }
+html.tv .tvs-seg button:focus { outline: 3px solid #fff; outline-offset: 2px; box-shadow: none; }
+html.tv .tvs-eps .ep-row .ep-overview { display: none; }
+html.tv .tvs-eps .ep-row .ep-card { width: 300px; }
+html.tv .tvs-eps .ep-grid { grid-template-columns: repeat(7, 1fr); gap: 16px 12px; padding-right: 64px; }
+html.tv .tvs-eps .ep-blocks { gap: 10px; margin-bottom: 16px; }
+html.tv .tvs-eps .ep-block { height: 40px; padding: 0 18px; border-radius: 999px; font-size: 15px; }
+html.tv .tvs-eps .ep-thumb, html.tv .tvs-eps .ep-card { animation: none; }
+html.tv .tvs #children .section { scroll-margin-top: 20px; }
