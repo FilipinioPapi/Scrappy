@@ -359,9 +359,11 @@ def run_missing(csvs, cache, out, refresh, config_path):
         sp["songs_elsewhere"] = len(found)
         if status == "missing" and hits and len(found) == len(hits):
             where = Counter(f"{h.get('album')} ({h.get('artist')})" for h in found)
-            owned.append((sp, {"name": "; ".join(where), "artist": "", "id": ""}, "songs on other album(s)", 0, 0))
+            # Could be a single from an album you own, or a different full album. Let a human decide.
+            review.append((sp, {"name": "; ".join(where), "artist": ""}, 0, 0,
+                           "Liked songs already in your library on another album"))
         elif status == "review":
-            review.append((sp, a, r, s))
+            review.append((sp, a, r, s, "Similar album name"))
         else:
             missing.append(sp)
 
@@ -375,8 +377,10 @@ def run_missing(csvs, cache, out, refresh, config_path):
     line = lambda sp: [sp["artist"], sp["album"], sp["year"], sp["liked"], sp["bandcamp"], sp["qobuz"]]
     write_csv(os.path.join(out, "missing_albums.csv"), cols, [line(sp) for sp in missing])
     write_csv(os.path.join(out, "needs_review.csv"),
-              cols + ["Closest Navidrome album", "Navidrome artist", "Album similarity", "Artist similarity", "Liked songs already in library"],
-              [line(sp) + [a.get("name"), a.get("artist"), f"{r:.2f}", f"{s:.2f}", sp.get("songs_elsewhere", 0)] for sp, a, r, s in review])
+              cols + ["Why", "Closest Navidrome album", "Navidrome artist", "Album similarity", "Artist similarity",
+                      "Liked songs already in library"],
+              [line(sp) + [why, a.get("name"), a.get("artist"), f"{r:.2f}" if r else "", f"{s:.2f}" if s else "",
+                           sp.get("songs_elsewhere", 0)] for sp, a, r, s, why in review])
     write_csv(os.path.join(out, "owned_matches.csv"),
               ["Spotify artist", "Spotify album", "Year", "Liked songs", "Navidrome album", "Navidrome artist",
                "Matched by", "Album similarity", "Artist similarity", "Navidrome album id"],
@@ -387,10 +391,10 @@ def run_missing(csvs, cache, out, refresh, config_path):
         "Liked songs (unique)": sum(sp["liked"] for sp in sp_albums),
         "Spotify albums": len(sp_albums),
         "Owned": len(owned),
-        "  matched as album": sum(1 for o in owned if o[2] == "album"),
-        "  every liked song already on another album": sum(1 for o in owned if o[2] != "album"),
         "Missing": len(missing),
         "Needs review": len(review),
+        "  similar album name": sum(1 for x in review if x[4] == "Similar album name"),
+        "  liked songs already on another album": sum(1 for x in review if x[4] != "Similar album name"),
         "Navidrome albums": len(nd_albums),
     }
     write_md(os.path.join(out, "missing_albums.md"), stats, missing, review, csvs)
@@ -421,11 +425,11 @@ def write_md(path, stats, missing, review, csvs):
           f"[search]({sp['bandcamp']}) | [search]({sp['qobuz']}) |" for sp in missing]
     L += ["", f"## Needs review ({len(review)})", "",
           "Close but not sure. Check these by hand.", "",
-          "| Artist | Album | Year | Liked songs | Closest in Navidrome | Bandcamp | Qobuz |",
-          "|---|---|---|---:|---|---|---|"]
-    L += [f"| {md_cell(sp['artist'])} | {md_cell(sp['album'])} | {sp['year']} | {sp['liked']} | "
-          f"{md_cell(a.get('name'))} — {md_cell(a.get('artist'))} | [search]({sp['bandcamp']}) | [search]({sp['qobuz']}) |"
-          for sp, a, r, s in review]
+          "| Artist | Album | Year | Liked songs | Why | In Navidrome | Bandcamp | Qobuz |",
+          "|---|---|---|---:|---|---|---|---|"]
+    L += [f"| {md_cell(sp['artist'])} | {md_cell(sp['album'])} | {sp['year']} | {sp['liked']} | {why} | "
+          f"{md_cell(a.get('name'))}{' — ' + md_cell(a.get('artist')) if a.get('artist') else ''} | [search]({sp['bandcamp']}) | [search]({sp['qobuz']}) |"
+          for sp, a, r, s, why in review]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
 
