@@ -63,7 +63,8 @@ export const IMG_BASE = /Windows|Android/.test(navigator.userAgent) ? 'http://im
 
 // A TV draws the app at 1080p, so bigger pictures only cost time to download and open.
 const TV = /Android/.test(navigator.userAgent);
-const fitW = (w) => (TV ? Math.min(w, 1920) : w);
+// Posters and thumbnails are drawn about two thirds the PC size, so ask for smaller files.
+const fitW = (w) => (!TV ? w : w >= 1280 ? Math.min(w, 1920) : Math.ceil((w * 0.7) / 20) * 20);
 
 export function img(itemId, type, tag, width = 400, index) {
   if (!itemId || !tag) return null;
