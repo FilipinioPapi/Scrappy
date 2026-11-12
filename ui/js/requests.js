@@ -154,7 +154,11 @@ async function requestOne(it) {
 // ---------- Pages ----------
 export async function requestsPage(root, ctx, sub, id) {
   root.onclick = null; root.onchange = null; // handlers left by another requests page would catch clicks here
-  try { await whoami(); } catch (e) { return fail(root, e); }
+  // The first visit asks the request service who you are, which can take a moment:
+  // show the page loading straight away so the click doesn't look ignored.
+  if (!me) { root.innerHTML = `<div class="rq-page">${loadingHtml()}</div>`; }
+  try { await whoami(); } catch (e) { return ctx.alive() ? fail(root, e) : undefined; }
+  if (!ctx.alive()) return;
   if (sub === 'new' || !sub && location.hash.includes('/new')) return makePage(root, ctx);
   if (sub === 'collection') return groupPage(root, ctx, 'collection', id);
   if (sub === 'artist') return groupPage(root, ctx, 'artist', id);

@@ -145,13 +145,32 @@ function libEntries() {
   const live = (r) => !r.k.startsWith('pl:') || r.k.startsWith('pl:auto:') || !playlistsLoaded || known.has(r.k);
   const fresh = (r) => { if (!r.k.startsWith('pl:')) return r; const p = playlistsCache.find((x) => 'pl:' + x.id === r.k); return p ? { ...r, ...plEntry(p) } : r; };
   const seenH = new Set();
-  const rec = history().map(histEntry).filter((r) => r && !seenH.has(r.k) && seenH.add(r.k)).filter(live).map(fresh);
+  // Albums Navidrome saw you play on any device (your other PC, a phone app) join in by time.
+  const when = new Map(ndPlayed.map((a) => ['al:' + a.id, a.played ? Date.parse(a.played) : 0]));
+  const mine = history().map(histEntry).filter((r) => r && !seenH.has(r.k) && seenH.add(r.k))
+    .map((r) => (when.get(r.k) > (r.at || 0) ? { ...r, at: when.get(r.k) } : r));
+  const elsewhere = ndPlayed.filter((a) => !seenH.has('al:' + a.id) && seenH.add('al:' + a.id))
+    .map((a) => ({ k: 'al:' + a.id, t: a.name, sub: `Album · ${a.artist || ''}`, cv: a.coverArt, at: a.played ? Date.parse(a.played) : 0 }));
+  const rec = [...mine, ...elsewhere].sort((a, b) => (b.at || 0) - (a.at || 0)).filter(live).map(fresh);
   // Pinned things stay reachable even after they fall out of history.
   const kept = lib.rec.filter(live).map(fresh).filter((r) => !seenH.has(r.k));
   const seen = new Set([...rec, ...kept].map((r) => r.k));
   const extra = playlistsCache.filter((p) => !seen.has('pl:' + p.id)).map(plEntry);
   return { rec, all: [...rec, ...kept, ...extra] };
 }
+// Recently played albums from Navidrome, which counts plays per account across every device.
+let ndPlayed = [], ndPlayedAt = 0;
+function loadPlayed(force) {
+  if (!force && Date.now() - ndPlayedAt < 60000) return;
+  ndPlayedAt = Date.now();
+  nd('getAlbumList2', { type: 'recent', size: 30 }).then((r) => {
+    const list = r.albumList2?.album || [];
+    if (JSON.stringify(list.map((a) => [a.id, a.played])) === JSON.stringify(ndPlayed.map((a) => [a.id, a.played]))) return;
+    ndPlayed = list; drawLib(false);
+  }).catch(() => {});
+}
+window.addEventListener('scrappy:rowcache-clear', () => { ndPlayed = []; ndPlayedAt = 0; });
+window.addEventListener('scrappy:refresh', () => { ndPlayedAt = 0; });
 const plEntry = (p) => ({ k: 'pl:' + p.id, t: p.name, sub: `Playlist · ${plural(p.songCount, 'song')}`, cv: p.coverArt });
 window.addEventListener('music:played', () => drawLib(true));
 export const kindOf = (k) => ({ pl: 'playlist', al: 'album', ar: 'artist', sg: 'song', mx: 'mix', gn: 'genre' }[k.slice(0, 2)]);
@@ -177,7 +196,12 @@ function drawLib(animate) {
   const ok = (e) => lib.fil === 'all' || kindOf(e.k) === lib.fil;
   const pins = lib.pins.map((k) => all.find((e) => e.k === k)).filter(Boolean).filter(ok);
   // Recents: the ten most recent things you played or opened (pins sit above and don't count).
-  const rest = rec.filter((e) => !lib.pins.includes(e.k)).filter(ok).slice(0, 10);
+  let rest = rec.filter((e) => !lib.pins.includes(e.k)).filter(ok).slice(0, 10);
+  // The Playlists chip lists every playlist you have: recently played first, then the rest A-Z.
+  if (lib.fil === 'playlist') {
+    const have = new Set([...lib.pins, ...rest.map((e) => e.k)]);
+    rest = rest.concat(playlistsCache.map(plEntry).filter((e) => !have.has(e.k)).sort((a, b) => a.t.localeCompare(b.t)));
+  }
   const before = animate ? flipFirst(box) : null;
   box.innerHTML = (pins.length ? `<div class="mlsec">PINNED</div>${pins.map((e) => libItem(e, true)).join('')}<div class="mlsec">RECENTS</div>` : '')
     + rest.map((e) => libItem(e, false)).join('')
@@ -582,6 +606,7 @@ export async function musicView(root, ctx) {
   const id = decodeURIComponent(rawId);
   const params = new URLSearchParams(qs || '');
   if (!root.querySelector(':scope > .mushell')) { root.innerHTML = shellHtml(); wireShell(root); }
+  loadPlayed();
   markActive();
   const main = root.querySelector('#mmain');
   main.className = 'mmain page-' + page;
