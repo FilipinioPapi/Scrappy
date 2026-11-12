@@ -2,6 +2,7 @@
 // Screens follow the approved mock-ups on the Music design canvas.
 import { api, quiet } from './api.js';
 import { shellAttrs, headHtml, wireSize } from './sidemenu.js';
+import { autoArt, autoKind, yearOf, yearName } from './autoart.js';
 import { esc, toast, loadingHtml } from './components.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { history, music, onMusic, current, playSongs, playNext, addToQueue, playAt, removeAt, moveInQueue, clearUpNext, setFavorite, togglePlay, cover, fmt, IC } from './mplayer.js';
@@ -171,7 +172,9 @@ function loadPlayed(force) {
 }
 window.addEventListener('scrappy:rowcache-clear', () => { ndPlayed = []; ndPlayedAt = 0; });
 window.addEventListener('scrappy:refresh', () => { ndPlayedAt = 0; });
-const plEntry = (p) => ({ k: 'pl:' + p.id, t: p.name, sub: `Playlist · ${plural(p.songCount, 'song')}`, cv: p.coverArt });
+const plEntry = (p) => { const y = yearOf(p); return y ? { k: 'pl:' + p.id, t: yearName(y), sub: 'Made for you · ' + plural(p.songCount, 'song'), cv: p.coverArt, made: true } : { k: 'pl:' + p.id, t: p.name, sub: `Playlist · ${plural(p.songCount, 'song')}`, cv: p.coverArt }; };
+// The made-for-you playlists show their poster instead of a cover.
+const artOf = (e) => { if (!e.k.startsWith('pl:')) return ''; const ak = autoKind(e.k.slice(3)); if (ak) return autoArt(ak); const m = /^Your top 50 of (\d{4})$/.exec(e.t); return e.made && m ? autoArt('year', { year: m[1] }) : ''; };
 window.addEventListener('music:played', () => drawLib(true));
 export const kindOf = (k) => ({ pl: 'playlist', al: 'album', ar: 'artist', sg: 'song', mx: 'mix', gn: 'genre' }[k.slice(0, 2)]);
 const libHref = (e) => {
@@ -185,7 +188,7 @@ const libHref = (e) => {
 function libItem(e, pinned) {
   const kind = kindOf(e.k);
   return `<a class="mli${pinned ? ' pinned' : ''}" href="${libHref(e)}" data-k="${esc(e.k)}" title="${esc(e.t)}">
-    ${coverHtml(e.cv, '', 100, kind === 'artist' ? 'round' : '')}
+    ${artOf(e) || coverHtml(e.cv, '', 100, kind === 'artist' ? 'round' : '')}
     <div class="mli-txt"><div class="t1">${esc(e.t)}</div><div class="t2">${pinned ? `<span class="pinmark">${MI.pinOn}</span>` : ''}${esc(e.sub)}</div></div>
     <button type="button" class="mli-pin" data-pin="${esc(e.k)}" title="${pinned ? 'Unpin' : 'Pin to side menu'}" aria-label="${pinned ? 'Unpin' : 'Pin to side menu'}">${pinned ? MI.pinOn : MI.pin}</button>
   </a>`;
@@ -202,10 +205,15 @@ function drawLib(animate) {
     const have = new Set([...lib.pins, ...rest.map((e) => e.k)]);
     rest = rest.concat(playlistsCache.map(plEntry).filter((e) => !have.has(e.k)).sort((a, b) => a.t.localeCompare(b.t)));
   }
+  // Made-for-you playlists keep to their own heading under the Playlists chip.
+  const madeK = (e) => e.made || e.k.startsWith('pl:auto:');
+  const made = lib.fil === 'playlist' ? rest.filter(madeK) : [];
+  if (made.length) rest = rest.filter((e) => !madeK(e));
   const before = animate ? flipFirst(box) : null;
   box.innerHTML = (pins.length ? `<div class="mlsec">PINNED</div>${pins.map((e) => libItem(e, true)).join('')}<div class="mlsec">RECENTS</div>` : '')
     + rest.map((e) => libItem(e, false)).join('')
-    + (!pins.length && !rest.length ? '<div class="t2 mlempty">Nothing here yet</div>' : '');
+    + (made.length ? `<div class="mlsec">MADE FOR YOU</div>${made.map((e) => libItem(e, false)).join('')}` : '')
+    + (!pins.length && !rest.length && !made.length ? '<div class="t2 mlempty">Nothing here yet</div>' : '');
   if (before) flipLast(box, before);
   document.querySelectorAll('.mchip').forEach((c) => c.classList.toggle('on', c.dataset.f === lib.fil));
   markActive();
