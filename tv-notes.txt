@@ -3,5 +3,5 @@
 - Sign-in: the TV keyboard only opens when you press OK on the box
 - Sign-in: while typing, the question and buttons stay above the keyboard
 - Sign-in: Back no longer starts the setup over, and the screen no longer jumps
-- New sign-in with phone QR code and the taller home banner (from the last build)
+- Typing a name like movies.example.com now connects securely (https) by itself
 - Still included: smooth scrolling and the speed pass

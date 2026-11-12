@@ -104,7 +104,15 @@ pub fn http_client() -> reqwest::Client {
 pub fn normalize_server(input: &str) -> String {
     let mut s = input.trim().trim_end_matches('/').to_string();
     if !s.starts_with("http://") && !s.starts_with("https://") {
-        s = format!("http://{s}");
+        // A bare public name ("movies.example.com") gets a secure connection, so the
+        // sign-in never crosses the internet in the clear. Home addresses (numbers,
+        // a port, .local and friends) stay on plain http as before.
+        let host = s.split('/').next().unwrap_or("").to_ascii_lowercase();
+        let home = host.contains(':')
+            || !host.contains('.')
+            || host.chars().all(|c| c.is_ascii_digit() || c == '.')
+            || [".local", ".lan", ".home", ".internal", ".localdomain"].iter().any(|t| host.ends_with(t));
+        s = format!("{}://{s}", if home { "http" } else { "https" });
     }
     // If the user pasted the web app address, drop the web part.
     for suffix in ["/web/index.html", "/web"] {
