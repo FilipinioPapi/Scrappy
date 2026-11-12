@@ -551,6 +551,7 @@ function doSkip() {
 function setIdle(idle) {
   if (el.classList.contains('idle') === idle) return;
   el.classList.toggle('idle', idle);
+  if (idle && document.documentElement.classList.contains('tv') && el.contains(document.activeElement)) document.activeElement.blur();
   liftSubs(!idle);
 }
 
@@ -591,7 +592,7 @@ function wake() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     if (!S.paused && !S.dragging && !S.settingsOpen && !S.epsOpen && !S.stillOpen && !el.querySelector('.p-bottom:hover, .p-top:hover, .p-eps:hover')) setIdle(true);
-  }, 1500);
+  }, document.documentElement.classList.contains('tv') ? 5000 : 1500);
   schedulePauseInfo();
 }
 el.addEventListener('mousemove', wake);
@@ -608,6 +609,7 @@ function toggleSettings(force) {
   if (S.settingsOpen) { showDlPage(false); drawSettings(); }
   drawButtons();
   wake();
+  if (S.settingsOpen && document.documentElement.classList.contains('tv')) setTimeout(() => $('.p-settings select')?.focus({ preventScroll: true }), 60);
 }
 
 // ---------- Download subtitles from inside the player ----------
@@ -1110,6 +1112,7 @@ $('.p-vol').addEventListener('input', (e) => {
 
 // Seek bar: click or drag.
 const seek = $('.p-seek');
+if (document.documentElement.classList.contains('tv')) { seek.tabIndex = 0; seek.setAttribute('aria-label', 'Time bar'); }
 const ratioAt = (x) => {
   const r = seek.getBoundingClientRect();
   return Math.max(0, Math.min(1, (x - r.left) / r.width));
@@ -1177,6 +1180,7 @@ function toggleEps(force) {
   if (S.epsOpen) drawEps(S.item?.SeasonId);
   drawButtons();
   if (force === undefined) wake();
+  if (S.epsOpen && document.documentElement.classList.contains('tv')) { let n = 0; const t = setInterval(() => { const b = $('.p-eps-row [data-ep].cur, .p-eps-row [data-ep].now, .p-eps-row [data-ep]'); if (b || ++n > 30 || !S.epsOpen) clearInterval(t); if (b && S.epsOpen) b.focus({ preventScroll: true }); }, 100); }
 }
 
 let epsSeq = 0;
@@ -1284,8 +1288,45 @@ el.addEventListener('wheel', (e) => {
   wake();
 }, { passive: false });
 
+// ---------- Google TV: the same player, driven by the remote (approved "Player A") ----------
+// While you just watch, nothing shows: OK pauses, Left/Right skip, Up/Down bring the bar
+// up with Play highlighted. With the bar up the arrows walk the buttons (tv.js moves the
+// highlight) and OK presses them; on the time bar Left/Right scrub. Back closes whatever
+// is open, then hides the bar, then leaves the video.
+const TVP = document.documentElement.classList.contains('tv');
+const tvFocus = (sel) => { const n = typeof sel === 'string' ? $(sel) : sel; if (n) n.focus({ preventScroll: true }); };
+function tvKey(e) {
+  const k = e.key; const a = document.activeElement;
+  const inCtl = !!a && a !== el && el.contains(a);
+  const onSeek = inCtl && a.classList.contains('p-seek');
+  const card = $('.p-upnext.show') || (S.stillOpen ? $('.p-still') : null);
+  if (k === 'Escape') {
+    if (S.settingsOpen) { toggleSettings(false); tvFocus('.p-cog'); }
+    else if (S.epsOpen) { toggleEps(false); tvFocus('.p-epsbtn'); }
+    else if (!el.classList.contains('idle') && !S.paused && !card) { clearTimeout(idleTimer); setIdle(true); }
+    else exitPlayer();
+    return true;
+  }
+  if (k === ' ') { togglePause(); wake(); if (!inCtl) tvFocus('.p-play'); return true; }
+  if (k === 'n' || k === 'N') { if (S.next) playNext(); return true; }
+  // A card on screen (Up next, Still watching): the remote lands on its first button.
+  if (card && !card.contains(a)) { tvFocus(card.querySelector('button')); wake(); return true; }
+  if ((k === 'ArrowLeft' || k === 'ArrowRight') && (!inCtl || onSeek)) { seekBy(k === 'ArrowLeft' ? -skipBack() : skipFwd()); wake(); return true; }
+  if (!inCtl) {
+    if (k === 'Enter') { if (skipMode) doSkip(); else togglePause(); }
+    else if (k !== 'ArrowUp' && k !== 'ArrowDown') return false;
+    wake(); tvFocus('.p-play'); return true;
+  }
+  if (k === 'Enter' && onSeek) { togglePause(); wake(); return true; }
+  if (k === 'ArrowDown' && onSeek) { wake(); tvFocus('.p-play'); return true; }
+  wake();
+  return false; // tv.js moves the highlight; OK presses the highlighted button
+}
+
 window.addEventListener('keydown', (e) => {
   if (!S.open) return;
+  if (document.querySelector('.tvm')) return; // a TV list is open on top: it owns the remote
+  if (TVP) { if (e.key !== 'Escape' && e.target.closest?.('select')) { wake(); return; } if (tvKey(e)) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
   if (e.target.closest?.('select')) return; // let dropdowns use the arrow keys
   switch (e.key) {
     case ' ': case 'k': case 'K': togglePause(); break;

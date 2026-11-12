@@ -19,7 +19,7 @@ addEventListener('resize', () => { root.style.zoom = ''; fit(); });
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 // Things that sit on top of the page; while one is open the highlight stays inside it.
-const LAYERS = '.tvu, .tvm, .ctx-menu:not([hidden]), #player.open, .menu:not([hidden]), .tdrop:not([hidden]), [role=dialog], .modal, .sheet, .ovl';
+const LAYERS = '.tvu, .tvm, .ctx-menu:not([hidden]), #player:not([hidden]), .menu:not([hidden]), .tdrop:not([hidden]), [role=dialog], .modal, .sheet, .ovl';
 
 function shown(el) {
   const r = el.getBoundingClientRect();
@@ -215,6 +215,8 @@ let settle = 0;
 new MutationObserver(() => {
   clearTimeout(settle);
   settle = setTimeout(() => {
+    // The video player looks after its own highlight (none at all while you just watch).
+    if (root.classList.contains('playing')) return;
     const cur = document.activeElement;
     if (cur && cur !== document.body && cur.isConnected && shown(cur)) return;
     const box = last && (last.box.isConnected ? last.box : last.sel && document.querySelector(last.sel));
@@ -269,7 +271,8 @@ window.__tvBack = () => {
   const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document;
   target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
   const changed = watcher.takeRecords().some((r) => r.type === 'childList' ? (r.addedNodes.length || r.removedNodes.length) : r.target.getAttribute(r.attributeName) !== r.oldValue);
-  if (changed) return true;
+  // While a video is up, Back belongs to the player (it closes panels, hides the bar, then leaves).
+  if (changed || root.classList.contains('playing')) return true;
   // 2. Otherwise go back a screen, until you're on a tab's home screen.
   if (!TOP.has(location.hash)) { history.back(); return true; }
   return false;

@@ -1519,6 +1519,20 @@ export async function favoritesView(root, ctx) {
     const items = d?.Items || [];
     const groups = [['Movie', 'Movies'], ['Series', 'Shows'], ['Episode', 'Episodes'], ['BoxSet', 'Collections']]
       .map(([t, name]) => [name, items.filter((i) => i.Type === t)]).filter(([, l]) => l.length);
+    // Google TV (approved option A): one grid, with buttons on top to switch what it shows.
+    if (document.documentElement.classList.contains('tv') && groups.length) {
+      let cur = Math.max(0, groups.findIndex(([n]) => n === root.dataset.favTab));
+      const paint = (focus) => {
+        const [name, l] = groups[cur];
+        root.innerHTML = `<section class="section tvlib tvfav"><div class="section-head"><h2>Favorites</h2><span class="count">${l.length} ${esc(name.toLowerCase())}</span><span class="spacer"></span>
+          <div class="tvchips">${groups.map(([n], i) => `<button type="button" class="tvchip${i === cur ? ' sel' : ''}" data-fav="${i}">${esc(n)}</button>`).join('')}</div></div>
+          <div class="grid${name === 'Episodes' ? ' wide' : ''}">${l.map((i) => card(i, i.Type === 'Episode' ? { shape: 'wide' } : {})).join('')}</div></section>`;
+        root.querySelectorAll('[data-fav]').forEach((b) => b.addEventListener('click', () => { cur = Number(b.dataset.fav); root.dataset.favTab = groups[cur][0]; paint(true); }));
+        if (focus) root.querySelector('.tvchip.sel')?.focus({ preventScroll: true });
+      };
+      paint(false);
+      return;
+    }
     root.innerHTML = groups.length
       ? groups.map(([name, l], k) => `<section class="section"><div class="section-head">${k === 0 ? `<h2>Favorites <span class="h-dim">· ${esc(name)}</span></h2>` : `<h2>${esc(name)}</h2>`}<span class="count">${l.length}</span></div>
           <div class="grid">${l.map((i) => card(i, i.Type === 'Episode' ? { shape: 'wide' } : {})).join('')}</div></section>`).join('')
@@ -1552,12 +1566,6 @@ export async function personView(root, ctx, id) {
       </div>
       <section class="section" id="credits">${loadingHtml()}</section>
     </div>`;
-  if (tvMovie) {
-    const strip = root.querySelector('.tvd-strip'); const main = root.querySelector('.detail-main');
-    const onScroll = () => strip.classList.toggle('show', main.getBoundingClientRect().bottom < innerHeight * 0.55);
-    addEventListener('scroll', onScroll, { passive: true });
-    ctx.onLeave(() => removeEventListener('scroll', onScroll));
-  }
   root.querySelector('#backBtn').addEventListener('click', () => { if (history.length > 1) history.back(); else location.hash = '#/home'; });
   const box = root.querySelector('#credits');
   let views = [];
@@ -1573,6 +1581,13 @@ export async function personView(root, ctx, id) {
   };
   const draw = () => {
     if (!all.length) { box.innerHTML = '<div class="empty">Nothing on your server with them in it yet.</div>'; return; }
+    // Google TV (approved option B): one row for their movies and one for their shows.
+    if (document.documentElement.classList.contains('tv')) {
+      const seen = new Set(); const uniq = all.filter((it) => !seen.has(it.Id) && seen.add(it.Id));
+      const rows = [['Movies', uniq.filter((it) => it.Type === 'Movie')], ['Shows', uniq.filter((it) => it.Type === 'Series')]].filter(([, l]) => l.length);
+      box.innerHTML = rows.map(([name, l], k) => `<div data-row="person-${k}" class="tvp-row"><div class="section-head"><h2>${name}</h2><span class="count">${l.length}</span></div><div class="row">${l.map((it) => card(it, { shape: 'portrait', subtitle: roleOf(it) })).join('')}</div></div>`).join('');
+      return;
+    }
     const items = tab === 'all' ? all : groups.find((g) => g.v.Id === tab)?.items || [];
     box.innerHTML = `
       <div class="section-head"><h2>On your server</h2><span class="count">${all.length} title${all.length === 1 ? '' : 's'}</span></div>

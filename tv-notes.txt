@@ -1,7 +1,7 @@
 # What's new in the next Google TV build (shown on the TV's update card, 5 lines at most).
 # Plain language, one line each. Replace these with every TV build.
-- The side bar no longer stays on screen while a video plays
-- Movie and show pages open with the Play button already highlighted
-- Scrolling is one smooth glide, even when you press Down fast
-- Movies and TV grids: Sort, Show and Genre buttons, plus an A to Z strip
-- Hold OK on any poster for a quick menu
+- New movie page: big artwork, poster on the left, Down glides to Cast & crew
+- Player rebuilt for the remote: OK pauses, Left and Right skip, Back closes menus first
+- Actor and director pages are now rows of Movies and Shows
+- Favorites is one grid with Movies, Shows and Episodes buttons
+- Still included: smooth scrolling and the speed pass

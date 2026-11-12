@@ -3532,3 +3532,45 @@ html.tv .tvd-strip b { display: block; font-size: 30px; font-weight: 800; }
 html.tv .tvd-strip span { font-size: 15px; color: var(--muted); }
 html.tv .tvd #cast .section, html.tv .tvd #similar .section, html.tv .tvd #children .section { scroll-margin-top: 150px; }
 html.tv .tvd #similar { padding-bottom: 40vh; }
+
+/* ---------- Google TV: the PC player, sized and trimmed for the remote ---------- */
+/* Same look and icons as the PC. Gone: back arrow, mute, volume and full screen (the
+   remote does those) and subtitle downloads. */
+html.tv #player [data-act=exit], html.tv #player [data-act=mute], html.tv #player .p-vol, html.tv #player [data-act=fs], html.tv #player .p-sub-add, html.tv #player .p-hover { display: none !important; }
+html.tv #player .p-top { padding: 34px 48px; }
+html.tv #player .p-t1 { font-size: 30px; }
+html.tv #player .p-t2 { font-size: 18px; }
+html.tv #player .p-bottom { padding: 70px 48px 34px; }
+html.tv #player .p-cur, html.tv #player .p-dur { font-size: 18px; }
+html.tv #player .p-seek { height: 34px; border-radius: 10px; outline: none; }
+html.tv #player .p-track { height: 7px; }
+html.tv #player .p-seek:focus .p-track { height: 12px; border-radius: 6px; box-shadow: 0 0 0 3px #fff; }
+html.tv #player .p-row { gap: 14px; margin-top: 16px; }
+html.tv #player .p-btn, html.tv #player .p-pill, html.tv #player .p-speed { height: 54px; min-width: 54px; font-size: 18px; border-radius: 14px; }
+html.tv #player .p-btn span { font-size: 18px; }
+html.tv #player .p-btn svg { width: 26px; height: 26px; }
+html.tv #player .p-play { width: 72px; height: 72px; }
+html.tv #player .p-play svg { width: 32px; height: 32px; }
+html.tv #player .p-ends { font-size: 17px; }
+html.tv #player button:focus, html.tv #player select:focus { outline: 3px solid #fff; outline-offset: 3px; box-shadow: none; }
+html.tv #player .p-settings { width: 520px; right: 48px; bottom: 150px; padding: 22px; border-radius: 20px; max-height: calc(100vh / var(--tvzoom, 1) - 190px); gap: 12px; }
+html.tv #player .p-set-head b { font-size: 22px; }
+html.tv #player .p-settings label { font-size: 16px; }
+html.tv #player .p-settings select { height: 52px; font-size: 18px; border-radius: 12px; }
+html.tv #player .p-settings label:has([data-set=skipBack]), html.tv #player .p-settings label:has([data-set=skipFwd]) { display: none; }
+html.tv #player .p-ep { width: 260px; }
+html.tv #player .p-ep:focus { outline: 3px solid #fff; outline-offset: 4px; border-radius: 12px; }
+html.tv #player .p-skip, html.tv #player .p-upnext .btn, html.tv #player .p-still .btn { font-size: 19px; min-height: 52px; }
+
+/* ---------- Google TV: actor or director page (approved B) and Favorites (approved A) ---------- */
+html.tv .person-page .detail-main { align-items: center; gap: 28px; padding: 44px 54px 10px; }
+html.tv .person-page .detail-poster { width: 150px; }
+html.tv .person-page .detail-poster .art { aspect-ratio: 1; border-radius: 50%; animation: none; }
+html.tv .person-page h1 { font-size: 50px; margin: 0 0 4px; }
+html.tv .person-page .meta { font-size: 18px; margin: 0; }
+html.tv .person-page .bio { display: none; }
+html.tv .person-page #credits { padding-top: 8px; }
+html.tv .tvp-row { margin-bottom: 26px; }
+html.tv .tvp-row .section-head h2 { font-size: 26px; }
+.tvchip.sel { background: var(--red); color: #fff; }
+html.tv .tvchip.sel:focus { background: #F6E9E9; color: #120C0C; }
