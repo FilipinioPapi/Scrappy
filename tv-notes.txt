@@ -2,5 +2,6 @@
 # Plain language, one line each. Replace these with every TV build.
 - New side rail: press Left for Search, Home, your libraries, Music, Audiobooks and Settings
 - New Search screen made for the TV keyboard and voice
-- Left and Right stay on the row you're on
-- Home opens on the banner, with a taller picture
+- Smoother scrolling: rows no longer snap or jolt, and holding a direction keeps up
+- Faster screens: the PC speed pass plus lighter effects and pictures loaded ahead
+- Home opens on the banner, and Left and Right stay on your row

@@ -3418,3 +3418,15 @@ html.tv .tvs .grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)
 html.tv .tvs-person .art { border-radius: 50%; aspect-ratio: 1; }
 html.tv-rail .hero { height: 66vh; max-height: none; }
 html.tv .hero-arrow { display: none !important; }
+
+/* ---------- Google TV: speed ---------- */
+/* TV chips are slow at shadows, fades and snapping, so screens just appear and rows
+   go exactly where the remote sends them. */
+html.tv .row, html.tv .mrow { scroll-snap-type: none; scroll-behavior: auto; }
+html.tv #view.entering > *, html.tv #view.entering .mmain > *, html.tv #view.entering.tabswap .mmain { animation: none !important; }
+html.tv .card, html.tv .section, html.tv .genre-row .card { animation: none !important; }
+html.tv .card:focus .art { box-shadow: 0 0 0 3px var(--red); }
+html.tv .card .art { box-shadow: none; }
+html.tv .card .art img { transition: opacity .12s linear; }
+html.tv .card:hover .art { transform: none; }
+html.tv .card:focus .art { transform: translateY(-4px) scale(1.04); }
