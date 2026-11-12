@@ -75,6 +75,8 @@ async function getPolicy() {
 window.addEventListener('hashchange', () => { if (location.hash === '#/login') policy = null; });
 
 function rights(pol, it) {
+  // Google TV: editing, deleting and subtitle downloads stay on the PC (approved).
+  if (document.documentElement.classList.contains('tv')) return { canEdit: false, canDelete: false, canSubs: false };
   const admin = !!pol.IsAdministrator;
   // Emby names the "manage library" permission differently across versions.
   const manageFlag = Object.entries(pol).some(([k, v]) => v === true && /metadata|librarymanage|managelibrary|contentmanage/i.test(k));

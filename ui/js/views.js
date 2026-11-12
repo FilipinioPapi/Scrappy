@@ -852,15 +852,24 @@ export async function libraryView(root, ctx, id, genreId = '') {
   let sortIdx = Number(localStorage.getItem(sortKey) || 0);
   if (!SORTS[sortIdx]) sortIdx = 0;
 
+  // Google TV (approved mock): Sort / Show / Genre chips that open a short list, and an
+  // A to Z strip down the right side instead of the PC's drop-down.
+  const TV = document.documentElement.classList.contains('tv');
+  const SHOWS = [['Everything', ''], ['Unwatched', '&IsPlayed=false'], ['Favorites', '&IsFavorite=true']];
+  const TVSORTS = TV ? [...SORTS, ['Random', 'Ascending', 'Random']] : SORTS;
+  let showIdx = 0, tvGenre = null, letter = '';
+  const chip = (k, name, val) => `<button type="button" class="tvchip" data-chip="${k}"${k === 'sort' ? ' data-tvfirst' : ''}>${name} <em>${esc(val)}</em></button>`;
+  const chipsHtml = () => chip('sort', 'Sort', TVSORTS[sortIdx][2]) + chip('show', 'Show', SHOWS[showIdx][0]) + (genreId ? '' : chip('genre', 'Genre', tvGenre ? tvGenre.Name : 'Any'));
   root.innerHTML = `
-    <section class="section">
+    <section class="section${TV ? ' tvlib' : ''}">
       <div class="section-head">
         <h2>${genre ? `${esc(genre.Name)} <span class="h-dim">· ${esc(view.Name)}</span>` : esc(view.Name)}</h2><span class="count" id="count"></span>
         <span class="spacer"></span>
-        <select id="sort">${SORTS.map((s, i) => `<option value="${i}" ${i === sortIdx ? 'selected' : ''}>${s[2]}</option>`).join('')}</select>
+        ${TV ? `<div class="tvchips" id="tvchips">${chipsHtml()}</div>` : `<select id="sort">${SORTS.map((s, i) => `<option value="${i}" ${i === sortIdx ? 'selected' : ''}>${s[2]}</option>`).join('')}</select>`}
       </div>
       <div class="grid" id="grid"></div>
       <div class="sentinel" id="sentinel"></div>
+      ${TV ? `<div class="tvaz" id="tvaz">${'#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l) => `<button type="button" data-l="${l}">${l}</button>`).join('')}</div>` : ''}
     </section>`;
   const grid = root.querySelector('#grid');
   const count = root.querySelector('#count');
@@ -869,8 +878,10 @@ export async function libraryView(root, ctx, id, genreId = '') {
   let start = 0, total = Infinity, busy = false, gen = 0;
 
   const base = () => {
-    const [by, order] = SORTS[sortIdx];
-    return `/Users/{userId}/Items?ParentId=${id}&${libraryQuery(view)}${genreId ? `&GenreIds=${genreId}` : ''}&SortBy=${by},SortName&SortOrder=${order}&Fields=${FIELDS}&${IMG_OPTS}&Limit=${PAGE}`;
+    const [by, order] = TVSORTS[sortIdx];
+    const gid = genreId || tvGenre?.Id || '';
+    const tv = TV ? `${SHOWS[showIdx][1]}${letter && by === 'SortName' ? `&NameStartsWithOrGreater=${letter}` : ''}` : '';
+    return `/Users/{userId}/Items?ParentId=${id}&${libraryQuery(view)}${gid ? `&GenreIds=${gid}` : ''}${tv}&SortBy=${by}${by === 'Random' ? '' : ',SortName'}&SortOrder=${order}&Fields=${FIELDS}&${IMG_OPTS}&Limit=${PAGE}`;
   };
 
   async function more() {
@@ -917,13 +928,33 @@ export async function libraryView(root, ctx, id, genreId = '') {
   io.observe(sentinel);
   ctx.onLeave(() => io.disconnect());
 
-  root.querySelector('#sort').addEventListener('change', (e) => {
+  const reload = () => { gen++; start = 0; total = Infinity; busy = false; grid.innerHTML = ''; more(); };
+  root.querySelector('#sort')?.addEventListener('change', (e) => {
     sortIdx = Number(e.target.value);
     localStorage.setItem(sortKey, String(sortIdx));
-    gen++; start = 0; total = Infinity; busy = false;
-    grid.innerHTML = '';
-    more();
+    reload();
   });
+  if (TV) {
+    if (!TVSORTS[sortIdx]) sortIdx = 0;
+    const chips = root.querySelector('#tvchips'); const az = root.querySelector('#tvaz');
+    const redraw = (k) => { chips.innerHTML = chipsHtml(); chips.querySelector(`[data-chip="${k}"]`)?.focus({ preventScroll: true }); az.hidden = TVSORTS[sortIdx][0] !== 'SortName'; az.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.l === (letter || '#'))); };
+    let genres = null;
+    chips.addEventListener('click', async (e) => {
+      const k = e.target.closest('[data-chip]')?.dataset.chip; if (!k) return;
+      const { tvPick } = await import('./tvmenu.js');
+      if (k === 'sort') { const i = await tvPick('Sort by', TVSORTS.map((x) => x[2]), sortIdx); if (i == null || i === sortIdx) return; sortIdx = i; letter = ''; if (SORTS[i]) localStorage.setItem(sortKey, String(i)); }
+      else if (k === 'show') { const i = await tvPick('Show', SHOWS.map((x) => x[0]), showIdx); if (i == null || i === showIdx) return; showIdx = i; }
+      else {
+        genres = genres || (await api.get(`/Genres?ParentId=${id}&UserId={userId}&${libraryQuery(view)}&SortBy=SortName`).then((r) => r?.Items || []).catch(() => []));
+        const cur = tvGenre ? genres.findIndex((g) => g.Id === tvGenre.Id) + 1 : 0;
+        const i = await tvPick('Genre', ['Any', ...genres.map((g) => g.Name)], cur); if (i == null || i === cur) return; tvGenre = i ? genres[i - 1] : null;
+      }
+      if (!ctx.alive()) return;
+      redraw(k); reload();
+    });
+    az.addEventListener('click', (e) => { const l = e.target.closest('[data-l]')?.dataset.l; if (!l) return; letter = l === '#' ? '' : l; redraw(''); reload(); scrollTo(0, 0); });
+    redraw('');
+  }
   more();
 }
 

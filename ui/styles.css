@@ -3430,3 +3430,39 @@ html.tv .card .art { box-shadow: none; }
 html.tv .card .art img { transition: opacity .12s linear; }
 html.tv .card:hover .art { transform: none; }
 html.tv .card:focus .art { transform: translateY(-4px) scale(1.04); }
+
+/* ---------- Google TV: pick-from-a-list card, grid chips, A to Z ---------- */
+.tvm { position: fixed; inset: 0; z-index: 8000; background: rgba(8,5,5,.74); display: grid; place-items: center; }
+.tvm-card { width: 520px; max-height: 78vh; display: flex; flex-direction: column; background: #1E1415; border: 1px solid #33221F; border-radius: 24px; padding: 26px 18px 18px; }
+.tvm-card h4 { margin: 0 14px 14px; font-size: 26px; font-weight: 800; display: flex; align-items: baseline; gap: 12px; }
+.tvm-card h4 small { font-size: 16px; font-weight: 600; color: #8F7778; }
+.tvm-list { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.tvm-opt { display: flex; align-items: center; gap: 14px; min-height: 56px; padding: 0 18px; border: 0; border-radius: 14px; background: none; color: #E9DADB; font: inherit; font-size: 21px; font-weight: 600; text-align: left; flex: none; }
+.tvm-opt i { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #6b5556; flex: none; }
+.tvm-opt.sel i { border-color: var(--red); background: radial-gradient(circle, var(--red) 0 45%, transparent 50%); }
+html.tv .tvm-opt:focus { background: #fff; color: #140D0E; outline: none; box-shadow: none; }
+html.tv .tvlib { padding-right: 64px; }
+html.tv .tvlib .section-head { align-items: center; margin-bottom: 18px; }
+html.tv .tvlib .section-head h2 { font-size: 34px; }
+.tvchips { display: flex; gap: 12px; }
+.tvchip { height: 46px; padding: 0 22px; border-radius: 999px; border: 0; background: rgba(255,255,255,.09); color: #E9DADB; font: inherit; font-size: 18px; font-weight: 600; white-space: nowrap; }
+.tvchip em { font-style: normal; font-weight: 500; color: #A8979A; margin-left: 6px; }
+html.tv .tvchip:focus { background: #F6E9E9; color: #120C0C; outline: none; box-shadow: none; }
+html.tv .tvchip:focus em { color: #6b5556; }
+.tvaz { position: fixed; right: 14px; top: 96px; bottom: 20px; width: 40px; display: flex; flex-direction: column; justify-content: space-between; align-items: center; z-index: 5; }
+.tvaz[hidden] { display: none; }
+.tvaz button { flex: 1; min-height: 0; width: 34px; border: 0; background: none; color: #8F7778; font: inherit; font-size: 14px; font-weight: 800; border-radius: 8px; padding: 0; }
+.tvaz button.on { color: #fff; background: var(--red); }
+html.tv .tvaz button:focus { color: #120C0C; background: #fff; outline: none; box-shadow: none; }
+
+/* ---------- Google TV: movie and show pages ---------- */
+/* The remote's Back button replaces the back arrow and trail; editing stays on the PC. */
+html.tv .crumbs, html.tv .detail-buttons .icon-toggle.cog, html.tv .section-head .seg { display: none !important; }
+html.tv .detail-buttons .btn { min-height: 52px; font-size: 18px; padding: 0 26px; }
+html.tv .detail-buttons .icon-toggle { width: 52px; height: 52px; }
+html.tv .season-tab { min-height: 46px; font-size: 17px; padding: 0 20px; }
+
+/* ---------- Google TV: Hold OK quick menu ---------- */
+html.tv .ctx-menu { position: fixed; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%); min-width: 440px; padding: 14px; border-radius: 22px; background: #1E1415 !important; animation: none !important; box-shadow: 0 0 0 200vmax rgba(8,5,5,.7); }
+html.tv .ctx-menu button, html.tv .ctx-menu a { min-height: 52px; font-size: 20px; border-radius: 12px; }
+html.tv .ctx-menu button:focus, html.tv .ctx-menu a:focus { background: #fff; color: #140D0E; outline: none; box-shadow: none; }

@@ -19,7 +19,7 @@ addEventListener('resize', () => { root.style.zoom = ''; fit(); });
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 // Things that sit on top of the page; while one is open the highlight stays inside it.
-const LAYERS = '.tvu, #player.open, .menu:not([hidden]), .tdrop:not([hidden]), [role=dialog], .modal, .sheet, .ovl';
+const LAYERS = '.tvu, .tvm, .ctx-menu:not([hidden]), #player.open, .menu:not([hidden]), .tdrop:not([hidden]), [role=dialog], .modal, .sheet, .ovl';
 
 function shown(el) {
   const r = el.getBoundingClientRect();
@@ -97,7 +97,7 @@ function go(el) {
 function first(scope) {
   const list = candidates(scope);
   const view = document.getElementById('view');
-  return list.find((el) => view?.contains(el) && el.matches('[data-tvfirst]')) || list.find((el) => view?.contains(el) && el.matches('.hero .btn')) || list.find((el) => view?.contains(el) && el.matches('.card, .row a, .mrow a')) || list.find((el) => view?.contains(el)) || list.find((el) => !inRail(el));
+  return list.find((el) => view?.contains(el) && el.matches('[data-tvfirst]')) || list.find((el) => view?.contains(el) && el.matches('.hero .btn, .detail-buttons .btn')) || list.find((el) => view?.contains(el) && el.matches('.card, .row a, .mrow a')) || list.find((el) => view?.contains(el)) || list.find((el) => !inRail(el));
 }
 
 const isText = (el) => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range'].includes(el.type)));
@@ -116,8 +116,15 @@ addEventListener('keydown', (e) => {
   const k = e.key;
   const cur = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
   if (k === 'Enter' && cur && cur.matches('input[type=checkbox], input[type=radio]')) { e.preventDefault(); cur.click(); return; }
+  // Drop-downs: OK opens a TV list instead of the phone-style picker, and arrows move on.
+  if (k === 'Enter' && cur?.tagName === 'SELECT') {
+    e.preventDefault();
+    const opts = [...cur.options].filter((o) => !o.disabled && !/search for more/i.test(o.textContent));
+    const label = cur.getAttribute('aria-label') || cur.closest('label, .pick-wrap')?.querySelector('.pick-label, span')?.textContent || cur.previousElementSibling?.textContent || 'Choose';
+    import('./tvmenu.js').then((m) => m.tvPick(label.trim(), opts.map((o) => o.textContent.trim()), opts.findIndex((o) => o.selected))).then((i) => { if (i == null || !cur.isConnected) return; cur.value = opts[i].value; cur.dispatchEvent(new Event('change', { bubbles: true })); });
+    return;
+  }
   if (!k.startsWith('Arrow') || e.defaultPrevented) return;
-  if (cur?.tagName === 'SELECT') return;
   // In a text box, Left/Right move the text cursor until it reaches the end.
   if (isText(cur) && k === 'ArrowLeft' && (cur.selectionStart ?? 0) > 0) return;
   if (isText(cur) && k === 'ArrowRight' && (cur.selectionEnd ?? 0) < cur.value.length) return;
@@ -176,6 +183,38 @@ new MutationObserver(() => {
     if (f) f.focus({ preventScroll: true });
   }, 60);
 }).observe(document.body, { childList: true, subtree: true });
+
+// ---------- Hold OK: quick menu ----------
+// A short press opens the poster or episode; holding OK brings up its quick menu
+// (play, start over, watched, favorite), the same one a right-click gives on the PC.
+const HOLDABLE = '.card[data-id], .season-tab[data-season]';
+let held = null;
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  // Still holding after the menu opened: nothing in the menu gets pressed by accident.
+  if (held?.done) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+  const el = document.activeElement?.closest?.(HOLDABLE);
+  if (!el || el !== document.activeElement) return;
+  e.preventDefault();
+  if (!e.repeat) { held = { el, at: performance.now(), done: false }; return; }
+  if (!held || held.el !== el || held.done || performance.now() - held.at < 550) return;
+  held.done = true;
+  const r = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+  let n = 0, seen = false;
+  const t = setInterval(() => {
+    const menu = document.querySelector('.ctx-menu:not([hidden])');
+    if (!menu) { if (seen || ++n > 40) { clearInterval(t); if (seen && el.isConnected && (document.activeElement === document.body || !shown(document.activeElement))) el.focus({ preventScroll: true }); } return; }
+    seen = true;
+    if (!held && !menu.contains(document.activeElement)) candidates(menu)[0]?.focus({ preventScroll: true });
+  }, 100);
+}, true);
+addEventListener('keyup', (e) => {
+  if (e.key !== 'Enter' || !held) return;
+  const h = held; held = null;
+  if (h.done) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+  if (h.el === document.activeElement) h.el.click();
+}, true);
 
 // ---------- Back button ----------
 // Called by the Android app when Back is pressed. Returns true if the page handled it.

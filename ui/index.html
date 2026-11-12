@@ -7,7 +7,7 @@
   <link rel="icon" href="logo.png" />
   <link rel="stylesheet" href="styles.css" />
   <!-- Settings that change how the app looks from the very first frame. -->
-  <script>try { var h = document.documentElement; if (localStorage.getItem('introSplash') === 'off') h.classList.add('no-intro'); if (localStorage.getItem('reduceMotion') === 'on') h.classList.add('calm'); } catch (e) {}</script>
+  <script>try { var h = document.documentElement; if (/Android/.test(navigator.userAgent)) h.classList.add('tv'); if (localStorage.getItem('introSplash') === 'off') h.classList.add('no-intro'); if (localStorage.getItem('reduceMotion') === 'on') h.classList.add('calm'); } catch (e) {}</script>
 </head>
 <body>
   <div id="intro" aria-hidden="true">
