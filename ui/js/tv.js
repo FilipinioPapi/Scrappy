@@ -33,7 +33,7 @@ function scopeFor(el) {
 
 // Row titles ("Latest Movies") are links on the PC; on the TV the highlight skips them,
 // so Down goes straight from one row of posters to the next.
-const SKIP = '.section-head h2 a';
+const SKIP = '.section-head h2 a, .hero-dot, .hero-arrow';
 function candidates(scope) {
   return [...scope.querySelectorAll(FOCUSABLE)].filter((el) => !el.matches(SKIP) && shown(el));
 }
@@ -66,7 +66,7 @@ function go(el) {
   el.focus({ preventScroll: true });
   const row = el.closest('.row, .mrow');
   const hero = el.closest('[data-row="hero"], .hero');
-  if (hero) { hero.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+  if (hero) { scrollTo({ top: 0, behavior: 'smooth' }); return; }
   if (!row) { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); return; }
   const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2;
   row.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
@@ -111,15 +111,25 @@ addEventListener('keydown', (e) => {
 });
 
 // When a new screen appears and nothing has the highlight, put it on the first thing.
+// If the highlighted thing gets redrawn (the home banner changes picture, a row
+// refreshes), the highlight stays in the same spot instead of jumping to the top.
+const BOX = '[data-row], section, .maside, header, .menu, [role=dialog]';
+let last = null;
+addEventListener('focusin', (e) => {
+  const el = e.target; const box = el.closest?.(BOX);
+  last = box ? { box, sel: box.matches('[data-row]') ? `[data-row="${box.dataset.row}"]` : null, idx: candidates(box).indexOf(el) } : null;
+});
 let settle = 0;
 new MutationObserver(() => {
   clearTimeout(settle);
   settle = setTimeout(() => {
     const cur = document.activeElement;
     if (cur && cur !== document.body && cur.isConnected && shown(cur)) return;
-    const f = first(scopeFor(null));
+    const box = last && (last.box.isConnected ? last.box : last.sel && document.querySelector(last.sel));
+    const same = box && shown(box) ? candidates(box) : [];
+    const f = same.length ? same[Math.min(Math.max(last.idx, 0), same.length - 1)] : first(scopeFor(null));
     if (f) f.focus({ preventScroll: true });
-  }, 180);
+  }, 60);
 }).observe(document.body, { childList: true, subtree: true });
 
 // ---------- Back button ----------

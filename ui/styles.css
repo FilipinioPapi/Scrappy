@@ -2395,8 +2395,12 @@ html.tv *, html.tv *::before, html.tv *::after { backdrop-filter: none !importan
 html.tv .row-arrow { display: none !important; }
 html.tv, html.tv * { scrollbar-width: none; }
 html.tv ::-webkit-scrollbar { display: none; width: 0; height: 0; }
-/* Home banner: TV screens are wide, so keep the top of the picture (faces) in view. */
-html.tv .hero-bg img { object-position: center top; }
+html.tv .hbar { display: none !important; }
+/* Home banner: TV screens are wide, so keep the top of the picture (faces) in view.
+   The soft edges are a plain dark layer on top here; fading the picture itself is
+   heavy work for a TV. */
+html.tv .hero-bg img { object-position: center top; -webkit-mask-image: none; mask-image: none; animation: none !important; }
+html.tv .hero-bg::after { display: block; }
 /* ---------- Your Year in Review (approved mocks) ---------- */
 .yir{position:fixed;inset:0;z-index:5000;color:#fff;font-family:Inter,"Segoe UI",sans-serif;font-size:15px;line-height:1.45;overflow:hidden;transition:background .6s ease,opacity .25s;animation:y-in .3s ease both}
 .yir *{box-sizing:border-box}

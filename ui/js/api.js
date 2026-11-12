@@ -61,13 +61,19 @@ export function quiet() {
 // Windows and Android serve custom protocols as http://<name>.localhost.
 export const IMG_BASE = /Windows|Android/.test(navigator.userAgent) ? 'http://img.localhost' : 'img://localhost';
 
+// A TV draws the app at 1080p, so bigger pictures only cost time to download and open.
+const TV = /Android/.test(navigator.userAgent);
+const fitW = (w) => (TV ? Math.min(w, 1920) : w);
+
 export function img(itemId, type, tag, width = 400, index) {
   if (!itemId || !tag) return null;
+  width = fitW(width);
   const idx = index !== undefined ? `/${index}` : '';
   return `${IMG_BASE}/${encodeURIComponent(itemId)}/${type}${idx}?tag=${encodeURIComponent(tag)}&w=${width}`;
 }
 
 // Ask for an image even when Emby didn't list one (e.g. auto-made library pictures).
 export function imgAny(itemId, type, width = 400) {
+  width = fitW(width);
   return `${IMG_BASE}/${encodeURIComponent(itemId)}/${type}?w=${width}`;
 }
