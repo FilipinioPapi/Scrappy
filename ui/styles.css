@@ -2396,6 +2396,26 @@ html.tv .row-arrow { display: none !important; }
 html.tv, html.tv * { scrollbar-width: none; }
 html.tv ::-webkit-scrollbar { display: none; width: 0; height: 0; }
 html.tv .hbar { display: none !important; }
+/* Update card (approved mock TvUpd): sizes are for the 1440-wide TV layout. */
+.tvu { position: fixed; inset: 0; z-index: 9000; background: rgba(8,5,5,.8); display: grid; place-items: center; }
+.tvu-card { width: 750px; background: var(--bg-2, #1E1415); border: 1px solid var(--line); border-radius: 22px; padding: 42px 48px; box-shadow: 0 24px 70px rgba(0,0,0,.7); }
+.tvu-h { display: flex; align-items: center; gap: 20px; }
+.tvu-h img { width: 66px; height: 66px; object-fit: contain; }
+.tvu-t { font-size: 36px; font-weight: 800; line-height: 1.1; }
+.tvu-v { font-size: 18px; color: var(--muted); margin-top: 6px; font-weight: 500; }
+.tvu-k { margin-top: 30px; font-size: 15px; font-weight: 800; letter-spacing: 2px; color: var(--blush); }
+.tvu-l { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.tvu-l li { font-size: 20px; line-height: 1.35; padding-left: 26px; position: relative; }
+.tvu-l li::before { content: ''; position: absolute; left: 3px; top: 10px; width: 9px; height: 9px; border-radius: 9px; background: var(--red); }
+.tvu-s { font-size: 16px; color: var(--muted); margin-top: 26px; line-height: 1.45; }
+.tvu-s b { color: var(--text); }
+.tvu-b { display: flex; gap: 16px; margin-top: 30px; }
+.tvu-btn { height: 52px; padding: 0 26px; border: 0; border-radius: 12px; font: 700 18px Inter, sans-serif; background: rgba(255,255,255,.1); color: var(--text); cursor: pointer; }
+.tvu-btn.red { background: var(--red); color: #fff; }
+html.tv .tvu-btn:focus { outline: 3px solid #fff; outline-offset: 3px; transform: scale(1.05); }
+.tvu-p { height: 14px; border-radius: 7px; background: rgba(255,255,255,.12); margin-top: 34px; overflow: hidden; }
+.tvu-p i { display: block; height: 100%; width: 0; background: var(--red); border-radius: 7px; transition: width .2s linear; }
+.tvu-n { display: flex; justify-content: space-between; font-size: 18px; color: #D9C3C4; font-weight: 600; margin-top: 12px; min-height: 24px; }
 /* Home banner: TV screens are wide, so keep the top of the picture (faces) in view.
    The soft edges are a plain dark layer on top here; fading the picture itself is
    heavy work for a TV. */

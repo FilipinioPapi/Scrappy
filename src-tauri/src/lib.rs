@@ -1320,7 +1320,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build());
     // On the TV: the TV's own video player.
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(mpv::plugin());
+    let builder = builder.plugin(mpv::plugin()).plugin(updates::plugin());
     builder
         .manage(updates::Ready::default())
         .register_asynchronous_uri_scheme_protocol("img", |ctx, request, responder| {
@@ -1430,6 +1430,7 @@ pub fn run() {
             updates::app_version,
             updates::upd_check,
             updates::upd_install,
+            updates::tv_update,
             set_zoom,
             get_session,
             login,

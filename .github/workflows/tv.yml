@@ -72,13 +72,36 @@ jobs:
           echo "::add-mask::$(cat ~/.scrappy-tv-key/pass)"
           echo "TV_KEY_PASS=$(cat ~/.scrappy-tv-key/pass)" >> "$GITHUB_ENV"
 
+      # Each build gets a rising version (0.3.<build number>), so the TV can tell a newer
+      # build from the one installed and update itself from inside the app.
       - name: Build
         run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then tag=tv; else tag=tv-preview; fi
+          version="0.3.${{ github.run_number }}"
+          echo "TV_TAG=$tag" >> "$GITHUB_ENV"
+          echo "TV_VERSION=$version" >> "$GITHUB_ENV"
+          export SCRAPPY_TV_CHANNEL=$tag
           npm ci
-          npx tauri android build --apk --target aarch64 --target armv7
+          npx tauri android build --apk --target aarch64 --target armv7 --config "{\"version\":\"$version\"}"
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name "*universal*release*.apk" | head -1)
           echo "Built $apk"
           cp "$apk" Scrappy-TV.apk
+
+      # The small file the TV reads to see if there is a newer build (what's new comes from tv-notes.txt).
+      - name: Update info for the TV
+        run: |
+          python3 - <<'PY'
+          import json, os
+          notes = [l.strip().lstrip('-*• ').strip() for l in open('tv-notes.txt', encoding='utf-8') if l.strip() and not l.startswith('#')]
+          tag = os.environ['TV_TAG']
+          json.dump({
+              'version': os.environ['TV_VERSION'],
+              'url': f'https://github.com/FilipinioPapi/Scrappy/releases/download/{tag}/Scrappy-TV.apk',
+              'size': os.path.getsize('Scrappy-TV.apk'),
+              'notes': notes[:5],
+          }, open('tv.json', 'w'), indent=1)
+          print(open('tv.json').read())
+          PY
 
       - uses: actions/upload-artifact@v4
         with:
@@ -90,6 +113,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then tag=tv; title="Google TV build"; else tag=tv-preview; title="Google TV Preview build (${{ github.ref_name }})"; fi
+          tag=$TV_TAG
+          if [ "$tag" = "tv" ]; then title="Google TV build $TV_VERSION"; else title="Google TV Preview build $TV_VERSION (${{ github.ref_name }})"; fi
           gh release delete $tag --yes --cleanup-tag 2>/dev/null || true
-          gh release create $tag Scrappy-TV.apk --title "$title" --notes "Built from ${{ github.ref_name }} at commit ${{ github.sha }}. Install Scrappy-TV.apk on the TV with the Downloader app." --prerelease --target ${{ github.sha }}
+          gh release create $tag Scrappy-TV.apk tv.json --title "$title" --notes "Version $TV_VERSION, built from ${{ github.ref_name }} at commit ${{ github.sha }}. First install: Scrappy-TV.apk with the Downloader app. After that the TV app updates itself." --prerelease --target ${{ github.sha }}

@@ -4,6 +4,7 @@
 
 const root = document.documentElement;
 root.classList.add('tv');
+import('./tvupdate.js').catch(() => {});
 
 // The PC layout is made for a window about 1440 points wide. TVs report less,
 // so scale the whole page to fit.
@@ -14,7 +15,7 @@ addEventListener('resize', () => { root.style.zoom = ''; fit(); });
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 // Things that sit on top of the page; while one is open the highlight stays inside it.
-const LAYERS = '#player.open, .menu:not([hidden]), .tdrop:not([hidden]), [role=dialog], .modal, .sheet, .ovl';
+const LAYERS = '.tvu, #player.open, .menu:not([hidden]), .tdrop:not([hidden]), [role=dialog], .modal, .sheet, .ovl';
 
 function shown(el) {
   const r = el.getBoundingClientRect();

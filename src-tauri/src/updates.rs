@@ -88,3 +88,9 @@ pub async fn upd_install(app: AppHandle, channel: String) -> Result<(), String> 
     let _ = std::fs::remove_file(&path);
     app.restart();
 }
+
+/// The TV app has its own updater behind this command (updates_android.rs). Not used on the PC.
+#[tauri::command]
+pub async fn tv_update(_app: AppHandle, _what: String) -> Result<Value, String> {
+    Err("Only on the TV.".into())
+}

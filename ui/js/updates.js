@@ -110,7 +110,9 @@ function drawSettings(state) {
 /** Wire the Updates section (on the Settings page). */
 export function mountSettings() {
   const box = document.getElementById('updSettings'); if (!box) return;
-  box.querySelector('#updCheckBtn').onclick = (e) => { e.stopPropagation(); if (found) { card.hidden = false; drawCard(); } else check(true); };
+  // On the TV the button opens the TV's own update card.
+  const onTv = /Android/.test(navigator.userAgent);
+  box.querySelector('#updCheckBtn').onclick = (e) => { e.stopPropagation(); if (onTv) import('./tvupdate.js').then((m) => m.checkNow(true)); else if (found) { card.hidden = false; drawCard(); } else check(true); };
   box.querySelectorAll('#updCh [data-ch]').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); if (b.dataset.ch === channel()) return; ls.set('updChannel', b.dataset.ch); found = null; btn.hidden = true; drawSettings(); check(true); }));
   box.querySelector('#updAuto').onchange = (e) => { ls.set('updAuto', e.target.checked ? 'on' : 'off'); };
   drawSettings();

@@ -1,0 +1,7 @@
+# What's new in the next Google TV build (shown on the TV's update card, 5 lines at most).
+# Plain language, one line each. Replace these with every TV build.
+- Scrappy now updates itself on the TV, no more Downloader
+- Everything from the PC app up to Preview 32, including the side menus
+- The remote moves row to row without getting stuck
+- Round app icon, no scroll bars, home banner no longer cut off
+- Posters load faster
