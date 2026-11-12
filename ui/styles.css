@@ -3650,3 +3650,7 @@ html.tv .tvsi-qr b { font-size: 21px; font-weight: 800; margin-top: 14px; }
 html.tv .tvsi-qr span { font-size: 15px; color: var(--muted); margin-top: 4px; }
 /* Google TV: the home banner is tall enough to show the whole picture instead of a thin strip. */
 html.tv .hero { height: calc(74vh / var(--tvzoom, 1)); min-height: 0; max-height: none; }
+html.tv .tvsi { position: fixed; inset: 0; overflow: hidden; min-height: 0; }
+html.tv .tvsi.typing .tvsi-brand, html.tv .tvsi.typing .tvsi-tiles { display: none; }
+html.tv .tvsi.typing .tvsi-main { margin-top: 0; }
+html.tv .tvsi-in[readonly] { color: #E9DADB; }

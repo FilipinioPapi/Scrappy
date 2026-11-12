@@ -47,7 +47,7 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
     const s = srv()[sel.kind] || {}, c = cur();
     const open = anyIn() ? btn('siOpen', 'Open Scrappy') : '';
     const skip = btn('siSkip', `Skip ${sel.name}`);
-    const field = (type, val, ph) => `<input class="tvsi-in" id="siIn" type="${type}" value="${esc(val)}" placeholder="${esc(ph)}" spellcheck="false" autocapitalize="off" autocorrect="off" data-tvfirst>`;
+    const field = (type, val, ph) => `<input class="tvsi-in" id="siIn" type="${type}" value="${esc(val)}" placeholder="${esc(ph)}" spellcheck="false" autocapitalize="off" autocorrect="off" readonly data-tvfirst>`;
     let h;
     if (s.signedIn) {
       h = `<h1>${sel.name} is signed in</h1><p>${esc(s.user)} on ${esc(s.address || '')}</p>
@@ -117,10 +117,26 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
     }
   }
 
+  // While typing, the tiles step aside so the question, buttons and any error sit above the TV keyboard.
+  function typing(inp, on) {
+    if (on && inp) inp.blur();
+    root.querySelector('.tvsi').classList.toggle('typing', on);
+    if (!inp) return;
+    inp.readOnly = !on;
+    if (on) { inp.focus({ preventScroll: true }); const n = inp.value.length; try { inp.setSelectionRange(n, n); } catch {} }
+  }
+  q.addEventListener('focusout', (e) => { if (e.target.id === 'siIn') { e.target.readOnly = true; root.querySelector('.tvsi')?.classList.remove('typing'); } });
+  q.addEventListener('click', (e) => { if (e.target.id === 'siIn' && e.target.readOnly) typing(e.target, true); });
   q.addEventListener('submit', (e) => { e.preventDefault(); act('next'); });
   q.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.id === 'siIn') { e.preventDefault(); e.stopPropagation(); act('next'); }
-    if (e.key === 'ArrowDown' && e.target.id === 'siIn') { e.preventDefault(); e.stopPropagation(); q.querySelector('#siNext')?.focus({ preventScroll: true }); }
+    const inp = e.target.id === 'siIn' ? e.target : null;
+    // The TV keyboard only opens when you press OK on the box, so the remote can move past it freely.
+    if (e.key === 'Enter' && inp?.readOnly) { e.preventDefault(); e.stopPropagation(); typing(inp, true); return; }
+    if (e.key === 'Enter' && inp) { e.preventDefault(); e.stopPropagation(); if (inp.value.trim() || cur().step === 'pass') act('next'); return; }
+    // Up from the question goes to the server you are setting up.
+    if (e.key === 'ArrowUp' && (inp || e.target === q.querySelector('.tvsi-col .btn'))) { e.preventDefault(); e.stopPropagation(); typing(inp, false); tiles.querySelector('.tvsi-tile.sel')?.focus({ preventScroll: true }); return; }
+    if (inp && !inp.readOnly && /^Arrow(Left|Right)$/.test(e.key)) { e.stopPropagation(); return; }
+    if (e.key === 'ArrowDown' && inp) { e.preventDefault(); e.stopPropagation(); typing(inp, false); q.querySelector('#siNext')?.focus({ preventScroll: true }); }
     if (e.key === 'Escape' && !srv()[sel.kind]?.signedIn && cur().step !== 'addr') { e.preventDefault(); e.stopImmediatePropagation(); act('back'); }
   }, true);
   q.addEventListener('input', (e) => { if (e.target.id === 'siIn' && cur().step === 'addr') cur().address = e.target.value; });

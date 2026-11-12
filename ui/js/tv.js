@@ -268,7 +268,7 @@ addEventListener('keyup', (e) => {
 
 // ---------- Back button ----------
 // Called by the Android app when Back is pressed. Returns true if the page handled it.
-const TOP = new Set(['', '#', '#/', '#/home', '#/music', '#/audiobooks']);
+const TOP = new Set(['', '#', '#/', '#/home', '#/music', '#/audiobooks', '#/login']);
 const watcher = new MutationObserver(() => {});
 watcher.observe(document.body, { attributes: true, attributeOldValue: true, childList: true, subtree: true });
 window.__tvBack = () => {
