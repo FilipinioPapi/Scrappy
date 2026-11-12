@@ -10,6 +10,8 @@ import { book, setSpeed } from './bplayer.js';
 const { invoke } = window.__TAURI__.core;
 const ic = (d) => `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 
+// Google TV shows a shorter list (approved): no Windows-only switches, no admin pages.
+const TV = /Android/.test(navigator.userAgent);
 const SECTIONS = [
   { h: 'YOU' },
   { id: 'account', name: 'Account & servers', icon: ic('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>') },
@@ -53,11 +55,11 @@ function accountHtml(ctx) {
     return `<div class="set-srv"><span class="set-ic">${letter}</span><div class="set-tx"><b>${name} · ${what}</b><span class="t2">${s.signedIn ? `${esc(s.user || '')}${s.name ? ' on ' + esc(s.name) : ''} · <span class="set-ok">● Connected</span>` : '<span class="set-off">Not signed in</span>'}</span></div>
       ${s.signedIn ? `<button type="button" class="btn small secondary" data-act="switch" data-k="${k}">Switch account</button><button type="button" class="btn small secondary" data-act="signout" data-k="${k}">Sign out</button>` : `<button type="button" class="btn small" data-act="switch" data-k="${k}">Sign in</button>`}</div>`;
   }).join('');
-  return card('SIGNED IN', [srv]) + card('THIS PC', [
+  return card('SIGNED IN', [srv]) + card(TV ? 'THIS TV' : 'THIS PC', [
     seg('startTab', 'Start on', 'Which tab opens when Scrappy starts.', [['last', 'Last used'], ['#/home', 'Movies & TV'], ['#/music', 'Music'], ['#/audiobooks', 'Audiobooks']]),
-    sw('', 'Open Scrappy when Windows starts', 'Starts quietly in the tray, ready when you are.', { id: 'setAutostart', checked: false }),
-    sw('closeTray', 'Keep playing music when the window is closed', 'Closing the window hides Scrappy to the tray (by the clock) instead of quitting. Quit from the tray icon.'),
-    btn('Sign out of everything', 'Removes all three accounts from this PC.', 'Sign out of all', 'signoutAll'),
+    TV ? '' : sw('', 'Open Scrappy when Windows starts', 'Starts quietly in the tray, ready when you are.', { id: 'setAutostart', checked: false }),
+    TV ? '' : sw('closeTray', 'Keep playing music when the window is closed', 'Closing the window hides Scrappy to the tray (by the clock) instead of quitting. Quit from the tray icon.'),
+    btn('Sign out of everything', `Removes all three accounts from this ${TV ? 'TV' : 'PC'}.`, 'Sign out of all', 'signoutAll'),
   ]);
 }
 const seekCur = () => (pref('skipBack') === pref('skipFwd') ? pref('skipBack') : '');
@@ -66,11 +68,11 @@ const tvHtml = () => card('PLAYING', [
   seg('upNextSecs', 'Countdown before the next episode', 'How long the “Up next” card waits.', [['5', '5s'], ['10', '10s'], ['20', '20s']]),
   sw('skipIntro', 'Skip intros automatically', 'Uses the intro markers on Emby. Off: shows a Skip Intro button.'),
   sw('skipCredits', 'Skip credits to the next episode', 'Only when Emby marks where the credits start. Otherwise Up next shows near the end, as now.'),
-  sw('', 'Play in a separate mpv window', 'Opens videos in their own window instead of inside Scrappy.', { id: 'setWindow', checked: pref('playerMode') === 'window' }),
+  TV ? '' : sw('', 'Play in a separate mpv window', 'Opens videos in their own window instead of inside Scrappy.', { id: 'setWindow', checked: pref('playerMode') === 'window' }),
   seg('seek', 'Seek step', 'How far the arrow keys and skip buttons jump.', [['5', '5s'], ['10', '10s'], ['30', '30s']], seekCur()),
 ]) + card('QUALITY', [
   dd('quality', 'Streaming quality', 'Original plays the file as it is. Lower saves data and avoids buffering on a slow connection.', QUALITIES),
-  dd('hwdec', 'Hardware decoding', 'Uses your graphics card for smoother playback. Turn off only if videos show glitches.', [['auto-safe', 'Auto'], ['no', 'Off']]),
+  TV ? '' : dd('hwdec', 'Hardware decoding', 'Uses your graphics card for smoother playback. Turn off only if videos show glitches.', [['auto-safe', 'Auto'], ['no', 'Off']]),
 ]) + card('HOME SCREEN', [
   seg('heroMode', 'Home banner', 'What the big banner at the top shows.', [['picks', 'Picks for you'], ['recent', 'Recently added'], ['off', 'Off']]),
 ]);
@@ -116,7 +118,7 @@ const updatesHtml = () => `<div class="set-card" id="updSettings">
 const KEYS = [['Space', 'Play / pause'], ['← →', 'Skip back / forward (Shift: 1 minute)'], ['↑ ↓', 'Volume'], ['F', 'Full screen'], ['C', 'Subtitles on / off'], ['M', 'Mute'], ['N', 'Next episode'], ['E', 'Episodes'], ['B', 'Bookmark (audiobooks)'], ['Ctrl + / Ctrl −', 'App size'], ['Backspace', 'Back']];
 const aboutHtml = () => card('SCRAPPY', [
   row(`Version ${esc(updInfo().current || '')}`, 'Scrappy Media Center for Emby, Navidrome and Audiobookshelf.', '<a class="btn small secondary" href="#/settings/updates">Updates</a>'),
-]) + card('KEYBOARD SHORTCUTS', [`<div class="set-keys">${KEYS.map(([k, d]) => `<kbd>${esc(k)}</kbd><span>${esc(d)}</span>`).join('')}</div>`]);
+]) + (TV ? '' : card('KEYBOARD SHORTCUTS', [`<div class="set-keys">${KEYS.map(([k, d]) => `<kbd>${esc(k)}</kbd><span>${esc(d)}</span>`).join('')}</div>`]));
 
 // ---------- Admin: Server health ----------
 const req = (method, path, body = null) => invoke('req_call', { method, path, body });
@@ -194,8 +196,8 @@ async function fillRequests(box, alive) {
 // ---------- The page ----------
 export async function settingsPage(root, ctx, secId) {
   let admin = updInfo().admin;
-  const visible = () => SECTIONS.filter((s) => !s.admin || admin);
-  if (!SECTIONS.some((s) => s.id === secId) || (SECTIONS.find((s) => s.id === secId).admin && !admin)) secId = 'account';
+  const visible = () => SECTIONS.filter((s) => !s.admin || (admin && !TV));
+  if (!SECTIONS.some((s) => s.id === secId) || (SECTIONS.find((s) => s.id === secId).admin && (!admin || TV))) secId = 'account';
   const sec = SECTIONS.find((s) => s.id === secId);
   const nav = () => visible().map((s) => (s.h ? `<div class="set-nh">${s.h}</div>` : `<a href="#/settings/${s.id}" class="${s.id === secId ? 'on' : ''}">${s.icon}<span>${s.name}</span>${s.admin ? '<em>ADMIN</em>' : ''}</a>`)).join('');
   root.innerHTML = `<div class="set-page"><nav class="set-side" id="setNav">${nav()}</nav>

@@ -26,7 +26,8 @@ function shown(el) {
   if (r.width < 2 || r.height < 2) return false;
   if (el.closest('[hidden], [inert], .row-arrow')) return false;
   const cs = getComputedStyle(el);
-  return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05;
+  // Switches are drawn by a see-through checkbox, so those still count.
+  return cs.visibility !== 'hidden' && cs.display !== 'none' && (Number(cs.opacity) > 0.05 || el.matches('.set-sw input'));
 }
 
 function scopeFor(el) {
@@ -69,10 +70,35 @@ function nearest(from, dir, list, strict = false) {
 // Move the highlight and bring it into view. In a row of posters the row slides
 // sideways to keep the poster centred, and the page lines up the whole row (title
 // and posters) in the middle of the screen, so it never stops half way between rows.
-// Holding a direction (or pressing fast) jumps straight there: gliding animations that
-// pile up on top of each other are what makes a slow TV stutter.
-let fast = false, lastKey = 0;
-const glide = () => (fast ? 'auto' : 'smooth');
+// One glide per scroller. Every press only moves the glide's destination, so pressing
+// fast (or holding) keeps one continuous motion instead of jumps or piled-up animations.
+const glides = new Map();
+function glideTo(box, prop, to) {
+  const page = box === window;
+  const read = () => (page ? scrollY : box[prop]);
+  const write = (v) => (page ? scrollTo(scrollX, v) : (box[prop] = v));
+  let g = glides.get(box);
+  if (g) { g.to = to; return; }
+  if (Math.abs(read() - to) < 1) return;
+  g = { to, pos: read(), t: performance.now() };
+  glides.set(box, g);
+  const step = (now) => {
+    const dt = Math.min(64, now - g.t); g.t = now;
+    g.pos += (g.to - g.pos) * (1 - Math.exp(-dt / 85));
+    if (Math.abs(g.to - g.pos) < 0.6) { write(g.to); glides.delete(box); return; }
+    write(g.pos);
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+// Where the page would sit with this element lined up: ask the browser, then put it back.
+function pageTarget(el, block) {
+  const y0 = scrollY;
+  el.scrollIntoView({ block, inline: 'nearest', behavior: 'instant' });
+  const y1 = scrollY;
+  scrollTo(scrollX, y0);
+  return y1;
+}
 // Pictures in the row you're on, and the row below it, load before you reach them.
 function warm(row) {
   const sec = row.closest('section, [data-row]') || row;
@@ -84,20 +110,20 @@ function go(el) {
   if (el.closest(LAYERS)) return;
   const row = el.closest('.row, .mrow');
   const hero = el.closest('[data-row="hero"], .hero');
-  if (hero) { scrollTo({ top: 0, behavior: glide() }); return; }
-  if (!row) { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: glide() }); return; }
+  if (hero) { glideTo(window, '', 0); return; }
+  if (!row) { glideTo(window, '', pageTarget(el, 'center')); return; }
   warm(row);
   const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2;
-  row.scrollTo({ left: Math.max(0, left), behavior: glide() });
+  glideTo(row, 'scrollLeft', Math.max(0, Math.min(left, row.scrollWidth - row.clientWidth)));
   const sec = row.closest('section, [data-row]') || row;
   const tall = sec.offsetHeight > (innerHeight / (parseFloat(root.style.zoom) || 1)) * 0.9;
-  sec.scrollIntoView({ block: tall ? 'start' : 'center', inline: 'nearest', behavior: glide() });
+  glideTo(window, '', pageTarget(sec, tall ? 'start' : 'center'));
 }
 
 function first(scope) {
   const list = candidates(scope);
   const view = document.getElementById('view');
-  return list.find((el) => view?.contains(el) && el.matches('[data-tvfirst]')) || list.find((el) => view?.contains(el) && el.matches('.hero .btn, .detail-buttons .btn')) || list.find((el) => view?.contains(el) && el.matches('.card, .row a, .mrow a')) || list.find((el) => view?.contains(el)) || list.find((el) => !inRail(el));
+  return list.find((el) => view?.contains(el) && el.matches('[data-tvfirst], .set-side a.on')) || list.find((el) => view?.contains(el) && el.matches('.hero .btn, .detail-buttons .btn')) || list.find((el) => view?.contains(el) && el.matches('.card, .row a, .mrow a')) || list.find((el) => view?.contains(el)) || list.find((el) => !inRail(el));
 }
 
 const isText = (el) => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range'].includes(el.type)));
@@ -130,7 +156,6 @@ addEventListener('keydown', (e) => {
   if (isText(cur) && k === 'ArrowRight' && (cur.selectionEnd ?? 0) < cur.value.length) return;
   if (cur?.type === 'range' && (k === 'ArrowLeft' || k === 'ArrowRight')) return;
   e.preventDefault();
-  const now = performance.now(); fast = e.repeat || now - lastKey < 180; lastKey = now;
   const scope = scopeFor(cur);
   if (!cur || !scope.contains(cur)) { const f = first(scope); if (f) go(f); return; }
   // The side rail: Up/Down move inside it, Right goes back to where you were on the page.
@@ -141,6 +166,9 @@ addEventListener('keydown', (e) => {
     if (next) next.focus({ preventScroll: true });
     return;
   }
+  // Settings: Right from the list of sections goes into the section, Left comes back to it.
+  if (k === 'ArrowRight' && cur.closest('.set-side')) { const f = candidates(scope).find((el) => el.closest('.set-body')); if (f) go(f); return; }
+  if (k === 'ArrowLeft' && cur.closest('.set-body')) { const f = nearest(cur, k, candidates(scope).filter((el) => el.closest('.set-body')), true) || document.querySelector('.set-side a.on'); if (f) { go(f); return; } }
   const next = nearest(cur, k, candidates(scope).filter((el) => !inRail(el)), scope === pageScope());
   if (next) { go(next); return; }
   // Nothing further left on the page: Left opens the rail on the screen you're on.

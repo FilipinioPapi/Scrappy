@@ -858,7 +858,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
   const SHOWS = [['Everything', ''], ['Unwatched', '&IsPlayed=false'], ['Favorites', '&IsFavorite=true']];
   const TVSORTS = TV ? [...SORTS, ['Random', 'Ascending', 'Random']] : SORTS;
   let showIdx = 0, tvGenre = null, letter = '';
-  const chip = (k, name, val) => `<button type="button" class="tvchip" data-chip="${k}"${k === 'sort' ? ' data-tvfirst' : ''}>${name} <em>${esc(val)}</em></button>`;
+  const chip = (k, name, val) => `<button type="button" class="tvchip" data-chip="${k}">${name} <em>${esc(val)}</em></button>`;
   const chipsHtml = () => chip('sort', 'Sort', TVSORTS[sortIdx][2]) + chip('show', 'Show', SHOWS[showIdx][0]) + (genreId ? '' : chip('genre', 'Genre', tvGenre ? tvGenre.Name : 'Any'));
   root.innerHTML = `
     <section class="section${TV ? ' tvlib' : ''}">

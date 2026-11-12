@@ -3466,3 +3466,30 @@ html.tv .season-tab { min-height: 46px; font-size: 17px; padding: 0 20px; }
 html.tv .ctx-menu { position: fixed; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%); min-width: 440px; padding: 14px; border-radius: 22px; background: #1E1415 !important; animation: none !important; box-shadow: 0 0 0 200vmax rgba(8,5,5,.7); }
 html.tv .ctx-menu button, html.tv .ctx-menu a { min-height: 52px; font-size: 20px; border-radius: 12px; }
 html.tv .ctx-menu button:focus, html.tv .ctx-menu a:focus { background: #fff; color: #140D0E; outline: none; box-shadow: none; }
+
+/* ---------- Google TV: Settings sized for the couch ---------- */
+html.tv .set-page { grid-template-columns: 330px minmax(0, 1fr); max-width: none; margin: 0; padding: 36px 56px 80px 40px; }
+html.tv .set-side { top: 36px; gap: 4px; padding-right: 20px; }
+html.tv .set-nh { font-size: 14px; padding: 18px 16px 8px; }
+html.tv .set-side a { font-size: 21px; padding: 14px 16px; border-radius: 14px; gap: 14px; }
+html.tv .set-side a svg { width: 24px; height: 24px; }
+html.tv .set-side a:focus { background: #fff; color: #140D0E; outline: none; box-shadow: none; }
+html.tv .set-body { max-width: none; padding-left: 44px; }
+html.tv .set-title { font-size: 46px; }
+html.tv .set-grp { font-size: 15px; margin: 30px 0 12px; }
+html.tv .set-card { padding: 4px 10px; border-radius: 18px; }
+html.tv .set-row, html.tv .set-srv { padding: 18px 16px; border-radius: 14px; gap: 30px; }
+html.tv .set-row:focus-within, html.tv .set-srv:focus-within { background: rgba(255,255,255,.09); }
+html.tv .set-tx b { font-size: 21px; }
+html.tv .set-tx .t2, html.tv .set-note, html.tv .set-ok, html.tv .set-off, html.tv .set-warn { font-size: 16px; }
+html.tv .set-sw { width: 60px; height: 34px; }
+html.tv .set-sw i { border-radius: 17px; }
+html.tv .set-sw i::after { top: 4px; left: 4px; width: 26px; height: 26px; }
+html.tv .set-sw input:checked + i::after { left: 30px; }
+html.tv .set-sw input:focus + i { outline: 3px solid #fff; outline-offset: 3px; }
+html.tv .set-seg { padding: 4px; border-radius: 14px; }
+html.tv .set-seg button { height: 46px; padding: 0 20px; font-size: 18px; border-radius: 10px; }
+html.tv .set-seg button:focus, html.tv .set-dd:focus, html.tv .set-row .btn:focus, html.tv .set-srv .btn:focus { outline: 3px solid #fff; outline-offset: 2px; box-shadow: none; }
+html.tv .set-dd { height: 50px; min-width: 240px; max-width: 340px; font-size: 18px; border-radius: 12px; }
+html.tv .set-row .btn, html.tv .set-srv .btn { min-height: 46px; font-size: 18px; padding: 0 20px; }
+html.tv .set-ic { width: 52px; height: 52px; font-size: 20px; }

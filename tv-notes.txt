@@ -1,7 +1,7 @@
 # What's new in the next Google TV build (shown on the TV's update card, 5 lines at most).
 # Plain language, one line each. Replace these with every TV build.
-- New side rail: press Left for Search, Home, your libraries, Music, Audiobooks and Settings
-- New Search screen made for the TV keyboard and voice
-- Smoother scrolling: rows no longer snap or jolt, and holding a direction keeps up
-- Faster screens: the PC speed pass plus lighter effects and pictures loaded ahead
-- Home opens on the banner, and Left and Right stay on your row
+- Scrolling is one smooth glide, even when you press Down fast
+- Picking a tab on the left lands on the first poster, not the Sort button
+- Movies and TV grids: Sort, Show and Genre buttons, plus an A to Z strip on the right
+- Hold OK on any poster for a quick menu: play, start over, watched, favorite
+- Settings resized for the TV, side icons match the PC app
