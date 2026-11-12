@@ -20,6 +20,8 @@ libloading = "0.8"
 uuid = { version = "1", features = ["v4"] }
 raw-window-handle = "0.6"
 tokio = { version = "1", features = ["time", "macros", "sync"] }
+# QR code for "sign in with your phone" on the TV.
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 # Secure connections: Windows' own system on the PC; a built-in one on Android TV.
 [target.'cfg(not(target_os = "android"))'.dependencies]

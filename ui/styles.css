@@ -3616,3 +3616,37 @@ html.tv .tvs-eps .ep-blocks { gap: 10px; margin-bottom: 16px; }
 html.tv .tvs-eps .ep-block { height: 40px; padding: 0 18px; border-radius: 999px; font-size: 15px; }
 html.tv .tvs-eps .ep-thumb, html.tv .tvs-eps .ep-card { animation: none; }
 html.tv .tvs #children .section { scroll-margin-top: 20px; }
+
+/* ---------- Google TV: sign-in (approved: one question at a time, QR code for the phone) ---------- */
+html.tv .tvsi { min-height: calc(100vh / var(--tvzoom, 1)); padding: 44px 68px 40px; box-sizing: border-box; }
+html.tv .tvsi-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 30px; }
+html.tv .tvsi-brand img { width: 58px; height: 58px; object-fit: contain; }
+html.tv .tvsi-tiles { display: flex; gap: 16px; }
+html.tv .tvsi-tile { flex: 1; text-align: left; border-radius: 18px; padding: 18px 22px; background: rgba(255,255,255,.07); border: 2px solid transparent; color: var(--text); font: inherit; display: flex; flex-direction: column; gap: 2px; }
+html.tv .tvsi-tile.sel { background: rgba(236,40,46,.16); border-color: var(--red); }
+html.tv .tvsi-tile small { font-size: 13px; font-weight: 800; letter-spacing: 2px; color: var(--muted); }
+html.tv .tvsi-tile b { font-size: 25px; font-weight: 800; }
+html.tv .tvsi-tile span { font-size: 16px; color: var(--muted); }
+html.tv .tvsi-tile span.ok { color: #7FD69B; } html.tv .tvsi-tile span.set { color: var(--blush); }
+html.tv .tvsi-tile:focus { outline: 4px solid #fff; outline-offset: 3px; box-shadow: none; }
+html.tv .tvsi-main { display: flex; gap: 60px; margin-top: 46px; align-items: flex-start; }
+html.tv .tvsi-q { flex: 1; min-width: 0; }
+html.tv .tvsi-q h1 { font-size: 40px; font-weight: 800; margin: 0; font-family: var(--body, inherit); letter-spacing: 0; }
+html.tv .tvsi-q p { font-size: 18px; color: var(--muted); margin: 4px 0 0; }
+html.tv .tvsi-in { display: block; width: 100%; height: 72px; margin-top: 18px; border-radius: 14px; border: 0; background: rgba(255,255,255,.1); color: #fff; font: inherit; font-size: 27px; font-weight: 600; padding: 0 24px; box-sizing: border-box; }
+html.tv .tvsi-in:focus { outline: 4px solid #fff; outline-offset: 3px; box-shadow: none; }
+html.tv .tvsi-btns { display: flex; gap: 12px; margin-top: 22px; align-items: center; }
+html.tv .tvsi-btns .spacer { flex: 1; }
+html.tv .tvsi-col { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-top: 24px; }
+html.tv .tvsi .btn { height: 62px; padding: 0 28px; font-size: 21px; border-radius: 14px; }
+html.tv .tvsi-col .btn:first-child { height: 70px; font-size: 23px; }
+html.tv .tvsi-q.busy { opacity: .7; pointer-events: none; }
+html.tv .tvsi-err { color: #ff8f93; font-size: 18px; margin-top: 16px; min-height: 24px; }
+html.tv .tvsi-qr { width: 300px; flex: none; text-align: center; display: flex; flex-direction: column; align-items: center; }
+html.tv .tvsi-qr[hidden] { display: none; }
+html.tv .tvsi-code { width: 236px; height: 236px; background: #fff; border-radius: 18px; padding: 18px; box-sizing: border-box; }
+html.tv .tvsi-code svg { width: 100%; height: 100%; display: block; }
+html.tv .tvsi-qr b { font-size: 21px; font-weight: 800; margin-top: 14px; }
+html.tv .tvsi-qr span { font-size: 15px; color: var(--muted); margin-top: 4px; }
+/* Google TV: the home banner is tall enough to show the whole picture instead of a thin strip. */
+html.tv .hero { height: calc(74vh / var(--tvzoom, 1)); min-height: 0; max-height: none; }

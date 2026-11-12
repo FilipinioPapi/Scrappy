@@ -31,6 +31,8 @@ export function firstTab(session) {
 }
 
 export function loginView(root, ctx, pick = '') {
+  // Google TV has its own sign-in: one question at a time, or type on your phone.
+  if (document.documentElement.classList.contains('tv')) { import('./tvsignin.js').then((m) => m.tvLoginView(root, ctx, SERVERS, pick, firstTab)); return; }
   let session = ctx.session || {};
   const srv = () => session.servers || {};
   // Start on the server asked for, else the first one not signed in yet.

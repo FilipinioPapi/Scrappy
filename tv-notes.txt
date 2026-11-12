@@ -1,7 +1,7 @@
 # What's new in the next Google TV build (shown on the TV's update card, 5 lines at most).
 # Plain language, one line each. Replace these with every TV build.
-- New show page: seasons and episodes are on screen as soon as it opens
-- Row or Grid for episodes; long seasons open in Grid with jump buttons
-- Down from Resume lands on the episode you are up to
-- One Audio & subtitles button on show pages
+- New sign-in for the TV: one question at a time for Emby, Navidrome and Audiobookshelf
+- Sign in with your phone: scan the QR code and type there (same Wi-Fi)
+- "Same username and password" button after your first sign-in
+- Home banner is taller and shows the whole picture
 - Still included: smooth scrolling and the speed pass

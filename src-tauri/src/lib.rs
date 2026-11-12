@@ -16,6 +16,7 @@ mod updates;
 #[path = "updates_android.rs"]
 mod updates;
 mod appset;
+mod pair;
 
 use emby::Config;
 use serde_json::{json, Value};
@@ -1438,6 +1439,9 @@ pub fn run() {
             server_check,
             server_login,
             server_logout,
+            pair::pair_start,
+            pair::pair_state,
+            pair::pair_stop,
             nd_get,
             nd_cached,
             abs_get,
