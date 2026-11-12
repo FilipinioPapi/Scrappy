@@ -7,6 +7,13 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 35 · Nov 12, 8:52 AM
+**Security**
+- Typing a server name without http:// or https:// (like movies.jjsnas.xyz) now uses https, so your password is never sent unencrypted. Home-network addresses (an IP like 192.168.x.x, or a name like tower.local) still use plain http
+- Servers saved by older builds as http:// with an internet name switch to https automatically when Scrappy starts, if the server answers on https
+
+<sub>Built from 2196733 · includes: Security</sub>
+
 ### Preview 34 · Nov 12, 8:09 AM
 **Sign-in**
 - New: after you sign in to your first server, the next one offers "Same username and password as Emby?" with your Emby profile picture. One click signs you in. If you add a server on a later day, it fills in your username and you type the password once, because Scrappy never saves passwords
