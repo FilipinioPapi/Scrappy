@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 34 · Nov 12, 8:09 AM
+**Sign-in**
+- New: after you sign in to your first server, the next one offers "Same username and password as Emby?" with your Emby profile picture. One click signs you in. If you add a server on a later day, it fills in your username and you type the password once, because Scrappy never saves passwords
+
+<sub>Built from d9c7963 · includes: Sign-in</sub>
+
 ### Preview 33 · Nov 11, 7:40 PM
 **Music**
 - New: the made-for-you playlists (Favorite songs, Most played, Recently added) each have their own poster art
