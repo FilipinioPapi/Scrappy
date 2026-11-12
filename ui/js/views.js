@@ -1478,6 +1478,7 @@ async function renderChildren(el, ctx, folder) {
 // ---------------- Genres and Favorites (side menu pages) ----------------
 
 // Every genre in your movie and TV libraries as colour tiles; a tile opens that library filtered by it.
+const FAN_ART = new Map();
 export async function genresView(root, ctx) {
   root.innerHTML = loadingHtml();
   let vs = [];
@@ -1492,6 +1493,26 @@ export async function genresView(root, ctx) {
       ${libs.length > 1 ? `<div class="season-tabs">${libs.map((l) => `<button class="season-tab ${l.Id === cur ? 'active' : ''}" data-lib="${esc(l.Id)}">${esc(l.Name)}</button>`).join('')}</div>` : ''}
       <div class="tvgen-grid" id="ggrid"></div></section>`;
   const grid = root.querySelector('#ggrid'), count = root.querySelector('#gcount');
+  // TV tiles (approved Look 2): two posters from the genre fan out of each tile. Fetched a few at a time after the tiles are up, kept for the session.
+  const TVG = document.documentElement.classList.contains('tv');
+  grid.classList.toggle('tvgen-tv', TVG);
+  const fanPosters = async (lib) => {
+    const fans = [...grid.querySelectorAll('.tvfan')];
+    const paint = (f, urls) => f.querySelectorAll('i').forEach((el, k) => { if (urls[k]) el.style.backgroundImage = `url("${urls[k]}")`; });
+    for (let k = 0; k < fans.length; k += 4) {
+      await Promise.all(fans.slice(k, k + 4).map(async (f) => {
+        const key = lib.Id + '/' + f.dataset.g;
+        if (!FAN_ART.has(key)) {
+          try {
+            const d = await api.get(`/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${f.dataset.g}&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&SortBy=Random&Limit=2&ImageTypes=Primary`);
+            FAN_ART.set(key, (d?.Items || []).map((i) => i.ImageTags?.Primary && img(i.Id, 'Primary', i.ImageTags.Primary, 200)).filter(Boolean));
+          } catch { return; }
+        }
+        if (f.isConnected) paint(f, FAN_ART.get(key));
+      }));
+      if (!ctx.alive() || !fans[0].isConnected) return;
+    }
+  };
   const draw = async () => {
     const lib = libs.find((l) => l.Id === cur);
     await load(`/Genres?ParentId=${lib.Id}&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&Fields=ItemCounts`, (d) => {
@@ -1499,8 +1520,9 @@ export async function genresView(root, ctx) {
       count.textContent = `${gs.length} genre${gs.length === 1 ? '' : 's'}`;
       grid.innerHTML = gs.map((g) => {
         const look = genreLook(g.Name), n = g.MovieCount || g.SeriesCount || g.ChildCount || 0;
-        return `<a class="tvgen" href="#/library/${encodeURIComponent(lib.Id)}/${encodeURIComponent(g.Id)}" style="--c1:${look.c[0]};--c2:${look.c[1]};--c3:${look.c[2]}"><span class="gf-sym" aria-hidden="true">${look.sym}</span><b>${esc(g.Name)}</b>${n ? `<small>${n} title${n === 1 ? '' : 's'}</small>` : ''}</a>`;
+        return `<a class="tvgen" href="#/library/${encodeURIComponent(lib.Id)}/${encodeURIComponent(g.Id)}" style="--c1:${look.c[0]};--c2:${look.c[1]};--c3:${look.c[2]}"><span class="gf-sym" aria-hidden="true">${look.sym}</span><b>${esc(g.Name)}</b>${n ? `<small>${n} title${n === 1 ? '' : 's'}</small>` : ''}${TVG ? `<span class="tvfan" data-g="${esc(g.Id)}" aria-hidden="true"><i></i><i></i></span>` : ''}</a>`;
       }).join('') || '<div class="empty">No genres in this library yet.</div>';
+      if (TVG) fanPosters(lib);
     }, ctx.alive).catch(() => {});
   };
   root.querySelectorAll('[data-lib]').forEach((b) => b.addEventListener('click', () => {

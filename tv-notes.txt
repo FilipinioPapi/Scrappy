@@ -2,6 +2,6 @@
 # Plain language, one line each. Replace these with every TV build.
 - New movie page: big artwork, poster on the left, Down glides to Cast & crew
 - Player rebuilt for the remote: OK pauses, Left and Right skip, Back closes menus first
-- Actor and director pages are now rows of Movies and Shows
-- Favorites is one grid with Movies, Shows and Episodes buttons
+- New Genres page: big colour tiles with posters fanned out
+- Actor pages are rows of Movies and Shows; Favorites is one grid with buttons
 - Still included: smooth scrolling and the speed pass
