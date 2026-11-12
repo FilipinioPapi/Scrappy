@@ -1,4 +1,4 @@
-import { api, load, quiet, img, imgAny } from './api.js';
+import { api, load, quiet, img, imgAny, memHas, kindOf } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
@@ -839,13 +839,49 @@ function libraryQuery(view) {
   }
 }
 
+// The address of a library's first page. One place, so the TV can fetch it ahead of time.
+// The TV asks for fewer posters per page: it draws them faster and only ~14 fit on screen.
+function libPath(id, view, by, order, gid, extra, tv) {
+  return `/Users/{userId}/Items?ParentId=${id}&${libraryQuery(view)}${gid ? `&GenreIds=${gid}` : ''}${extra}&SortBy=${by}${by === 'Random' ? '' : ',SortName'}&SortOrder=${order}&Fields=${FIELDS}&${IMG_OPTS}&Limit=${tv ? 60 : 120}`;
+}
+
+// ---- Google TV warm-up: fetch what the next screen needs before OK is pressed ----
+// Resting on a poster fetches that title's page; a show also gets its seasons and next episode.
+let warming = '';
+export async function warmItem(id) {
+  if (!id || warming === id) return;
+  warming = id;
+  try {
+    const path = `/Users/{userId}/Items/${id}`;
+    const seasons = `/Shows/${id}/Seasons?UserId={userId}&Fields=${FIELDS},ChildCount`;
+    const series = () => Promise.all([memHas(seasons) ? null : api.get(seasons), seriesTarget(id)]);
+    // Already known to be a show: ask for everything at once instead of one after the other.
+    if (kindOf(id) === 'Series') { await Promise.all([memHas(path) ? null : api.get(path), series()]); return; }
+    const it = memHas(path) ? await api.cached(path) : await api.get(path);
+    if (warming !== id || it?.Type !== 'Series') return;
+    await series();
+  } catch {} finally { if (warming === id) warming = ''; }
+}
+// Shortly after Home is up, the first page of each library is fetched so the side bar opens them at once.
+export async function warmLibraries() {
+  try {
+    const vs = ((await api.cached('/Users/{userId}/Views')) || (await api.get('/Users/{userId}/Views')))?.Items || [];
+    for (const v of vs.filter((x) => ['movies', 'tvshows'].includes(x.CollectionType))) {
+      let i = Number(localStorage.getItem('sort:' + v.Id) || 0); if (!SORTS[i]) i = 0;
+      const p = libPath(v.Id, v, SORTS[i][0], SORTS[i][1], '', '', true) + '&StartIndex=0';
+      const one = `/Users/{userId}/Items/${v.Id}`;
+      await Promise.all([memHas(one) ? null : api.get(one), memHas(p) ? null : api.get(p)]);
+    }
+  } catch {}
+}
+
 // genreId: show only that genre inside the library ("See all" from a genre row).
 export async function libraryView(root, ctx, id, genreId = '') {
   root.innerHTML = loadingHtml();
   let view, genre = null;
   try {
-    view = (await api.cached(`/Users/{userId}/Items/${id}`)) || (await api.get(`/Users/{userId}/Items/${id}`));
-    if (genreId) genre = (await api.cached(`/Users/{userId}/Items/${genreId}`)) || (await api.get(`/Users/{userId}/Items/${genreId}`));
+    const one = async (x) => (await api.cached(`/Users/{userId}/Items/${x}`)) || (await api.get(`/Users/{userId}/Items/${x}`));
+    [view, genre] = await Promise.all([one(id), genreId ? one(genreId) : null]);
   } catch (e) {
     return ctx.fail(e);
   }
@@ -876,14 +912,16 @@ export async function libraryView(root, ctx, id, genreId = '') {
   const grid = root.querySelector('#grid');
   const count = root.querySelector('#count');
   const sentinel = root.querySelector('#sentinel');
-  const PAGE = 120;
   let start = 0, total = Infinity, busy = false, gen = 0;
+  // TV: the highlight starts on the first poster once it is there (not on the Sort button), unless you already moved.
+  let touched = false;
+  if (TV) { const t = () => { touched = true; }; addEventListener('keydown', t, true); ctx.onLeave(() => removeEventListener('keydown', t, true)); }
 
   const base = () => {
     const [by, order] = TVSORTS[sortIdx];
     const gid = genreId || tvGenre?.Id || '';
     const tv = TV ? `${SHOWS[showIdx][1]}${letter && by === 'SortName' ? `&NameStartsWithOrGreater=${letter}` : ''}` : '';
-    return `/Users/{userId}/Items?ParentId=${id}&${libraryQuery(view)}${gid ? `&GenreIds=${gid}` : ''}${tv}&SortBy=${by}${by === 'Random' ? '' : ',SortName'}&SortOrder=${order}&Fields=${FIELDS}&${IMG_OPTS}&Limit=${PAGE}`;
+    return libPath(id, view, by, order, gid, tv, TV);
   };
 
   async function more() {
@@ -907,6 +945,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
           const items = apply(data);
           grid.insertAdjacentHTML('beforeend', items.map((it) => card(it)).join(''));
           rendered = items.length;
+          if (TV && !touched && (document.activeElement === document.body || root.contains(document.activeElement))) grid.querySelector('.card')?.focus({ preventScroll: true });
         }, () => ctx.alive() && myGen === gen);
         start = rendered;
       } else {
@@ -967,6 +1006,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
 const itemKey = (it) => { const { UserData: u = {}, ...rest } = it; return JSON.stringify([rest, u.Played, u.IsFavorite, Math.round((u.PlaybackPositionTicks || 0) / 6e8), u.UnplayedItemCount]); };
 export async function itemView(root, ctx, id, seasonId = '') {
   root.innerHTML = loadingHtml();
+  if (kindOf(id) === 'Series') warmItem(id);
   let moved = false, shownKey = '';
   try {
     await load(`/Users/{userId}/Items/${id}`, (it) => {

@@ -1,7 +1,5 @@
-# What's new in the next Google TV build (shown on the TV's update card, 5 lines at most).
-# Plain language, one line each. Replace these with every TV build.
-- Sign-in: the TV keyboard only opens when you press OK on the box
-- Sign-in: while typing, the question and buttons stay above the keyboard
-- Sign-in: Back no longer starts the setup over, and the screen no longer jumps
-- Typing a name like movies.example.com now connects securely (https) by itself
-- Still included: smooth scrolling and the speed pass
+Speed pass: going Back, and pages you have already opened, now appear at once
+Speed pass: a movie or show starts loading while you rest on its poster; libraries are ready before you open them
+Sign-in: Down from a server tile goes to its box, and the screen resets when Back closes the keyboard
+The remote works from the first press after opening the app; Back on sign-in no longer changes the phone code
+Still included: smooth scrolling

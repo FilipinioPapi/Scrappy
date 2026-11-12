@@ -135,6 +135,21 @@ function first(scope) {
 
 const isText = (el) => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range'].includes(el.type)));
 
+// Text boxes: the TV keyboard only opens when you press OK on the box, so the remote can move past it freely.
+// (The sign-in box does this itself.)
+const armable = (el) => isText(el) && el.id !== 'siIn' && (!el.readOnly || el.dataset.tvarm);
+const disarm = (el) => { if (el && el.dataset.tvarm === 'on') { el.dataset.tvarm = 'off'; el.readOnly = true; } };
+addEventListener('focusin', (e) => { const el = e.target; if (armable(el) && el.dataset.tvarm !== 'on') { el.dataset.tvarm = 'off'; el.readOnly = true; } }, true);
+addEventListener('focusout', (e) => disarm(e.target), true);
+addEventListener('tv-ime', (e) => { if (e.detail === false) disarm(document.activeElement); });
+addEventListener('keydown', (e) => {
+  const el = e.target;
+  if (e.key !== 'Enter' || el?.dataset?.tvarm !== 'off') return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  el.dataset.tvarm = 'on'; el.blur(); el.dataset.tvarm = 'on'; el.readOnly = false; el.focus({ preventScroll: true });
+  const n = el.value.length; try { el.setSelectionRange(n, n); } catch {}
+}, true);
+
 // The remote's media buttons act like the PC's keyboard shortcuts.
 const MEDIA = { MediaPlayPause: ' ', MediaPlay: ' ', MediaPause: ' ', MediaFastForward: 'ArrowRight', MediaRewind: 'ArrowLeft', MediaTrackNext: 'n' };
 addEventListener('keydown', (e) => {
@@ -210,6 +225,18 @@ addEventListener('tv:rail-go', () => {
     if (f && !inRail(f) && document.getElementById('view')?.contains(f)) { clearInterval(t); scrollTo(0, 0); f.focus({ preventScroll: true }); } else if (++n > 40) clearInterval(t);
   }, 120);
 });
+
+// Warm-up: resting on a poster for a moment fetches its page, so OK opens it at once.
+let warmT = 0;
+addEventListener('focusin', (e) => {
+  clearTimeout(warmT);
+  const m = e.target.closest?.('a.card[href*="#/item/"]')?.getAttribute('href').match(/#\/item\/([^/?]+)/);
+  if (!m || root.classList.contains('playing')) return;
+  warmT = setTimeout(() => import('./views.js').then((v) => v.warmItem(decodeURIComponent(m[1]))).catch(() => {}), 220);
+});
+// And once Home has settled, the libraries behind the side bar are fetched quietly.
+let warmedLibs = false;
+addEventListener('scrappy:ready', () => { if (warmedLibs) return; warmedLibs = true; setTimeout(() => import('./views.js').then((v) => v.warmLibraries()).catch(() => {}), 2500); });
 
 // If the highlighted thing gets redrawn (the home banner changes picture, a row
 // refreshes), the highlight stays in the same spot instead of jumping to the top.

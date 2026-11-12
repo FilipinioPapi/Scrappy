@@ -125,6 +125,15 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
     inp.readOnly = !on;
     if (on) { inp.focus({ preventScroll: true }); const n = inp.value.length; try { inp.setSelectionRange(n, n); } catch {} }
   }
+  // Back closes the TV keyboard without telling the box: put the screen back as it was.
+  const imeGone = (e) => { if (e.detail === false) { const inp = q.querySelector('#siIn'); if (inp && !inp.readOnly) { inp.readOnly = true; root.querySelector('.tvsi')?.classList.remove('typing'); } } };
+  addEventListener('tv-ime', imeGone);
+  // Down from a server tile goes to its question (the box, or the first button), never past it.
+  tiles.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown') return;
+    const to = q.querySelector('[data-tvfirst]') || q.querySelector('button');
+    if (to) { e.preventDefault(); e.stopPropagation(); to.focus({ preventScroll: true }); }
+  }, true);
   q.addEventListener('focusout', (e) => { if (e.target.id === 'siIn') { e.target.readOnly = true; root.querySelector('.tvsi')?.classList.remove('typing'); } });
   q.addEventListener('click', (e) => { if (e.target.id === 'siIn' && e.target.readOnly) typing(e.target, true); });
   q.addEventListener('submit', (e) => { e.preventDefault(); act('next'); });
@@ -170,7 +179,7 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
     root.querySelector('#siQr').hidden = false;
     push();
   }).catch(() => {});
-  ctx.onLeave?.(() => { alive = false; unlisten?.(); invoke('pair_stop').catch(() => {}); });
+  ctx.onLeave?.(() => { alive = false; removeEventListener('tv-ime', imeGone); unlisten?.(); invoke('pair_stop').catch(() => {}); });
 
   draw();
 }

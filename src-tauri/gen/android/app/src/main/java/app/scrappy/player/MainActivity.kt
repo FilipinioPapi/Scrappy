@@ -5,6 +5,8 @@ import android.view.WindowManager
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
   // We handle the remote's Back button ourselves (below).
@@ -24,10 +26,25 @@ class MainActivity : TauriActivity() {
       override fun handleOnBackPressed() {
         webView.evaluateJavascript("(window.__tvBack ? window.__tvBack() : false)") { handled ->
           if (handled != "true") {
-            if (webView.canGoBack()) webView.goBack() else moveTaskToBack(true)
+            // The page walks its own history, so "nothing to go back to" means leave the app.
+            moveTaskToBack(true)
           }
         }
       }
     })
+    // The remote should work from the first press: give the page the focus right away.
+    webView.isFocusable = true
+    webView.isFocusableInTouchMode = true
+    webView.requestFocus()
+    // Tell the page when the TV keyboard opens or closes (Back closes it without the page noticing).
+    var imeOpen = false
+    ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { v, insets ->
+      val open = insets.isVisible(WindowInsetsCompat.Type.ime())
+      if (open != imeOpen) {
+        imeOpen = open
+        webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('tv-ime',{detail:$open}))", null)
+      }
+      ViewCompat.onApplyWindowInsets(v, insets)
+    }
   }
 }
