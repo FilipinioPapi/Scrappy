@@ -190,7 +190,7 @@ def ratio(a, b):
 
 def nd_artist_names(item):
     names = [item.get("artist", ""), item.get("displayArtist", "")]
-    names += [a.get("name", "") for a in item.get("artists", []) or []]
+    names += [a.get("name", "") for a in item.get("artists") or [] if isinstance(a, dict)]
     out = set()
     for n in names:
         for part in re.split(r"\s*(?:;|/| & | and |, | feat\.? | ft\.? | x )\s*", n or "", flags=re.I):
@@ -317,12 +317,18 @@ class Library:
         isrc = (track.get("ISRC") or "").upper()
         best = None
         for s in self.songs.get(title, []):
-            if isrc and (s.get("isrc") or "").upper() == isrc:
+            if isrc and isrc in isrcs(s):
                 return s
             sc = artist_score(artists, s["_artists"])
             if sc >= SURE_ARTIST and (not best or sc > best[0]):
                 best = (sc, s)
         return best[1] if best else None
+
+
+def isrcs(song):
+    """Navidrome sends ISRC as a list (OpenSubsonic); older servers as a string."""
+    v = song.get("isrc") or []
+    return {str(x).upper() for x in ([v] if isinstance(v, str) else v)}
 
 
 def search_links(artist, album):
