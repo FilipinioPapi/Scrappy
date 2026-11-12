@@ -7,6 +7,16 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 32 · Nov 11, 6:10 PM
+**Music**
+- Fixed: Music side menu Recents were saved only on the PC you played on. Albums you play on any device now show up too, in time order
+- Fixed: the Playlists chip in the Music side menu now lists all your playlists, not only ones played on this PC
+
+**Requests**
+- Fixed: the Requests button looked like it did nothing the first time you clicked it. It now shows the page loading straight away
+
+<sub>Built from c77dfa4 · includes: Music, Requests</sub>
+
 ### Preview 31 · Nov 11, 4:15 PM
 **Movies & TV**
 - Fixed: after editing a movie's or show's details, the page kept showing the old ones until you left it
