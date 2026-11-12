@@ -3,7 +3,7 @@
 // tab's results first. Forgives typos, and understands typed filters:
 // in:music  type:song  genre:rock  year:2010-2019  fav:yes  is:unplayed
 import { api, img } from './api.js';
-import { esc, toast, loadingHtml } from './components.js';
+import { esc, toast, loadingHtml, card } from './components.js';
 import { playSongs, cover, fmt, IC } from './mplayer.js';
 import { nd, coverHtml, href, plural, lib, kindOf } from './music.js';
 import { absCover, absAuthorImg, playBook } from './bplayer.js';
@@ -348,8 +348,50 @@ export function mountSearch() {
 }
 
 // ---------- All results page ----------
+// ---------- Google TV search screen (approved mock) ----------
+// Its own screen with a big search box: OK opens the TV's keyboard (with voice), and
+// results fill in underneath as you type. Movies, shows and people show as posters.
+const TV_RECENT = 'tvSearchRecent';
+const tvRecent = () => { try { return JSON.parse(localStorage.getItem(TV_RECENT) || '[]'); } catch { return []; } };
+const tvRemember = (q) => { try { localStorage.setItem(TV_RECENT, JSON.stringify([q, ...tvRecent().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 8))); } catch {} };
+function tvSearchPage(root, ctx, q) {
+  root.innerHTML = `<div class="spage tvs">
+    <label class="tvs-box">${SI.search}<input type="search" id="tvq" data-tvfirst placeholder="Search movies, shows, people" spellcheck="false" autocomplete="off" enterkeyhint="search" aria-label="Search"></label>
+    <div class="tvs-out"></div></div>`;
+  const input = root.querySelector('#tvq'); const out = root.querySelector('.tvs-out');
+  input.value = q;
+  let seq = 0, timer = 0;
+  const idle = () => { const r = tvRecent(); out.innerHTML = r.length ? `<section class="sres"><div class="section-head"><h2>Recent searches</h2></div><div class="tvs-chips">${r.map((x) => `<button type="button" class="chip" data-tvq="${esc(x)}">${esc(x)}</button>`).join('')}</div></section>` : '<div class="empty">Press OK on the search box to type or talk.</div>'; };
+  const run = async (text) => {
+    const my = ++seq;
+    history.replaceState(null, '', text ? `#/search?q=${encodeURIComponent(text)}` : '#/search');
+    if (!text) { idle(); return; }
+    if (!out.querySelector('.sres')) out.innerHTML = loadingHtml('Searching…');
+    const res = await searchAll(text, true);
+    if (!ctx.alive() || my !== seq) return;
+    const v = res.video || { items: [], people: [] };
+    const tops = v.items.filter((x) => x.Type !== 'Episode'); const eps = v.items.filter((x) => x.Type === 'Episode');
+    const sec = (title, n, body) => n ? `<section class="sres"><div class="section-head"><h2>${title}</h2><span class="count">${n}</span></div>${body}</section>` : '';
+    const person = (p) => `<a class="card portrait tvs-person" href="#/person/${encodeURIComponent(p.Id)}"><div class="art"><div class="ph">${esc(p.Name)}</div>${p.ImageTags?.Primary ? `<img loading="lazy" src="${esc(img(p.Id, 'Primary', p.ImageTags.Primary, 340))}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}</div><div class="title">${esc(p.Name)}</div></a>`;
+    const other = ['music', 'audiobooks'].flatMap((k) => GROUPS[k](res[k]).filter((g) => g.rows.length)).map((g) => sec(g.title, g.rows.length, `<div class="sgrid">${g.rows.map(rowHtml).join('')}</div>`)).join('');
+    const html = sec('Movies &amp; Shows', tops.length, `<div class="grid">${tops.map((it) => card(it)).join('')}</div>`)
+      + sec('Episodes', eps.length, `<div class="grid wide">${eps.map((it) => card(it)).join('')}</div>`)
+      + sec('People', v.people.length, `<div class="grid">${v.people.map(person).join('')}</div>`) + other;
+    out.innerHTML = failedHtml(res) + (html || `<div class="empty">Nothing found for “${esc(text)}”.</div>`);
+    if (html) tvRemember(text);
+  };
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => run(input.value.trim()), 450); });
+  // OK on the box brings up the TV keyboard; Search/Done on the keyboard drops to the results.
+  input.addEventListener('keydown', (e) => { if (e.key !== 'Enter') return; clearTimeout(timer); if (input.value.trim() && e.isTrusted && input.dataset.typed === input.value) { input.blur(); out.querySelector('a, button')?.focus(); } else { input.dataset.typed = input.value; input.click(); run(input.value.trim()); } });
+  out.addEventListener('click', (e) => { const c = e.target.closest('[data-tvq]'); if (c) { input.value = c.dataset.tvq; run(c.dataset.tvq); } });
+  if (!root.dataset.searchPlay) { root.dataset.searchPlay = '1'; root.addEventListener('click', (e) => { const p = e.target.closest('.sr-play[data-play]'); if (p) { e.preventDefault(); e.stopPropagation(); playFrom(p.dataset.play); } }); }
+  run(q);
+  window.dispatchEvent(new Event('scrappy:ready'));
+}
+
 export async function searchPage(root, ctx) {
   const q = new URLSearchParams(location.hash.split('?')[1] || '').get('q') || '';
+  if (/Android/i.test(navigator.userAgent)) return tvSearchPage(root, ctx, q);
   const input = document.querySelector('#tsearch input'); if (input && !input.value) input.value = q;
   if (!q) { root.innerHTML = '<div class="empty">Type in the search bar at the top, or press Ctrl+F.</div>'; return; }
   root.innerHTML = `<section class="section">${loadingHtml('Searching…')}</section>`;

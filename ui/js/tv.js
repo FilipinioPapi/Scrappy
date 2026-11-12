@@ -5,6 +5,10 @@
 const root = document.documentElement;
 root.classList.add('tv');
 import('./tvupdate.js').catch(() => {});
+// The side rail (set when it has loaded).
+let railApi = null;
+import('./tvrail.js').then((m) => { railApi = m; }).catch(() => {});
+const inRail = (el) => !!railApi && railApi.inRail(el);
 
 // The PC layout is made for a window about 1440 points wide. TVs report less,
 // so scale the whole page to fit.
@@ -41,7 +45,7 @@ function candidates(scope) {
 
 // Pick the closest element in the direction pressed. Straight-line neighbours win
 // over diagonal ones, so moving along a row or down a list feels predictable.
-function nearest(from, dir, list) {
+function nearest(from, dir, list, strict = false) {
   const a = from.getBoundingClientRect();
   const ax = a.left + a.width / 2, ay = a.top + a.height / 2;
   let best = null, bestScore = Infinity;
@@ -54,6 +58,8 @@ function nearest(from, dir, list) {
     else if (dir === 'ArrowLeft') { if (b.right > a.left + 4 && bx >= ax - 4) continue; main = Math.max(0, a.left - b.right); side = Math.abs(by - ay); overlap = b.bottom > a.top && b.top < a.bottom; }
     else if (dir === 'ArrowDown') { if (b.top < a.bottom - 4 && by <= ay + 4) continue; main = Math.max(0, b.top - a.bottom); side = Math.abs(bx - ax); overlap = b.right > a.left && b.left < a.right; }
     else { if (b.bottom > a.top + 4 && by >= ay - 4) continue; main = Math.max(0, a.top - b.bottom); side = Math.abs(bx - ax); overlap = b.right > a.left && b.left < a.right; }
+    // Sideways never leaves the line you're on: Left at the start of a row opens the rail instead.
+    if (strict && !overlap && (dir === 'ArrowLeft' || dir === 'ArrowRight')) continue;
     const score = main + side * (overlap ? 0.5 : 2.5) + (overlap ? 0 : 400);
     if (score < bestScore) { bestScore = score; best = el; }
   }
@@ -65,6 +71,8 @@ function nearest(from, dir, list) {
 // and posters) in the middle of the screen, so it never stops half way between rows.
 function go(el) {
   el.focus({ preventScroll: true });
+  // Cards that sit on top of the page (update, menus) never move the page underneath.
+  if (el.closest(LAYERS)) return;
   const row = el.closest('.row, .mrow');
   const hero = el.closest('[data-row="hero"], .hero');
   if (hero) { scrollTo({ top: 0, behavior: 'smooth' }); return; }
@@ -79,7 +87,7 @@ function go(el) {
 function first(scope) {
   const list = candidates(scope);
   const view = document.getElementById('view');
-  return list.find((el) => view?.contains(el) && el.matches('.card, .row a, .mrow a')) || list.find((el) => view?.contains(el)) || list[0];
+  return list.find((el) => view?.contains(el) && el.matches('[data-tvfirst]')) || list.find((el) => view?.contains(el) && el.matches('.hero .btn')) || list.find((el) => view?.contains(el) && el.matches('.card, .row a, .mrow a')) || list.find((el) => view?.contains(el)) || list.find((el) => !inRail(el));
 }
 
 const isText = (el) => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range'].includes(el.type)));
@@ -107,11 +115,36 @@ addEventListener('keydown', (e) => {
   e.preventDefault();
   const scope = scopeFor(cur);
   if (!cur || !scope.contains(cur)) { const f = first(scope); if (f) go(f); return; }
-  const next = nearest(cur, k, candidates(scope));
-  if (next) go(next);
+  // The side rail: Up/Down move inside it, Right goes back to where you were on the page.
+  if (inRail(cur)) {
+    if (k === 'ArrowLeft') return;
+    if (k === 'ArrowRight') { leaveRail(); return; }
+    const next = nearest(cur, k, candidates(scope).filter(inRail));
+    if (next) next.focus({ preventScroll: true });
+    return;
+  }
+  const next = nearest(cur, k, candidates(scope).filter((el) => !inRail(el)), scope === pageScope());
+  if (next) { go(next); return; }
+  // Nothing further left on the page: Left opens the rail on the screen you're on.
+  if (k === 'ArrowLeft' && railApi && scope === pageScope()) { fromPage = cur; railApi.railCurrent()?.focus({ preventScroll: true }); }
+});
+const pageScope = () => document.getElementById('view')?.parentElement || document.body;
+let fromPage = null;
+function leaveRail() {
+  const back = fromPage && fromPage.isConnected && shown(fromPage) ? fromPage : first(pageScope());
+  if (back) go(back);
+}
+addEventListener('tv:leave-rail', leaveRail);
+// Picking another screen from the rail lands on that screen once it has drawn.
+addEventListener('tv:rail-go', () => {
+  fromPage = null; let n = 0;
+  const t = setInterval(() => {
+    if (!inRail(document.activeElement) && document.activeElement !== document.body) { clearInterval(t); return; }
+    const f = first(pageScope());
+    if (f && !inRail(f) && document.getElementById('view')?.contains(f)) { clearInterval(t); scrollTo(0, 0); f.focus({ preventScroll: true }); } else if (++n > 40) clearInterval(t);
+  }, 120);
 });
 
-// When a new screen appears and nothing has the highlight, put it on the first thing.
 // If the highlighted thing gets redrawn (the home banner changes picture, a row
 // refreshes), the highlight stays in the same spot instead of jumping to the top.
 const BOX = '[data-row], section, .maside, header, .menu, [role=dialog]';
@@ -139,6 +172,8 @@ const TOP = new Set(['', '#', '#/', '#/home', '#/music', '#/audiobooks']);
 const watcher = new MutationObserver(() => {});
 watcher.observe(document.body, { attributes: true, attributeOldValue: true, childList: true, subtree: true });
 window.__tvBack = () => {
+  // On the side rail, Back just closes it.
+  if (inRail(document.activeElement)) { leaveRail(); return true; }
   // 1. Let whatever is open close itself (menus, panels, the player) through Escape.
   watcher.takeRecords();
   const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document;

@@ -3344,3 +3344,48 @@ label.set-row { cursor: pointer; }
 [data-hold] { opacity: 0 !important; }
 [data-hold], [data-hold] *, [data-hold] *::before, [data-hold] *::after { animation-play-state: paused !important; }
 [data-hold] img, img.pre { transition: none !important; }
+
+/* ---------- Google TV: side rail (approved mock) ---------- */
+/* Replaces the top bar and the Movies & TV side menu. Icons only until the remote moves
+   onto it, then it opens with names. Sizes are in the 1440-wide layout the TV scales. */
+#tvrail { display: none; }
+html.tv #tvrail:not([hidden]) { display: flex; }
+html.tv #tvrail { position: fixed; left: 0; top: 0; bottom: 0; width: 88px; z-index: 40; flex-direction: column; gap: 6px; padding: 24px 14px; overflow: hidden;
+  background: #0C0808; border-right: 1px solid #1F1516; transition: width .16s ease-out; }
+html.tv #tvrail:focus-within { width: 320px; box-shadow: 24px 0 48px rgba(0,0,0,.6); }
+html.tv #tvrail .tr-logo { display: flex; align-items: center; gap: 12px; height: 56px; margin: 0 0 14px 4px; flex: none; }
+html.tv #tvrail .tr-logo img { width: 52px; height: 52px; object-fit: contain; flex: none; }
+html.tv #tvrail .tr-logo b { font: 400 27px/1 var(--display); color: var(--red); letter-spacing: .02em; opacity: 0; transition: opacity .12s; white-space: nowrap; }
+html.tv #tvrail .tr-i { display: flex; align-items: center; gap: 18px; height: 52px; padding: 0 16px; border-radius: 14px; color: #B9A9A7; text-decoration: none; flex: none; white-space: nowrap; font-size: 20px; font-weight: 600; outline: none; }
+html.tv #tvrail .tr-i svg { width: 27px; height: 27px; flex: none; }
+html.tv #tvrail .tr-i span { opacity: 0; transition: opacity .12s; overflow: hidden; text-overflow: ellipsis; }
+html.tv #tvrail:focus-within .tr-i span, html.tv #tvrail:focus-within .tr-logo b { opacity: 1; }
+html.tv #tvrail .tr-i.cur { color: #fff; background: rgba(255,255,255,.08); }
+html.tv #tvrail .tr-i.cur svg { color: var(--red-hi, var(--red)); }
+html.tv #tvrail .tr-i:focus { background: #fff; color: #140D0E; outline: none; box-shadow: none; }
+html.tv #tvrail .tr-i:focus svg { color: #140D0E; }
+html.tv #tvrail .tr-sep { height: 1px; background: #2A1C1D; margin: 8px 6px; flex: none; }
+html.tv #tvrail .tr-sp { flex: 1; min-height: 0; }
+html.tv-rail #topbar { display: none !important; }
+html.tv-rail body { padding-left: 88px; }
+html.tv-rail .tvshell .maside, html.tv-rail .mgrab { display: none; }
+html.tv-rail .tvshell .mmain { margin-left: 0; }
+html.tv-rail .maside { left: 88px; top: 0; }
+html.tv-rail .mmain { min-height: 100vh; }
+html.tv-rail .mpanel, html.tv-rail .pldrawer { top: 0; }
+html.tv-rail .srow.shead.sticky { top: 0; }
+html.tv-rail #mbar { left: 88px; }
+html.tv-rail .hero { margin-top: -8px; }
+
+/* ---------- Google TV: search screen ---------- */
+html.tv .tvs { padding-top: 40px; }
+html.tv .tvs-box { display: flex; align-items: center; gap: 16px; height: 76px; padding: 0 26px; margin-bottom: 30px; border-radius: 20px; background: #1E1415; border: 2px solid #33221F; color: #B9A9A7; }
+html.tv .tvs-box svg { width: 30px; height: 30px; flex: none; }
+html.tv .tvs-box input { flex: 1; min-width: 0; background: none; border: 0; outline: none !important; box-shadow: none !important; color: #fff; font: inherit; font-size: 28px; }
+html.tv .tvs-box:focus-within { border-color: #fff; background: #2A1C1D; }
+html.tv .tvs-chips { display: flex; flex-wrap: wrap; gap: 12px; }
+html.tv .tvs-chips .chip { height: 48px; padding: 0 22px; font-size: 19px; border-radius: 999px; border: 1px solid #33221F; background: #1E1415; color: #fff; font-weight: 600; }
+html.tv .tvs .grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); }
+html.tv .tvs-person .art { border-radius: 50%; aspect-ratio: 1; }
+html.tv-rail .hero { height: 66vh; max-height: none; }
+html.tv .hero-arrow { display: none !important; }
