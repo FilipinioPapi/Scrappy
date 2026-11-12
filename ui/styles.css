@@ -1012,6 +1012,18 @@ select.pick { background-color: rgba(255,255,255,.08); border: 0; }
 .hint.ok { color: #86E0AE; } .hint.bad { color: var(--blush); }
 .creds { display: flex; flex-direction: column; gap: 16px; transition: opacity .28s var(--ease); }
 .creds.locked { opacity: .45; }
+.same-card { display: flex; flex-direction: column; gap: 12px; animation: fadeUp .3s var(--ease); }
+.same-card[hidden] { display: none; }
+.same-btn { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(236,40,46,.6); background: rgba(236,40,46,.12); box-shadow: 0 0 0 3px rgba(236,40,46,.12); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background .2s, transform .2s var(--ease); }
+.same-btn:hover { background: rgba(236,40,46,.18); transform: scale(1.01); } .same-btn:active { transform: scale(.98); }
+.same-btn .av { position: relative; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: var(--red); display: grid; place-items: center; font-weight: 800; font-size: 16px; color: #fff; flex: none; }
+.same-btn .av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.same-txt { min-width: 0; }
+.same-txt b { display: block; font-size: 15.5px; font-weight: 800; }
+.same-txt small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.same-btn .go { margin-left: auto; height: 38px; padding: 0 18px; border-radius: 10px; background: var(--red); color: #fff; font-weight: 700; display: grid; place-items: center; flex: none; }
+.same-or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12.5px; }
+.same-or::before, .same-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .signed-box { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid var(--line); }
 .signed-box div { display: flex; gap: 12px; } .signed-box span { width: 80px; color: var(--muted); } .signed-box b { min-width: 0; overflow-wrap: anywhere; }
 .signin-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }

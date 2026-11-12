@@ -1,4 +1,4 @@
-import { api, load, quiet, img, imgAny } from './api.js';
+import { api, load, quiet, img, imgAny, IMG_BASE } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
@@ -30,7 +30,21 @@ export function firstTab(session) {
   return '#/login';
 }
 
+// "Same username and password as Emby?": the account you just signed in with, kept in memory
+// only while you set up the next server. Scrappy never saves passwords.
+let reuse = null;
+let embyPic = null;
+async function embyFace() {
+  if (embyPic !== null) return embyPic;
+  try { const u = await api.get('/Users/{userId}'); embyPic = u?.PrimaryImageTag ? `${IMG_BASE}/user/${encodeURIComponent(u.Id)}?tag=${encodeURIComponent(u.PrimaryImageTag)}&w=96` : ''; }
+  catch { embyPic = ''; }
+  return embyPic;
+}
+
+addEventListener('hashchange', () => { if (!/^#\/(login|servers)/.test(location.hash)) reuse = null; });
+
 export function loginView(root, ctx, pick = '') {
+  embyPic = null;
   let session = ctx.session || {};
   const srv = () => session.servers || {};
   // Start on the server asked for, else the first one not signed in yet.
@@ -98,6 +112,7 @@ export function loginView(root, ctx, pick = '') {
           </div>
           <div class="hint" id="addrHint">The same address you use for ${sel.name} in a browser.</div>
         </div>
+        <div class="same-card" id="sameCard" hidden></div>
         <div class="creds locked" id="creds">
           <div class="field"><label for="user">Username</label><input type="text" id="user" spellcheck="false" placeholder="Unlocks after the check" value="${esc(st.user || '')}" disabled></div>
           <div class="field"><label for="pass">Password</label><input type="password" id="pass" disabled></div>
@@ -147,6 +162,7 @@ export function loginView(root, ctx, pick = '') {
         chk.innerHTML = `${svgLine('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 16)}Found`;
         $('#stepTxt').textContent = 'Step 2: sign in with your account.';
         lock(false);
+        offerSame();
         ($('#user').value ? $('#pass') : $('#user')).focus();
       } catch (e) {
         if (my !== checking) return;
@@ -166,7 +182,31 @@ export function loginView(root, ctx, pick = '') {
       hint.className = 'hint'; hint.textContent = `The same address you use for ${sel.name} in a browser.`;
       $('#stepTxt').textContent = 'Step 1: tell Scrappy where your server is.';
       lock(true);
+      $('#sameCard').hidden = true;
     });
+    // Offer the account from another server: one click while the password is still in memory,
+    // otherwise it fills in the username and you type the password.
+    async function offerSame() {
+      const card = $('#sameCard');
+      const emby = srv().emby;
+      const src = reuse && reuse.kind !== sel.kind ? reuse : emby?.signedIn && sel.kind !== 'emby' ? { kind: 'emby', name: 'Emby', user: emby.user } : null;
+      if (!src?.user) { card.hidden = true; return; }
+      const full = !!src.pass;
+      const pic = src.kind === 'emby' ? await embyFace() : '';
+      if (!found[sel.kind]) return;
+      card.innerHTML = `<button type="button" class="same-btn" id="sameBtn">
+          <span class="av">${esc((src.user[0] || '?').toUpperCase())}${pic ? `<img src="${esc(pic)}" alt="" onerror="this.remove()">` : ''}</span>
+          <span class="same-txt"><b>${full ? `Same username and password as ${src.name}?` : `Same username as ${src.name}?`}</b>
+          <small>${full ? `Signs in as ${esc(src.user)} with the password you used for ${src.name}` : `Fills in ${esc(src.user)}. Type your password once to finish.`}</small></span>
+          <span class="go">${full ? 'Sign in' : 'Use it'}</span></button>
+        <div class="same-or">or type a different account</div>`;
+      card.hidden = false;
+      $('#sameBtn').onclick = () => {
+        $('#user').value = src.user;
+        if (full) { $('#pass').value = src.pass; form.requestSubmit(); }
+        else $('#pass').focus();
+      };
+    }
     form.onsubmit = async (e) => {
       e.preventDefault();
       if (!found[sel.kind]) { check(); return; }
@@ -174,6 +214,7 @@ export function loginView(root, ctx, pick = '') {
       go.disabled = true; go.innerHTML = `${SPIN}Signing in…`;
       try {
         session = await api.serverLogin(sel.kind, found[sel.kind], $('#user').value, $('#pass').value);
+        reuse = { kind: sel.kind, name: sel.name, user: $('#user').value.trim(), pass: $('#pass').value };
         await ctx.refreshSession();
         toast(`Signed in to ${sel.name}.`);
         next();

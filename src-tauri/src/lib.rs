@@ -997,8 +997,10 @@ async fn serve_image(app: AppHandle, uri: String) -> Response<Vec<u8>> {
     if parts[0] == "nd" {
         return serve_nd_cover(&state, parts[1], &parsed).await;
     }
-    let (item_id, img_type) = (parts[0], parts[1]);
-    let index = parts.get(2).copied().unwrap_or("");
+    // Emby profile pictures: /user/<user id>?tag=..&w=..
+    let user_pic = parts[0] == "user";
+    let (item_id, img_type) = if user_pic { (parts[1], "UserPrimary") } else { (parts[0], parts[1]) };
+    let index = if user_pic { "" } else { parts.get(2).copied().unwrap_or("") };
     let mut tag = String::new();
     let mut width = String::from("400");
     for (k, v) in parsed.query_pairs() {
@@ -1025,15 +1027,12 @@ async fn serve_image(app: AppHandle, uri: String) -> Response<Vec<u8>> {
         return not_found();
     }
     let idx = if index.is_empty() { String::new() } else { format!("/{index}") };
-    let url = format!(
-        "{}/Items/{}/Images/{}{}?maxWidth={}&quality=90{}",
-        cfg.server,
-        item_id,
-        img_type,
-        idx,
-        width,
-        if tag.is_empty() { String::new() } else { format!("&tag={tag}") }
-    );
+    let tag_q = if tag.is_empty() { String::new() } else { format!("&tag={tag}") };
+    let url = if user_pic {
+        format!("{}/Users/{}/Images/Primary?maxWidth={}&quality=90{}", cfg.server, item_id, width, tag_q)
+    } else {
+        format!("{}/Items/{}/Images/{}{}?maxWidth={}&quality=90{}", cfg.server, item_id, img_type, idx, width, tag_q)
+    };
     match state.http.get(url).header("X-Emby-Token", &cfg.token).send().await {
         Ok(r) if r.status().is_success() => match r.bytes().await {
             Ok(b) => {
