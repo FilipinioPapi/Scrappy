@@ -1,7 +1,9 @@
 // The Music tab (Navidrome): side menu with Your Library, and every Music screen.
 // Screens follow the approved mock-ups on the Music design canvas.
 import { api, quiet } from './api.js';
+import { shellAttrs, headHtml, wireSize } from './sidemenu.js';
 import { esc, toast, loadingHtml } from './components.js';
+import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { history, music, onMusic, current, playSongs, playNext, addToQueue, playAt, removeAt, moveInQueue, clearUpNext, setFavorite, togglePlay, cover, fmt, IC } from './mplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -45,6 +47,18 @@ export function coverHtml(id, title, w = 300, cls = '') {
   const h = hue(title || id);
   return `<div class="mcv ${cls}" style="--h:${h}"><span>${esc(title || '')}</span>${id ? `<img loading="lazy" src="${cover(id, w)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>`;
 }
+// "Released March 12, 2017" when the tags have a full date (original release first,
+// so reissues show when the album first came out), else month + year, else just the year.
+export function relDate(a) {
+  const pick = [a.originalReleaseDate, a.releaseDate].find((d) => d?.year && d.month) || null;
+  if (pick) {
+    const dt = new Date(pick.year, pick.month - 1, pick.day || 1);
+    const opts = pick.day ? { month: 'long', day: 'numeric', year: 'numeric' } : { month: 'long', year: 'numeric' };
+    return 'Released ' + dt.toLocaleDateString(undefined, opts);
+  }
+  const y = a.originalReleaseDate?.year || a.year;
+  return y ? 'Released ' + y : '';
+}
 export const totalTime = (secs) => { const m = Math.round(secs / 60); return m >= 60 ? `${Math.floor(m / 60)} hr ${m % 60} min` : `${m} min`; };
 export const plural = (n, w) => `${(n || 0).toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
 export const dateStr = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '');
@@ -63,6 +77,47 @@ export async function ndLoad(endpoint, params, render, alive) {
     if (alive() && JSON.stringify(fresh) !== shown) { if (shown) quiet(); render(fresh, false); }
     return fresh;
   } catch (e) { if (!cached) throw e; return cached; }
+}
+
+// Pages can open from what is already here: this session's answer, else the copy saved on
+// this computer last time. Only a first-ever visit waits for the server. The server's answer
+// follows in the background, and if it differs the page is drawn again quietly, once (see
+// musicView). `sig` picks the part of the answer the page actually shows.
+const ndMem = new Map(), ndFly = new Map(), ndGot = new Map();
+const ND_SOON = 15000; // an answer this fresh is not asked for again
+const qs = (params) => (typeof params === 'string' ? params : q(params));
+const ndKey = (endpoint, params) => endpoint + '?' + qs(params);
+const ndRecent = (k) => ndMem.has(k) && Date.now() - ndGot.get(k) < ND_SOON && !ndFly.has(k);
+function ndFresh(endpoint, params) {
+  const k = ndKey(endpoint, params);
+  if (!ndFly.has(k)) ndFly.set(k, api.nd(endpoint, qs(params)).then((d) => { ndMem.set(k, d); ndGot.set(k, Date.now()); return d; }).finally(() => ndFly.delete(k)));
+  return ndFly.get(k);
+}
+// Signing out: the next person starts clean.
+window.addEventListener('scrappy:rowcache-clear', () => { ndMem.clear(); ndGot.clear(); albumsMem.clear(); songsCache = null; lastSongs = null; });
+/** What we already have for this question, or null. Never asks the server. */
+export async function ndSaved(endpoint, params) {
+  const k = ndKey(endpoint, params);
+  return ndMem.get(k) ?? await api.ndCached(endpoint, qs(params)).catch(() => null);
+}
+export async function ndFast(endpoint, params, v, { sig = JSON.stringify } = {}) {
+  const k = ndKey(endpoint, params);
+  if (ndMem.has(k) && (v?.final || ndRecent(k))) return ndMem.get(k);
+  const fresh = ndFresh(endpoint, params);
+  const have = await ndSaved(endpoint, params);
+  if (have == null) return fresh;
+  const was = sig(have);
+  const differs = fresh.then((d) => sig(d) !== was, (e) => { if (String(e) === 'ND_SESSION_EXPIRED' && v?.alive()) v.ctx.fail(e); return false; });
+  if (v?.checks) v.checks.push(differs);
+  return have;
+}
+/** A part of a page that arrives on its own: filled straight away from `saved` (what ndSaved
+ *  gave) when there is one, then again only if the server's answer differs. */
+export function ndPart(endpoint, params, v, saved, fill, none) {
+  const was = saved ? JSON.stringify(saved) : null;
+  if (saved) fill(saved);
+  if (v.final || ndRecent(ndKey(endpoint, params))) { if (!saved) none?.(); return; }
+  ndFresh(endpoint, params).then((d) => { if (v.alive() && JSON.stringify(d) !== was) fill(d); }).catch(() => { if (!saved && v.alive()) none?.(); });
 }
 
 // ---------- Your Library (recents + pins), kept on this computer ----------
@@ -90,13 +145,32 @@ function libEntries() {
   const live = (r) => !r.k.startsWith('pl:') || r.k.startsWith('pl:auto:') || !playlistsLoaded || known.has(r.k);
   const fresh = (r) => { if (!r.k.startsWith('pl:')) return r; const p = playlistsCache.find((x) => 'pl:' + x.id === r.k); return p ? { ...r, ...plEntry(p) } : r; };
   const seenH = new Set();
-  const rec = history().map(histEntry).filter((r) => r && !seenH.has(r.k) && seenH.add(r.k)).filter(live).map(fresh);
+  // Albums Navidrome saw you play on any device (your other PC, a phone app) join in by time.
+  const when = new Map(ndPlayed.map((a) => ['al:' + a.id, a.played ? Date.parse(a.played) : 0]));
+  const mine = history().map(histEntry).filter((r) => r && !seenH.has(r.k) && seenH.add(r.k))
+    .map((r) => (when.get(r.k) > (r.at || 0) ? { ...r, at: when.get(r.k) } : r));
+  const elsewhere = ndPlayed.filter((a) => !seenH.has('al:' + a.id) && seenH.add('al:' + a.id))
+    .map((a) => ({ k: 'al:' + a.id, t: a.name, sub: `Album · ${a.artist || ''}`, cv: a.coverArt, at: a.played ? Date.parse(a.played) : 0 }));
+  const rec = [...mine, ...elsewhere].sort((a, b) => (b.at || 0) - (a.at || 0)).filter(live).map(fresh);
   // Pinned things stay reachable even after they fall out of history.
   const kept = lib.rec.filter(live).map(fresh).filter((r) => !seenH.has(r.k));
   const seen = new Set([...rec, ...kept].map((r) => r.k));
   const extra = playlistsCache.filter((p) => !seen.has('pl:' + p.id)).map(plEntry);
   return { rec, all: [...rec, ...kept, ...extra] };
 }
+// Recently played albums from Navidrome, which counts plays per account across every device.
+let ndPlayed = [], ndPlayedAt = 0;
+function loadPlayed(force) {
+  if (!force && Date.now() - ndPlayedAt < 60000) return;
+  ndPlayedAt = Date.now();
+  nd('getAlbumList2', { type: 'recent', size: 30 }).then((r) => {
+    const list = r.albumList2?.album || [];
+    if (JSON.stringify(list.map((a) => [a.id, a.played])) === JSON.stringify(ndPlayed.map((a) => [a.id, a.played]))) return;
+    ndPlayed = list; drawLib(false);
+  }).catch(() => {});
+}
+window.addEventListener('scrappy:rowcache-clear', () => { ndPlayed = []; ndPlayedAt = 0; });
+window.addEventListener('scrappy:refresh', () => { ndPlayedAt = 0; });
 const plEntry = (p) => ({ k: 'pl:' + p.id, t: p.name, sub: `Playlist · ${plural(p.songCount, 'song')}`, cv: p.coverArt });
 window.addEventListener('music:played', () => drawLib(true));
 export const kindOf = (k) => ({ pl: 'playlist', al: 'album', ar: 'artist', sg: 'song', mx: 'mix', gn: 'genre' }[k.slice(0, 2)]);
@@ -122,7 +196,12 @@ function drawLib(animate) {
   const ok = (e) => lib.fil === 'all' || kindOf(e.k) === lib.fil;
   const pins = lib.pins.map((k) => all.find((e) => e.k === k)).filter(Boolean).filter(ok);
   // Recents: the ten most recent things you played or opened (pins sit above and don't count).
-  const rest = rec.filter((e) => !lib.pins.includes(e.k)).filter(ok).slice(0, 10);
+  let rest = rec.filter((e) => !lib.pins.includes(e.k)).filter(ok).slice(0, 10);
+  // The Playlists chip lists every playlist you have: recently played first, then the rest A-Z.
+  if (lib.fil === 'playlist') {
+    const have = new Set([...lib.pins, ...rest.map((e) => e.k)]);
+    rest = rest.concat(playlistsCache.map(plEntry).filter((e) => !have.has(e.k)).sort((a, b) => a.t.localeCompare(b.t)));
+  }
   const before = animate ? flipFirst(box) : null;
   box.innerHTML = (pins.length ? `<div class="mlsec">PINNED</div>${pins.map((e) => libItem(e, true)).join('')}<div class="mlsec">RECENTS</div>` : '')
     + rest.map((e) => libItem(e, false)).join('')
@@ -151,9 +230,9 @@ function markActive() {
 
 function shellHtml() {
   return `
-  <div class="mshell${lib.collapsed ? ' collapsed' : ''}" style="--mside:${lib.collapsed ? 76 : lib.width}px">
+  <div ${shellAttrs('mushell')}>
     <aside class="maside">
-      <div class="mhead"><span class="lbl">MUSIC</span><button type="button" class="gb" id="mCol" title="Collapse / expand" aria-label="Collapse or expand the side menu">${MI.collapse}</button></div>
+      ${headHtml('MUSIC')}
       ${NAV.map(([p, l, d]) => `<a class="mnav" data-p="${p}" href="#/music/${p}" title="${l}">${line(d)}<span class="lbl">${l}</span></a>`).join('')}
       <div class="msep"></div>
       <div class="mlibh lbl">YOUR LIBRARY</div>
@@ -168,11 +247,8 @@ function shellHtml() {
 
 function wireShell(root) {
   const shell = root.querySelector('.mshell');
-  root.querySelector('#mCol').onclick = () => {
-    lib.collapsed = !lib.collapsed; saveLib();
-    shell.classList.toggle('collapsed', lib.collapsed);
-    shell.style.setProperty('--mside', (lib.collapsed ? 76 : lib.width) + 'px');
-  };
+  // Collapse and resize are shared with the other tabs' side menus.
+  wireSize(shell);
   root.querySelector('.mchips').onclick = (e) => {
     const c = e.target.closest('.mchip'); if (!c) return;
     lib.fil = lib.fil === c.dataset.f ? 'all' : c.dataset.f; saveLib(); drawLib(true);
@@ -184,14 +260,6 @@ function wireShell(root) {
     if (!lib.pins.includes(k)) { const e = libEntries().all.find((x) => x.k === k); if (e && !lib.rec.some((r) => r.k === k)) lib.rec = [e, ...lib.rec].slice(0, 60); }
     lib.pins = lib.pins.includes(k) ? lib.pins.filter((x) => x !== k) : [k, ...lib.pins];
     saveLib(); drawLib(true);
-  });
-  // Drag the right edge to resize the side menu.
-  root.querySelector('.mgrab').addEventListener('pointerdown', (e) => {
-    if (lib.collapsed) return;
-    const g = e.currentTarget; g.setPointerCapture(e.pointerId); shell.classList.add('resizing');
-    const mv = (ev) => { lib.width = Math.max(220, Math.min(420, ev.clientX)); shell.style.setProperty('--mside', lib.width + 'px'); };
-    const up = () => { g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); shell.classList.remove('resizing'); saveLib(); };
-    g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up);
   });
   nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; playlistsLoaded = true; drawLib(false); }).catch(() => {});
   drawLib(false);
@@ -493,6 +561,13 @@ export async function addToPlaylist(songs) {
 }
 export function refreshPlaylists() { return nd('getPlaylists').then((r) => { playlistsCache = r.playlists?.playlist || []; playlistsLoaded = true; drawLib(false); return playlistsCache; }).catch(() => playlistsCache); }
 
+// Back pill: returns to the page you came from (home, search, an album...) when there is one,
+// otherwise to the list page it names.
+export function backPill(list, label) {
+  const prev = window.__prevHash || '';
+  const back = prev && prev.split('?')[0] !== list;
+  return `<a class="back-pill" href="${list}"${back ? ' onclick="history.back(); return false;"' : ''}>${MI.back}<span>${back ? 'Back' : label}</span></a>`;
+}
 // ---------- Cards ----------
 export function albumCard(a, sub) {
   return `<a class="mcard" href="${href('album', a.id)}" data-album="${esc(a.id)}">
@@ -509,7 +584,11 @@ export function row(title, inner, more) {
   return `<section class="msec"><div class="msec-h"><h2>${esc(title)}</h2>${more ? `<a class="seeall" href="${more}">See all</a>` : ''}</div><div class="mrow">${inner}</div></section>`;
 }
 // Cover hover = play (albums anywhere on the page).
+// The page area (#mmain) outlives its pages, so each of these is wired to an element once
+// only; otherwise every page visited adds another copy and one click plays many times over.
+const wiredCards = new WeakSet(), wiredMoods = new WeakSet();
 export function wireCards(el) {
+  if (wiredCards.has(el)) return; wiredCards.add(el);
   el.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-playalbum]'); if (!b) return;
     e.preventDefault(); e.stopPropagation();
@@ -526,15 +605,16 @@ export async function musicView(root, ctx) {
   const [, page = 'home', rawId = ''] = path.split('/');
   const id = decodeURIComponent(rawId);
   const params = new URLSearchParams(qs || '');
-  if (!root.querySelector('.mshell:not(.bkshell)')) { root.innerHTML = shellHtml(); wireShell(root); }
+  if (!root.querySelector(':scope > .mushell')) { root.innerHTML = shellHtml(); wireShell(root); }
+  loadPlayed();
   markActive();
   const main = root.querySelector('#mmain');
   main.className = 'mmain page-' + page;
   main.innerHTML = loadingHtml();
   wirePanel(root);
-  const v = { main, ctx, alive: ctx.alive, params };
+  const v = { main, ctx, alive: ctx.alive, params, checks: [], final: false };
   const fail = (e) => { if (ctx.alive()) { if (String(e) === 'ND_SESSION_EXPIRED') return ctx.fail(e); main.innerHTML = `<div class="empty">${esc(String(e))}<br><br><button class="btn secondary" onclick="location.reload()">Try again</button></div>`; } };
-  try {
+  const draw = async () => {
     switch (page) {
       case 'albums': return await albumsPage(v);
       case 'album': return await albumPage(v, id);
@@ -545,6 +625,22 @@ export async function musicView(root, ctx) {
         if (EXTRA[page]) return await EXTRA[page](v, id);
         return await homePage(v);
     }
+  };
+  try {
+    // Pages drawn from a saved copy (ndFast): once the page is up, if the server's answer
+    // differs, draw it again without the entrance, unless it is already being used.
+    let touched = false; const touch = () => { touched = true; };
+    const off = () => ['pointerdown', 'keydown', 'input'].forEach((t) => main.removeEventListener(t, touch, true));
+    ['pointerdown', 'keydown', 'input'].forEach((t) => main.addEventListener(t, touch, true));
+    ctx.onLeave?.(off);
+    await draw();
+    const checks = v.checks; v.checks = null;
+    Promise.all(checks).then(async (r) => {
+      off();
+      if (!r.some(Boolean) || !ctx.alive() || touched || window.scrollY > 400) return;
+      quiet(); v.final = true;
+      try { await draw(); } catch {}
+    });
   } catch (e) { fail(e); }
 }
 // More screens register here (Genres, Playlists, Search).
@@ -629,7 +725,17 @@ async function homePage(v) {
       <div class="mix" id="mix"></div>
       <div class="jump"><h2>Jump back in</h2><div class="jump-grid" id="jump"></div></div>
     </div>
-    <div id="hRecent"></div><div id="hHistory"></div><div id="hMood"></div>`;
+    <div id="hRecent" data-hrow="recent"></div><div id="hRepeat" data-hrow="onrepeat"></div><div id="hBecause" data-hrow="because"></div>
+    <div id="hNewFrom" data-hrow="newfrom"></div><div id="hForgot" data-hrow="forgotten"></div><div id="hUnplayed" data-hrow="unplayed"></div>
+    <div id="hHistory" data-hrow="history"></div><div id="hMood" data-hrow="mood"></div>`;
+  main.querySelector('.mhome-top').dataset.hrow = 'top';
+  homeRows(main, 'music', [
+    { id: 'top', label: 'Mix and Jump back in' }, { id: 'recent', label: 'Recently added' }, { id: 'onrepeat', label: 'On repeat', smart: true },
+    { id: 'because', label: 'Because you played…', smart: true }, { id: 'newfrom', label: 'New from artists you love', smart: true },
+    { id: 'forgotten', label: 'Forgotten favorites', smart: true }, { id: 'unplayed', label: "Albums you haven't played", smart: true },
+    { id: 'history', label: 'Listening history' }, { id: 'mood', label: 'What are you in the mood for?' },
+  ], 'Music');
+  smartMusicRows(main, alive);
   wireCards(main);
   // Mix card with arrows.
   let mi = 0;
@@ -680,6 +786,88 @@ async function homePage(v) {
     }, alive),
   ]).catch((e) => { if (alive()) toast(String(e), true); });
   wireMoods(main);
+}
+// ---------- Smart rows (approved mock) ----------
+const srow = (title, sub, inner) => `<section class="msec"><div class="msec-h"><h2>${esc(title)}${sub ? `<span class="smart-sub">${esc(sub)}</span>` : ''}</h2></div><div class="mrow">${inner}</div></section>`;
+function smartMusicRows(main, alive) {
+  const off = (id) => rowOff('music', id);
+  const put = (sel, html) => { if (!alive()) return; const el = main.querySelector(sel); if (el) el.innerHTML = html; };
+  const DAY = 864e5;
+  const lp = lowPriority(alive);
+  const row_ = (id, fetcher, render, key = id) => { if (!off(id)) cachedRow('music', key, () => fetcher().catch(() => null), render, lp, id).catch(() => {}); };
+  // On repeat: most played songs in the last 30 days (Navidrome's dated history); if that
+  // isn't available, your most played albums of all time.
+  row_('onrepeat', async () => {
+    let ids = [];
+    try {
+      const { ndHistory } = await import('./stats.js');
+      const since = (Date.now() - 30 * DAY) / 1000, n = new Map();
+      (await ndHistory()).forEach(([t, id]) => { if (t >= since) n.set(id, (n.get(id) || 0) + 1); });
+      ids = [...n.entries()].filter((e) => e[1] > 1).sort((a, b) => b[1] - a[1]).slice(0, 40).map((e) => e[0]);
+    } catch {}
+    if (ids.length >= 4) {
+      const songs = (await Promise.all(ids.map((id) => nd('getSong', { id }).then((r) => r.song).catch(() => null)))).filter(Boolean);
+      // Two or more songs from one album show as that album (where its top song sits), not a run of the same cover.
+      const per = new Map(); songs.forEach((x) => per.set(x.albumId, (per.get(x.albumId) || 0) + 1));
+      const seen = new Set(), list = [];
+      for (const x of songs) {
+        if (per.get(x.albumId) > 1) { if (seen.has(x.albumId)) continue; seen.add(x.albumId); list.push({ album: { id: x.albumId, name: x.album, artist: x.artist, coverArt: x.coverArt } }); }
+        else list.push({ song: (({ id, title, artist, artistId, album, albumId, coverArt, duration, genre, year, starred }) => ({ id, title, artist, artistId, album, albumId, coverArt, duration, genre, year, starred }))(x) });
+        if (list.length >= 14) break;
+      }
+      return { mixed: list };
+    }
+    const r = await nd('getAlbumList2', { type: 'frequent', size: 14 });
+    return { albums: r?.albumList2?.album || [] };
+  }, (d) => {
+    if (d.mixed) {
+      const songs = d.mixed.filter((m) => m.song).map((m) => m.song);
+      put('#hRepeat', srow('On repeat', "What you've played most in the last 30 days", d.mixed.map((m) => m.album ? albumCard(m.album) : `<a class="mcard" href="${href('album', m.song.albumId)}?song=${encodeURIComponent(m.song.id)}">
+        <div class="mcard-art">${coverHtml(m.song.coverArt, m.song.title, 300)}<button type="button" class="hoverplay" data-repeat="${songs.indexOf(m.song)}" aria-label="Play">${IC.play}</button></div>
+        <div class="t1">${esc(m.song.title)}</div><div class="t2">${esc(m.song.artist || '')}</div></a>`).join('')));
+      const el = main.querySelector('#hRepeat');
+      if (el) el.onclick = (e) => { const b = e.target.closest('[data-repeat]'); if (!b) return; e.preventDefault(); e.stopPropagation(); playSongs(songs, +b.dataset.repeat, { shuffle: false }); };
+    } else put('#hRepeat', d.albums?.length ? srow('On repeat', 'Your most played albums', d.albums.map((a) => albumCard(a)).join('')) : '');
+   }, 'onrepeat2');
+  // Because you played: artists like the one you played last, using each artist's real
+  // picture and album count from your library (artists with no albums here are left out).
+  row_('because', async () => {
+    const r = await nd('getAlbumList2', { type: 'recent', size: 1 });
+    const a = r.albumList2?.album?.[0]; if (!a?.artistId) return { name: '', list: [] };
+    const [info, all] = await Promise.all([nd('getArtistInfo2', { id: a.artistId, count: 30 }), nd('getArtists')]);
+    const lib = new Map((all.artists?.index || []).flatMap((g) => g.artist || []).map((x) => [x.id, x]));
+    // Navidrome can list a same-named artist with no albums (e.g. "JAY Z" from a feature credit):
+    // match by name to the one that has your albums, and leave out anyone you have no albums for.
+    const norm = (n) => String(n || '').toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9]/g, '');
+    const byName = new Map();
+    lib.forEach((x) => { if (x.albumCount > 0) { const k = norm(x.name); if (!byName.has(k) || byName.get(k).albumCount < x.albumCount) byName.set(k, x); } });
+    const seen = new Set([a.artistId]);
+    const list = (info.artistInfo2?.similarArtist || []).map((x) => { const m = lib.get(x.id); return m?.albumCount > 0 ? m : byName.get(norm(x.name)); })
+      .filter((x) => x && !seen.has(x.id) && seen.add(x.id)).slice(0, 16);
+    return { name: a.artist, list };
+  }, (d) => put('#hBecause', d.list?.length ? srow(`Because you played ${d.name}`, 'Similar artists in your library', d.list.map(artistCard).join('')) : ''), 'because2');
+  // New from artists you love: recently added albums by the artists you play most.
+  row_('newfrom', async () => {
+    const [f, n] = await Promise.all([nd('getAlbumList2', { type: 'frequent', size: 60 }), nd('getAlbumList2', { type: 'newest', size: 200 })]);
+    const fav = new Set((f.albumList2?.album || []).map((a) => a.artistId).filter(Boolean).slice(0, 30));
+    return (n.albumList2?.album || []).filter((a) => fav.has(a.artistId)).slice(0, 14);
+  }, (list) => put('#hNewFrom', list.length ? srow('New from artists you love', 'Recently added albums by artists you play a lot', list.map((a) => albumCard(a)).join('')) : ''));
+  // Forgotten favorites: favorite albums (or albums of favorite songs) not played in 3+ months.
+  row_('forgotten', async () => {
+    const r = await nd('getStarred2');
+    const old = (p) => !p || Date.now() - new Date(p).getTime() > 90 * DAY;
+    let list = (r.starred2?.album || []).filter((a) => old(a.played));
+    if (list.length < 4) {
+      const seen = new Set(list.map((a) => a.id));
+      (r.starred2?.song || []).filter((x) => old(x.played) && x.albumId && !seen.has(x.albumId) && seen.add(x.albumId))
+        .forEach((x) => list.push({ id: x.albumId, name: x.album, artist: x.artist, coverArt: x.coverArt }));
+    }
+    return list.sort(() => Math.random() - 0.5).slice(0, 14);
+  }, (list) => put('#hForgot', list.length ? srow('Forgotten favorites', "Favorites you haven't played in 3+ months", list.map((a) => albumCard(a)).join('')) : ''));
+  row_('unplayed', async () => {
+    const r = await nd('getAlbumList2', { type: 'random', size: 200 });
+    return (r.albumList2?.album || []).filter((a) => !a.playCount).slice(0, 14);
+  }, (list) => put('#hUnplayed', list.length ? srow("Albums you haven't played", 'Still waiting for their first spin', list.map((a) => albumCard(a)).join('')) : ''));
 }
 // History cards: a little badge says what kind of thing it is, plus when you played it.
 const HB = { song: MI.note, album: MI.album, artist: MI.artist, playlist: MI.playlist, mix: IC.shuffle, genre: MI.genres };
@@ -737,6 +925,7 @@ export function moodTile(g) {
     <button type="button" class="hp" data-playgenre="${esc(g.value)}" aria-label="Play ${esc(g.value)}">${IC.play}</button></a>`;
 }
 export function wireMoods(el) {
+  if (wiredMoods.has(el)) return; wiredMoods.add(el);
   el.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-playgenre]'); if (!b) return;
     e.preventDefault(); e.stopPropagation();
@@ -746,65 +935,133 @@ export function wireMoods(el) {
 }
 
 // ---------- Albums (grouped by artist, each with its songs) ----------
+const albumListQ = (type, off) => q({ type, size: 500, offset: off });
+const albumsMem = new Map();
 async function allAlbums(type = 'alphabeticalByArtist') {
   const out = [];
   for (let off = 0; off < 20000; off += 500) {
-    const r = await nd('getAlbumList2', { type, size: 500, offset: off });
+    const r = await nd('getAlbumList2', albumListQ(type, off));
     const a = r.albumList2?.album || []; out.push(...a);
+    if (a.length < 500) break;
+  }
+  albumsMem.set(type, out);
+  return out;
+}
+// The list as it was last time, from the copies saved on this computer.
+async function savedAlbums(type) {
+  const out = [];
+  for (let off = 0; off < 20000; off += 500) {
+    const r = await api.ndCached('getAlbumList2', albumListQ(type, off)).catch(() => null);
+    const a = r?.albumList2?.album; if (!a) break;
+    out.push(...a);
     if (a.length < 500) break;
   }
   return out;
 }
+// Open with what we already have (this session's list, else last time's saved copy) and let
+// the server's answer follow in `fresh`; only a first-ever visit waits for the server.
+async function albumsFast(type = 'alphabeticalByArtist') {
+  const fresh = allAlbums(type);
+  fresh.catch(() => {});
+  let list = albumsMem.get(type) || await savedAlbums(type);
+  if (!list.length) list = await fresh;
+  return { list, fresh };
+}
+const albumsSig = (l) => l.map((a) => `${a.id}|${a.name}|${a.artist}|${a.coverArt}|${a.songCount}|${a.year}|${a.genre}`).join('\n');
+/** A long list drawn a screenful at once and the rest in small pieces while the page is idle,
+ *  so opening it never freezes the app. Returns a function that stops it. */
+export function drawInPieces(box, parts, { first = 8, step = 24, empty = '', alive = () => true, after } = {}) {
+  let n = 0, stop = false;
+  box.innerHTML = parts.length ? parts.slice(0, first).join('') : empty; n = first; after?.();
+  const idle = window.requestIdleCallback ? (f) => requestIdleCallback(f, { timeout: 300 }) : (f) => setTimeout(f, 30);
+  const more = () => { if (stop || n >= parts.length || !alive() || !box.isConnected) return; box.insertAdjacentHTML('beforeend', parts.slice(n, n + step).join('')); n += step; after?.(); idle(more); };
+  if (n < parts.length) idle(more);
+  return () => { stop = true; };
+}
 async function albumsPage(v) {
   const { main, alive, params } = v;
   const sort = params.get('sort') || 'artist';
-  const albums = await allAlbums(sort === 'newest' ? 'newest' : 'alphabeticalByArtist');
+  const { list: first, fresh } = await albumsFast(sort === 'newest' ? 'newest' : 'alphabeticalByArtist');
   if (!alive()) return;
-  const artists = new Map();
-  for (const a of albums) { const k = sort === 'newest' ? '_' : (a.artistId || a.artist); if (!artists.has(k)) artists.set(k, { id: a.artistId, name: a.artist, albums: [] }); artists.get(k).albums.push(a); }
+  let albums = first, groups = [];
+  const regroup = () => {
+    const artists = new Map();
+    for (const a of albums) { const k = sort === 'newest' ? '_' : (a.artistId || a.artist); if (!artists.has(k)) artists.set(k, { id: a.artistId, name: a.artist, albums: [] }); artists.get(k).albums.push(a); }
+    groups = [...artists.values()];
+  };
+  regroup();
+  const countText = () => `${plural(albums.length, 'album')} · ${plural(new Set(albums.map((a) => a.artistId)).size, 'artist')}`;
   main.innerHTML = `
-    <div class="mpage-h"><h1 class="disp">Albums</h1><span class="t2 cnt">${plural(albums.length, 'album')} · ${plural(new Set(albums.map((a) => a.artistId)).size, 'artist')}</span>
+    <div class="mpage-h"><h1 class="disp">Albums</h1><span class="t2 cnt" id="aCnt">${countText()}</span>
       <label class="msearch">${MI.search}<input type="search" id="aFind" placeholder="Search albums, artists, songs" spellcheck="false"></label>
       <div class="seg"><a href="#/music/albums" class="${sort === 'artist' ? 'on' : ''}">By artist</a><a href="#/music/albums?sort=newest" class="${sort === 'newest' ? 'on' : ''}">Newest</a></div>
       <a class="btn secondary" href="#/music/artists">${MI.artist}<span>Artists</span></a></div>
     <div id="aList"></div>`;
   const list = main.querySelector('#aList');
-  const groups = [...artists.values()];
-  const block = (a) => `<div class="ab" data-album="${esc(a.id)}">
+  // The song list's space is kept from the start (two columns of 36px rows), so nothing below
+  // moves when the songs arrive.
+  const songsH = (n, cols = 2) => Math.max(40, Math.ceil((n || 0) / cols) * 36);
+  const waitHtml = '<div class="t2 ab-wait">…</div>';
+  const block = (a) => `<div class="ab" data-album="${esc(a.id)}" style="--s2:${songsH(a.songCount)}px;--s1:${songsH(a.songCount, 1)}px">
       <a class="ab-cover" href="${href('album', a.id)}">${coverHtml(a.coverArt, a.name, 400)}<button type="button" class="hoverplay" data-playalbum="${esc(a.id)}" aria-label="Play">${IC.play}</button></a>
       <div class="ab-body"><a class="ab-t disp" href="${href('album', a.id)}">${esc(a.name)}</a>
         <div class="t2">${[sort === 'newest' ? a.artist : '', a.year, a.genre, plural(a.songCount, 'song'), totalTime(a.duration || 0)].filter(Boolean).map(esc).join(' · ')}</div>
         <div class="ab-btns"><button type="button" class="btn" data-abplay="${esc(a.id)}" data-playctx="album:${esc(a.id)}">${IC.play}<span>Play</span></button><button type="button" class="btn secondary" data-abshuf="${esc(a.id)}">${IC.shuffle}<span>Shuffle</span></button><button type="button" class="gb sq" data-abmore="${esc(a.id)}" aria-label="More">${IC.more}</button></div>
-        <div class="ab-songs" data-songs="${esc(a.id)}"><div class="t2 ab-wait">…</div></div></div></div>`;
+        <div class="ab-songs" data-songs="${esc(a.id)}">${waitHtml}</div></div></div>`;
+  let stopDraw = null, lastFilter = '';
   const draw = (filter = '') => {
+    lastFilter = filter;
     const f = filter.trim().toLowerCase();
     const gs = groups.map((g) => ({ ...g, albums: f ? g.albums.filter((a) => (a.name + ' ' + a.artist).toLowerCase().includes(f)) : g.albums })).filter((g) => g.albums.length);
-    list.innerHTML = gs.map((g) => sort === 'newest' ? g.albums.map(block).join('') : `<section class="ag">
+    const parts = sort === 'newest' ? gs.flatMap((g) => g.albums.map(block)) : gs.map((g) => `<section class="ag">
       <div class="ag-h"><a class="ag-a" href="${g.id ? href('artist', g.id) : '#'}">${coverHtml(g.albums[0].coverArt && 'ar-' + g.id, g.name, 120, 'round')}<div><div class="disp">${esc(g.name)}</div><div class="t2">${plural(g.albums.length, 'album')} · ${plural(g.albums.reduce((n, a) => n + (a.songCount || 0), 0), 'song')}</div></div></a>
       ${g.id ? `<button type="button" class="btn secondary sm" data-shufartist="${esc(g.id)}">${IC.shuffle}<span>Shuffle artist</span></button>` : ''}</div>
-      ${g.albums.map(block).join('')}</section>`).join('') || '<div class="empty">No albums match.</div>';
-    observe();
+      ${g.albums.map(block).join('')}</section>`);
+    stopDraw?.(); near.disconnect(); far.disconnect();
+    stopDraw = drawInPieces(list, parts, { first: sort === 'newest' ? 10 : 6, step: sort === 'newest' ? 16 : 6, empty: '<div class="empty">No albums match.</div>', alive, after: observe });
+    syncRows();
   };
-  // Load each album's songs as it scrolls into view.
-  const songsOf = new Map();
-  const io = new IntersectionObserver((ents) => ents.forEach(async (en) => {
-    if (!en.isIntersecting) return; io.unobserve(en.target);
-    const id = en.target.dataset.songs;
+  // Each album's songs: the saved copy straight away, then the server's (a few at a time)
+  // to catch changes. Songs are drawn as an album nears the screen and dropped again once
+  // it is far away, so the page stays light however far you scroll.
+  const songsOf = new Map(), checked = new Set();
+  const albumQ = (id) => q({ id });
+  const fetchSongs = async (id) => { const songs = (await nd('getAlbum', albumQ(id))).album.song || []; songsOf.set(id, songs); checked.add(id); return songs; };
+  const getAlbumSongs = async (id) => {
+    if (songsOf.has(id)) return songsOf.get(id);
+    const c = await api.ndCached('getAlbum', albumQ(id)).catch(() => null);
+    if (c?.album?.song) { songsOf.set(id, c.album.song); return c.album.song; }
+    return fetchSongs(id);
+  };
+  let busy = 0; const waiting = [];
+  const pump = () => { while (busy < 3 && waiting.length) { const job = waiting.shift(); busy++; job().catch(() => {}).finally(() => { busy--; pump(); }); } };
+  const sig = (songs) => songs.map((s) => `${s.id}|${s.title}|${s.duration}|${s.starred ? 1 : 0}`).join(',');
+  const fill = (box, id, songs) => {
+    const cur = current();
+    const half = Math.ceil(songs.length / 2);
+    const col = (arr, off) => `<div class="ab-col">${arr.map((s, i) => `<div class="srow mini${cur?.id === s.id ? ' now' + (music.playing ? ' playing' : '') : ''}" data-i="${off + i}" data-id="${esc(s.id)}"><span class="c-f">${s.starred ? `<span class="minifav">${IC.heartOn}</span>` : ''}</span><span class="c-n"><b>${s.track || off + i + 1}</b>${MI.eq}<button type="button" class="rowplay" aria-label="Play">${IC.play}</button></span><span class="c-t t1">${esc(s.title)}</span><span class="c-l t2">${fmt(s.duration)}</span><span class="c-m"><button type="button" class="gb smore" aria-label="More">${IC.more}</button></span></div>`).join('')}</div>`;
+    box.innerHTML = col(songs.slice(0, half), 0) + col(songs.slice(half), half);
+    box.dataset.shown = sig(songs);
+    if (!box.dataset.wired) { box.dataset.wired = 1; wireSongs(box, () => songsOf.get(id) || [], { type: 'album', id, name: albums.find((x) => x.id === id)?.name }); }
+  };
+  const near = new IntersectionObserver((ents) => ents.forEach(async (en) => {
+    if (!en.isIntersecting) return; near.unobserve(en.target); far.observe(en.target);
+    const box = en.target.querySelector('[data-songs]'), id = box.dataset.songs;
     try {
-      const songs = songsOf.get(id) || (await nd('getAlbum', { id })).album.song || [];
-      songsOf.set(id, songs);
-      if (!en.target.isConnected) return;
-      const half = Math.ceil(songs.length / 2);
-      const col = (arr, off) => `<div class="ab-col">${arr.map((s, i) => `<div class="srow mini${current()?.id === s.id ? ' now' : ''}" data-i="${off + i}" data-id="${esc(s.id)}"><span class="c-f">${s.starred ? `<span class="minifav">${IC.heartOn}</span>` : ''}</span><span class="c-n"><b>${s.track || off + i + 1}</b>${MI.eq}<button type="button" class="rowplay" aria-label="Play">${IC.play}</button></span><span class="c-t t1">${esc(s.title)}</span><span class="c-l t2">${fmt(s.duration)}</span><span class="c-m"><button type="button" class="gb smore" aria-label="More">${IC.more}</button></span></div>`).join('')}</div>`;
-      en.target.innerHTML = col(songs.slice(0, half), 0) + col(songs.slice(half), half);
-      const al = albums.find((x) => x.id === id);
-      if (!en.target.dataset.wired) { en.target.dataset.wired = 1; wireSongs(en.target, () => songsOf.get(id), { type: 'album', id, name: al?.name }); }
-      syncRows();
-    } catch { en.target.innerHTML = ''; }
-  }), { rootMargin: '600px' });
-  const observe = () => list.querySelectorAll('[data-songs]').forEach((el) => io.observe(el));
-  v.ctx.onLeave(() => io.disconnect());
-  const getAlbumSongs = async (id) => songsOf.get(id) || (songsOf.set(id, (await nd('getAlbum', { id })).album.song || []), songsOf.get(id));
+      const songs = await getAlbumSongs(id);
+      if (!box.isConnected) return;
+      fill(box, id, songs);
+      if (!checked.has(id)) { checked.add(id); waiting.push(async () => { if (!alive()) return; const now = await fetchSongs(id); if (box.isConnected && box.dataset.shown && box.dataset.shown !== sig(now)) fill(box, id, now); }); pump(); }
+    } catch { box.innerHTML = ''; }
+  }), { rootMargin: '700px' });
+  const far = new IntersectionObserver((ents) => ents.forEach((en) => {
+    if (en.isIntersecting) return; far.unobserve(en.target);
+    const box = en.target.querySelector('[data-songs]');
+    if (box.dataset.shown) { box.innerHTML = waitHtml; delete box.dataset.shown; }
+    near.observe(en.target);
+  }), { rootMargin: '4000px' });
+  const observe = () => list.querySelectorAll('.ab:not([data-seen])').forEach((el) => { el.dataset.seen = 1; near.observe(el); });
+  v.ctx.onLeave(() => { stopDraw?.(); near.disconnect(); far.disconnect(); waiting.length = 0; });
   list.addEventListener('click', async (e) => {
     const t = e.target.closest('[data-abplay],[data-abshuf],[data-abmore],[data-shufartist]'); if (!t) return;
     e.preventDefault();
@@ -825,6 +1082,8 @@ async function albumsPage(v) {
   wireCards(list);
   let ft; main.querySelector('#aFind').addEventListener('input', (e) => { clearTimeout(ft); ft = setTimeout(() => draw(e.target.value), 150); });
   draw(); ready();
+  // The server's list: redraw only if it differs from what's showing.
+  fresh.then((f) => { if (!alive() || f === albums || albumsSig(f) === albumsSig(albums)) return; albums = f; regroup(); quiet(); main.querySelector('#aCnt').textContent = countText(); draw(lastFilter); }).catch(() => {});
 }
 
 // ---------- One album ----------
@@ -845,7 +1104,7 @@ async function albumPage(v, id) {
             <div class="mbtns"><button type="button" class="btn" id="alPlay" data-playctx="album:${esc(album.id)}">${IC.play}<span>Play</span></button><button type="button" class="btn secondary" id="alShuf">${IC.shuffle}<span>Shuffle</span></button>
             <button type="button" class="gb sq${album.starred ? ' on' : ''}" id="alFav" title="${album.starred ? 'Remove from Favorites' : 'Add to Favorites'}">${album.starred ? IC.heartOn : IC.heart}</button><button type="button" class="gb sq" id="alMore" aria-label="More">${IC.more}</button></div></div></div></div>
       <div class="stable album" id="alSongs">${multiDisc ? discTables(songs) : songTable(songs, { cols: ['plays', 'noartist'], numbers: true })}</div>
-      <div class="t2 relnote">${album.year ? 'Released ' + album.year : ''}${album.recordLabels?.[0]?.name ? ' · ' + esc(album.recordLabels[0].name) : ''}</div>
+      <div class="t2 relnote">${relDate(album)}${album.recordLabels?.[0]?.name ? ' · ' + esc(album.recordLabels[0].name) : ''}</div>
       <div id="alMore1"></div><div id="alMore2"></div>`;
     const from = { type: 'album', id: album.id, name: album.name };
     wireSongs(main.querySelector('#alSongs'), () => songs, from);
@@ -887,7 +1146,7 @@ async function artistsPage(v) {
     let list = (r.artists?.index || []).flatMap((g) => g.artist || []);
     // Most played and Recently added come from the album list, summed up per artist.
     if (sort !== 'az') {
-      const albums = await allAlbums(sort === 'recent' ? 'newest' : 'alphabeticalByArtist').catch(() => []);
+      const albums = await albumsFast(sort === 'recent' ? 'newest' : 'alphabeticalByArtist').then((r) => r.list).catch(() => []);
       if (!alive()) return;
       const score = new Map();
       albums.forEach((a, i) => { if (!a.artistId) return; const v = sort === 'recent' ? -i : (a.playCount || 0); score.set(a.artistId, sort === 'recent' ? Math.max(score.get(a.artistId) ?? -Infinity, v) : (score.get(a.artistId) || 0) + v); });
@@ -897,10 +1156,12 @@ async function artistsPage(v) {
     main.innerHTML = `<div class="mpage-h"><h1 class="disp">Artists</h1><span class="t2 cnt">${plural(list.length, 'artist')}</span>
       <div class="seg">${chip('az', 'A-Z')}${chip('played', 'Most played')}${chip('recent', 'Recently added')}</div>
       <label class="msearch">${MI.search}<input type="search" id="arFind" placeholder="Filter artists" spellcheck="false"></label></div><div class="mgrid argrid" id="arList"></div>`;
+    let stopDraw = null;
     const draw = (f = '') => {
       f = f.trim().toLowerCase();
       const as = list.filter((a) => !f || a.name.toLowerCase().includes(f));
-      main.querySelector('#arList').innerHTML = as.map(artistCard).join('') || '<div class="empty">No artists match.</div>';
+      stopDraw?.();
+      stopDraw = drawInPieces(main.querySelector('#arList'), as.map(artistCard), { first: 60, step: 120, empty: '<div class="empty">No artists match.</div>', alive });
     };
     draw();
     main.querySelector('#arFind').addEventListener('input', (e) => draw(e.target.value));
@@ -911,15 +1172,20 @@ async function artistsPage(v) {
 // ---------- One artist ----------
 async function artistPage(v, id) {
   const { main, alive } = v;
-  const r = await nd('getArtist', { id });
+  const r = await ndFast('getArtist', { id }, v);
   if (!alive()) return;
   const ar = r.artist; const albums = (ar.album || []).sort((a, b) => (b.year || 0) - (a.year || 0));
+  // The parts that used to trickle in (Popular, Favorite songs, About, Fans also like) are
+  // drawn with the page when we have them from a previous visit.
+  const PARTS = [['getTopSongs', { artist: ar.name, count: 20 }], ['getStarred2', {}], ['getArtistInfo2', { id: ar.id, count: 12 }]];
+  const had = await Promise.all(PARTS.map(([e, p]) => ndSaved(e, p)));
+  if (!alive()) return;
   const songCount = albums.reduce((n, a) => n + (a.songCount || 0), 0);
   const plays = albums.reduce((n, a) => n + (a.playCount || 0), 0);
   bump({ k: 'ar:' + ar.id, t: ar.name, sub: 'Artist', cv: ar.coverArt });
   main.innerHTML = `
     <div class="arhero" style="--h:${hue(ar.name)}"><div class="arhero-bg" id="arBg">${ar.coverArt ? `<img src="${cover(ar.coverArt, 1200)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
-      <a class="back-pill" href="#/music/artists">${MI.back}<span>All artists</span></a>
+      ${backPill('#/music/artists', 'All artists')}
       <div class="arhero-in"><div class="inlib"><span>${MI.check}</span>In your library</div><h1 class="disp arname">${esc(ar.name)}</h1>
       <div class="meta">${plays ? plural(plays, 'play') + ' · ' : ''}${plural(albums.length, 'album')} · ${plural(songCount, 'song')}</div></div></div>
     <div class="arbar"><button type="button" class="arplay" id="arPlay" aria-label="Play ${esc(ar.name)}" data-playctx="artist:${esc(ar.id)}">${IC.play}</button>
@@ -927,7 +1193,7 @@ async function artistPage(v, id) {
       <button type="button" class="btn secondary sm${ar.starred ? ' on' : ''}" id="arFav">${ar.starred ? IC.heartOn : IC.heart}<span>${ar.starred ? 'In Favorites' : 'Favorite'}</span></button>
       <button type="button" class="gb lg" id="arMore" aria-label="More">${IC.more}</button>
       <a class="favcard" id="arFavSongs" hidden></a></div>
-    <section class="msec"><h2>Popular</h2><div class="stable" id="arTop"><div class="t2">…</div></div><button type="button" class="link showmore" id="arTopMore" hidden>Show more</button></section>
+    <section class="msec"><h2>Popular</h2><div class="stable" id="arTop" style="min-height:280px"><div class="t2">…</div></div><button type="button" class="link showmore" id="arTopMore" hidden>Show more</button></section>
     ${row('Albums', albums.map((a) => albumCard(a, [a.year, plural(a.songCount, 'song')].filter(Boolean).join(' · '))).join(''))}
     <div id="arBio"></div><div id="arSimilar"></div>`;
   wireCards(main);
@@ -948,90 +1214,184 @@ async function artistPage(v, id) {
   };
   ready();
   // Popular songs.
-  nd('getTopSongs', { artist: ar.name, count: 20 }).then(async (t) => {
-    top = (t.topSongs?.song || []).filter((s) => s.artistId === ar.id || s.artist === ar.name);
-    if (!top.length) { const all = await getAll(); top = all.slice().sort((a, b) => (b.playCount || 0) - (a.playCount || 0)).slice(0, 10); }
+  const topBox = main.querySelector('#arTop'); let shown = 5, topWired = false;
+  const drawTop = () => { topBox.style.minHeight = ''; topBox.innerHTML = songTable(top.slice(0, shown), { cols: ['cover', 'plays', 'noartist', 'subalbum'] }).replace(/<div class="srow shead">[\s\S]*?<\/div>/, ''); const m = main.querySelector('#arTopMore'); m.hidden = top.length <= 5; m.textContent = shown > 5 ? 'Show less' : 'Show more'; syncRows(); };
+  main.querySelector('#arTopMore').onclick = () => { shown = shown > 5 ? 5 : 10; drawTop(); };
+  const noTop = () => { topBox.style.minHeight = ''; topBox.innerHTML = ''; };
+  ndPart(...PARTS[0], v, had[0], async (t) => {
+    let list = (t.topSongs?.song || []).filter((s) => s.artistId === ar.id || s.artist === ar.name);
+    if (!list.length) { try { const all = await getAll(); list = all.slice().sort((a, b) => (b.playCount || 0) - (a.playCount || 0)).slice(0, 10); } catch { return noTop(); } }
     if (!alive()) return;
-    const box = main.querySelector('#arTop'); let shown = 5;
-    const drawTop = () => { box.innerHTML = songTable(top.slice(0, shown), { cols: ['cover', 'plays', 'noartist', 'subalbum'] }).replace(/<div class="srow shead">[\s\S]*?<\/div>/, ''); const m = main.querySelector('#arTopMore'); m.hidden = top.length <= 5; m.textContent = shown > 5 ? 'Show less' : 'Show more'; syncRows(); };
-    main.querySelector('#arTopMore').onclick = () => { shown = shown > 5 ? 5 : 10; drawTop(); };
-    wireSongs(box, () => top, from); drawTop();
-  }).catch(() => { main.querySelector('#arTop').innerHTML = ''; });
+    top = list;
+    if (!topWired) { topWired = true; wireSongs(topBox, () => top, from); }
+    drawTop();
+  }, noTop);
   // Favorite songs by this artist.
-  nd('getStarred2').then((st) => {
+  ndPart(...PARTS[1], v, had[1], (st) => {
     const favs = (st.starred2?.song || []).filter((s) => s.artistId === ar.id);
-    const c = main.querySelector('#arFavSongs'); if (!favs.length || !alive()) return;
+    const c = main.querySelector('#arFavSongs'); if (!alive()) return;
+    if (!favs.length) { c.hidden = true; return; }
     c.hidden = false;
     c.innerHTML = `${coverHtml(ar.coverArt, '', 100, 'round')}<span class="favdot">${IC.heartOn}</span><div><div class="t1">Favorite songs</div><div class="t2">${plural(favs.length, 'favorite song')}</div></div>`;
     c.onclick = (e) => { e.preventDefault(); playSongs(favs, 0, { from: { type: 'artistfav', id: ar.id, name: `${ar.name}: Favorite songs` }, shuffle: false }); };
-    if (v.params.get('fav')) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); c.classList.add('pulse'); }
-  }).catch(() => {});
+    if (v.params.get('fav') && !c.classList.contains('pulse')) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); c.classList.add('pulse'); }
+  });
   // Bio + similar artists in your library.
-  nd('getArtistInfo2', { id: ar.id, count: 12 }).then((info) => {
+  ndPart(...PARTS[2], v, had[2], (info) => {
     const i = info.artistInfo2 || {}; if (!alive()) return;
     const bio = (i.biography || '').replace(/<a [^>]*>.*?<\/a>\.?/g, '').trim();
-    if (bio) main.querySelector('#arBio').innerHTML = `<section class="msec"><h2>About</h2><p class="bio">${esc(bio)}</p></section>`;
+    main.querySelector('#arBio').innerHTML = bio ? `<section class="msec"><h2>About</h2><p class="bio">${esc(bio)}</p></section>` : '';
     const sim = (i.similarArtist || []).filter((s) => s.id);
-    if (sim.length) main.querySelector('#arSimilar').innerHTML = row('Fans also like', sim.map(artistCard).join(''));
-  }).catch(() => {});
+    const simBox = main.querySelector('#arSimilar');
+    simBox.innerHTML = sim.length ? row('Fans also like', sim.map(artistCard).join('')) : '';
+  });
 }
 
 // ---------- Songs ----------
-export async function allSongs() {
+// Every song, kept for a few minutes (Songs tab and Stats share it). Pages of 500 are
+// asked for four at a time instead of one after another.
+const songPage = (off) => q({ query: '', songCount: 500, songOffset: off, albumCount: 0, artistCount: 0 });
+let songsCache = null, lastSongs = null;
+export function allSongs() {
+  if (songsCache && Date.now() - songsCache.t < 5 * 60000) return songsCache.p;
+  const page = (off) => nd('search3', songPage(off)).then((r) => r.searchResult3?.song || []);
+  const p = (async () => {
+    const out = await page(0);
+    if (out.length < 500) return out;
+    for (let off = 500; off < 200000; off += 2000) {
+      const parts = await Promise.all([0, 500, 1000, 1500].map((d) => page(off + d)));
+      parts.forEach((x) => out.push(...x));
+      if (parts.some((x) => x.length < 500)) break;
+    }
+    return out;
+  })();
+  songsCache = { t: Date.now(), p };
+  p.then((x) => { lastSongs = x; }, () => { if (songsCache?.p === p) songsCache = null; });
+  return p;
+}
+// The list as it was last time, read from the copies saved on this computer (no trip to
+// the server), so the Songs tab opens straight away and catches up in the background.
+async function savedSongs() {
   const out = [];
-  for (let off = 0; off < 100000; off += 500) {
-    const r = await nd('search3', { query: '', songCount: 500, songOffset: off, albumCount: 0, artistCount: 0 });
-    const s = r.searchResult3?.song || []; out.push(...s);
-    if (s.length < 500) break;
+  const page = (off) => api.ndCached('search3', songPage(off)).then((r) => r?.searchResult3?.song || null).catch(() => null);
+  for (let off = 0; off < 200000; off += 2000) {
+    const parts = await Promise.all([0, 500, 1000, 1500].map((d) => page(off + d)));
+    for (const x of parts) { if (!x) return out; out.push(...x); if (x.length < 500) return out; }
   }
   return out;
 }
+const songSig = (s) => `${s.id}|${s.title}|${s.album}|${s.artist}|${s.created}|${s.duration}|${s.coverArt}|${s.starred ? 1 : 0}`;
+const sameSongs = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (songSig(a[i]) !== songSig(b[i])) return false; return true; };
 async function songsPage(v) {
   const { main, alive } = v;
-  main.innerHTML = loadingHtml('Loading your songs…');
-  const songs = await allSongs();
-  if (!alive()) return;
+  // This session's list if there is one, else last time's saved copy, else wait for the server.
+  let songs = lastSongs;
+  if (!songs) { main.innerHTML = loadingHtml('Loading your songs…'); songs = await savedSongs(); if (!alive()) return; }
+  const fresh = allSongs();
+  if (!songs.length) { songs = await fresh; if (!alive()) return; }
   let sort = localStorage.getItem('msongsort') || 'title', dir = localStorage.getItem('msongdir') === 'desc' ? -1 : 1, filter = '';
-  let view = songs;
-  const total = songs.reduce((n, s) => n + (s.duration || 0), 0);
+  let view = songs, hay = null;
   main.innerHTML = `
     <div class="mpage-h songs-h"><button type="button" class="arplay sm" id="sgPlay" aria-label="Play all" data-playctx="songs:all">${IC.play}</button><button type="button" class="gb sq" id="sgShuf" title="Shuffle" aria-label="Shuffle">${IC.shuffle}</button>
-      <div><h1 class="disp">Songs</h1><div class="t2 cnt">${plural(songs.length, 'song')} · ${totalTime(total)}</div></div>
+      <div><h1 class="disp">Songs</h1><div class="t2 cnt" id="sgCnt"></div></div>
       <label class="msearch">${MI.search}<input type="search" id="sgFind" placeholder="Search songs" spellcheck="false"></label></div>
-    <div class="stable songs" id="sgTable"></div><nav class="rail" id="sgRail" hidden></nav>`;
+    <div class="stable songs" id="sgTable" data-nohold><div class="srow shead sticky"></div><div class="vwin"><div class="vrows"></div></div></div><nav class="rail" id="sgRail" hidden></nav>`;
   const table = main.querySelector('#sgTable'); const rail = main.querySelector('#sgRail');
+  const win = table.querySelector('.vwin'), rowsEl = win.firstElementChild;
+  const count = () => { main.querySelector('#sgCnt').textContent = `${plural(songs.length, 'song')} · ${totalTime(songs.reduce((n, s) => n + (s.duration || 0), 0))}`; };
   const from = { type: 'songs', id: 'all', name: 'Songs' };
   const keyOf = { title: (s) => (s.title || '').toLowerCase(), album: (s) => (s.album || '').toLowerCase(), added: (s) => s.created || '', time: (s) => s.duration || 0 };
   const letter = (s) => { const c = (s.title || '').trim()[0]?.toUpperCase() || '#'; return /[A-Z]/.test(c) ? c : '#'; };
+  const COLS = { cols: ['cover', 'album', 'added'] };
+
+  // Only the rows on screen (plus a screen or so either side) are drawn, so the list opens,
+  // scrolls and sorts the same however many songs there are. `tops` is where each row sits;
+  // a letter heading rides along with the first row of its letter.
+  const BUF = 900, EDGE = 250;
+  let byLetter = false, rowH = 56, headH = 42, tops = null, firsts = null, total = 0, ra = 0, rb = 0, selId = null;
+  const headTop = new Map();
+  // Sizes and positions as laid out, whatever entrance animation is moving or scaling the
+  // page at that moment (the tab-switch entrance scales it a touch).
+  const heightOf = (el) => { const r = el.getBoundingClientRect(); return r.width && el.offsetWidth ? r.height * el.offsetWidth / r.width : r.height; };
+  const pageTop = (el) => { let y = 0; for (let e = el; e; e = e.offsetParent) y += e.offsetTop; return y; };
+  const measure = () => {
+    rowsEl.innerHTML = '<div class="lsec">A</div>' + (view[0] ? songRow(view[0], 0, COLS) : '');
+    headH = heightOf(rowsEl.firstElementChild) || headH;
+    rowH = (rowsEl.children[1] && heightOf(rowsEl.children[1])) || rowH;
+    rowsEl.innerHTML = ''; ra = rb = 0;
+  };
+  const layout = () => {
+    const n = view.length; headTop.clear();
+    if (!byLetter) { tops = firsts = null; total = n * rowH; }
+    else {
+      tops = new Float64Array(n + 1); firsts = new Uint8Array(n);
+      let y = 0, last = null;
+      for (let i = 0; i < n; i++) { const L = letter(view[i]); tops[i] = y; if (L !== last) { last = L; firsts[i] = 1; headTop.set(L, y); y += headH; } y += rowH; }
+      tops[n] = total = y;
+    }
+    win.style.height = view.length ? total + 'px' : '';
+  };
+  const topOf = (i) => (tops ? tops[i] : i * rowH);
+  const indexAt = (y) => {
+    const n = view.length; if (y <= 0 || !n) return 0;
+    if (!tops) return Math.min(n - 1, Math.floor(y / rowH));
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (tops[mid] <= y) lo = mid; else hi = mid - 1; }
+    return lo;
+  };
+  const html = (a, b) => { let h = ''; for (let i = a; i < b; i++) { if (firsts?.[i]) { const L = letter(view[i]); h += `<div class="lsec" id="L-${L === '#' ? 'num' : L}" data-li="${i}">${L}</div>`; } h += songRow(view[i], i, COLS); } return h; };
+  const at = (el) => +(el.dataset.i ?? el.dataset.li);
+  const render = (force) => {
+    const n = view.length; if (!n) return;
+    const y0 = window.scrollY - pageTop(win), y1 = y0 + innerHeight;
+    if (!force && rb > ra && indexAt(y0 - EDGE) >= ra && indexAt(y1 + EDGE) < rb) return;
+    const a = indexAt(y0 - BUF), b = Math.min(n, indexAt(y1 + BUF) + 1);
+    if (force || a >= rb || b <= ra) rowsEl.innerHTML = html(a, b);
+    else {
+      // Scrolling: rows that are staying keep their place (and their loaded covers); only the ends change.
+      while (rowsEl.firstElementChild && at(rowsEl.firstElementChild) < a) rowsEl.firstElementChild.remove();
+      while (rowsEl.lastElementChild && at(rowsEl.lastElementChild) >= b) rowsEl.lastElementChild.remove();
+      if (a < ra) rowsEl.insertAdjacentHTML('afterbegin', html(a, ra));
+      if (b > rb) rowsEl.insertAdjacentHTML('beforeend', html(rb, b));
+    }
+    rowsEl.style.top = topOf(a) + 'px'; ra = a; rb = b;
+    if (selId) rowsEl.querySelector(`.srow[data-id="${CSS.escape(selId)}"]`)?.classList.add('sel');
+  };
   const draw = () => {
     const f = filter.trim().toLowerCase();
-    view = (f ? songs.filter((s) => `${s.title} ${s.artist} ${s.album}`.toLowerCase().includes(f)) : songs.slice())
-      .sort((a, b) => { const x = keyOf[sort](a), y = keyOf[sort](b); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
+    if (f && !hay) hay = songs.map((s) => `${s.title} ${s.artist} ${s.album}`.toLowerCase());
+    const list = f ? songs.filter((_, i) => hay[i].includes(f)) : songs;
+    // Sort on keys worked out once, not on every comparison.
+    const ks = list.map(keyOf[sort]), order = list.map((_, i) => i);
+    order.sort((i, j) => (ks[i] > ks[j] ? dir : ks[i] < ks[j] ? -dir : i - j));
+    view = order.map((i) => list[i]);
     const arrow = (k) => (sort === k ? `<i class="sarrow${dir < 0 ? ' down' : ''}">▴</i>` : '');
-    const head = `<div class="srow shead sticky"><span class="c-n"></span><button type="button" class="c-t" data-sort="title">Title${arrow('title')}</button><button type="button" class="c-a" data-sort="album">Album${arrow('album')}</button><button type="button" class="c-d" data-sort="added">Date added${arrow('added')}</button><span class="c-f"></span><button type="button" class="c-l" data-sort="time">${MI.clock}${arrow('time')}</button><span class="c-m"></span></div>`;
-    const byLetter = sort === 'title' && !f;
-    let html = head, last = null;
-    view.forEach((s, i) => {
-      if (byLetter) { const L = letter(s); if (L !== last) { html += `<div class="lsec" id="L-${L === '#' ? 'num' : L}">${L}</div>`; last = L; } }
-      html += songRow(s, i, { cols: ['cover', 'album', 'added'] });
-    });
-    table.innerHTML = html + (view.length ? '' : '<div class="empty">No songs match.</div>');
+    table.firstElementChild.innerHTML = `<span class="c-n"></span><button type="button" class="c-t" data-sort="title">Title${arrow('title')}</button><button type="button" class="c-a" data-sort="album">Album${arrow('album')}</button><button type="button" class="c-d" data-sort="added">Date added${arrow('added')}</button><span class="c-f"></span><button type="button" class="c-l" data-sort="time">${MI.clock}${arrow('time')}</button><span class="c-m"></span>`;
+    byLetter = sort === 'title' && !f;
     rail.hidden = !byLetter;
     table.classList.toggle('lettered', byLetter);
     if (byLetter) { const have = new Set(view.map(letter)); rail.innerHTML = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((L) => `<button type="button" class="${have.has(L) ? '' : 'off'}" data-L="${L}">${L}</button>`).join(''); }
-    syncRows();
+    measure(); layout();
+    if (view.length) render(true); else { rowsEl.style.top = '0px'; rowsEl.innerHTML = '<div class="empty">No songs match.</div>'; }
   };
   table.addEventListener('click', (e) => {
+    const r = e.target.closest('.srow[data-i]'); if (r && !e.target.closest('a')) selId = r.dataset.id;
     const h = e.target.closest('[data-sort]'); if (!h) return;
     const k = h.dataset.sort; if (sort === k) dir = -dir; else { sort = k; dir = k === 'added' ? -1 : 1; }
     localStorage.setItem('msongsort', sort); localStorage.setItem('msongdir', dir < 0 ? 'desc' : 'asc'); draw();
   });
-  rail.addEventListener('click', (e) => { const b = e.target.closest('[data-L]'); if (!b || b.classList.contains('off')) return; const el = main.querySelector('#L-' + (b.dataset.L === '#' ? 'num' : b.dataset.L)); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 130, behavior: 'smooth' }); });
+  rail.addEventListener('click', (e) => { const b = e.target.closest('[data-L]'); const L = b?.getAttribute('data-L'); if (!b || b.classList.contains('off') || !headTop.has(L)) return; window.scrollTo({ top: pageTop(win) + headTop.get(L) - 130, behavior: 'smooth' }); });
   wireSongs(table, () => view, from);
   main.querySelector('#sgPlay').onclick = () => playSongs(view, 0, { from, shuffle: false });
   main.querySelector('#sgShuf').onclick = () => playSongs(view, 0, { from, shuffle: true });
   let ft; main.querySelector('#sgFind').addEventListener('input', (e) => { clearTimeout(ft); ft = setTimeout(() => { filter = e.target.value; draw(); }, 150); });
-  draw(); ready();
+  const onScroll = () => render(false);
+  const onResize = () => { if (!view.length) return; measure(); layout(); render(true); };
+  window.addEventListener('scroll', onScroll, { passive: true }); window.addEventListener('resize', onResize);
+  v.ctx.onLeave(() => { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize); });
+  count(); draw(); ready();
+  // Fresh from the server: swap it in only if something actually changed.
+  fresh.then((f) => { if (!alive() || f === songs || sameSongs(f, songs)) return; songs = f; hay = null; count(); draw(); }).catch(() => {});
 }
 
 // ---------- Up next panel (right side) ----------

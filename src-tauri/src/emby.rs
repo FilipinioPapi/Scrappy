@@ -8,6 +8,8 @@ use std::time::Duration;
 
 pub const CLIENT_NAME: &str = "Scrappy Media Center";
 pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The real app version (set at start-up), so Emby's device list shows which Scrappy each person has.
+pub static APP_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// What we remember between launches. The password is never stored, only the
 /// access token Emby hands back after login.
@@ -33,6 +35,8 @@ pub struct Config {
     pub abs_name: String,
     pub abs_user: String,
     pub abs_token: String,
+    /// Request service address; empty = the Emby address + /requests.
+    pub requests_url: String,
 }
 
 impl Config {
@@ -67,7 +71,7 @@ impl Config {
             CLIENT_NAME,
             device_name(),
             self.device_id,
-            CLIENT_VERSION
+            APP_VERSION.get().map(String::as_str).unwrap_or(CLIENT_VERSION)
         );
         if !self.user_id.is_empty() {
             h.push_str(&format!(", UserId=\"{}\"", self.user_id));

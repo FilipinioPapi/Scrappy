@@ -1,5 +1,9 @@
-import { api, load, img, imgAny } from './api.js';
+import { api, load, quiet, img, imgAny } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
+import { pref } from './prefs.js';
+import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
+import { genreLook } from './gtiles.js';
+import { noteCollection } from './tvside.js';
 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
 const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
@@ -43,7 +47,7 @@ export function loginView(root, ctx, pick = '') {
         <nav class="signin-list">
           <div class="signin-label">YOUR SERVERS</div>
           <div id="srvList"></div>
-          <div class="signin-note">Only the servers you sign in to show up as tabs. You can come back here any time from the account menu.</div>
+          <div class="signin-note">Only the servers you sign in to show up as tabs. You can come back here any time from Settings.</div>
         </nav>
         <form class="signin-form" id="srvForm" autocomplete="off"></form>
       </div>
@@ -206,18 +210,30 @@ export async function homeView(root, ctx) {
     // Keep already-loaded rows when the library list is refreshed.
     const oldRows = {};
     root.querySelectorAll('[data-row]').forEach((r) => (oldRows[r.dataset.row] = r));
+    const latest = views.filter((v) => !NO_LATEST.has(v.CollectionType));
     root.innerHTML = `
-      <div data-row="hero"><section class="hero hero-wait"></section></div>
-      <div data-row="resume"></div>
-      <section class="section">
+      <div data-row="hero" data-hrow="hero"><section class="hero hero-wait"></section></div>
+      <div data-row="resume" data-hrow="resume"></div>
+      <div data-row="nextup" data-hrow="nextup"></div>
+      <div data-row="because" data-hrow="because"></div>
+      <div data-hrow="library"><section class="section">
         <div class="section-head"><h2>Library</h2></div>
         <div class="row">${views.map(libTile).join('')}</div>
-      </section>
-      ${views.filter((v) => !NO_LATEST.has(v.CollectionType)).map((v) => `<div data-row="latest-${esc(v.Id)}"></div>`).join('')}
-      <div data-row="genres"></div>`;
+      </section></div>
+      ${latest.map((v) => `<div data-row="latest-${esc(v.Id)}" data-hrow="latest-${esc(v.Id)}"></div>`).join('')}
+      <div data-row="unseen" data-hrow="unseen"></div>
+      <div data-row="again" data-hrow="again"></div>
+      <div data-row="genres" data-hrow="genres"></div>`;
     root.querySelectorAll('[data-row]').forEach((r) => {
       if (oldRows[r.dataset.row]) r.replaceWith(oldRows[r.dataset.row]);
     });
+    homeRows(root, 'tv', [
+      { id: 'hero', label: 'Banner' }, { id: 'resume', label: 'Continue Watching' }, { id: 'nextup', label: 'Next Up', smart: true },
+      { id: 'because', label: 'Because you watched…', smart: true }, { id: 'library', label: 'Library' },
+      ...latest.map((v) => ({ id: 'latest-' + v.Id, label: 'Latest ' + v.Name })),
+      { id: 'unseen', label: "Your top genre you haven't seen", smart: true }, { id: 'again', label: 'Watch again', smart: true },
+      { id: 'genres', label: 'Browse by genre' },
+    ], 'Movies & TV');
     loadRows(root, ctx, views);
   }, ctx.alive).catch((e) => ctx.fail(e));
 }
@@ -242,6 +258,8 @@ function loadRows(root, ctx, views) {
       : '';
   }, ctx.alive).catch(() => {});
 
+  smartRows(root, ctx, q);
+
   // Libraries you've hidden from "Latest" in Emby stay hidden here too.
   api.get('/Users/{userId}').then((u) => u?.Configuration?.LatestItemsExcludes || []).catch(() => [])
     .then((excluded) => {
@@ -261,6 +279,42 @@ function loadRows(root, ctx, views) {
         }, ctx.alive).catch(() => {});
       }
     });
+}
+
+// ---------------- Smart rows (approved mock) ----------------
+function smartRow(root, slot, title, sub, items, opts) {
+  const s = root.querySelector(`[data-row="${slot}"]`);
+  if (!s) return;
+  s.innerHTML = items.length
+    ? `<section class="section"><div class="section-head"><h2>${title}${sub ? `<span class="smart-sub">${esc(sub)}</span>` : ''}</h2></div>
+        <div class="row">${items.map((i) => card(i, opts)).join('')}</div></section>`
+    : '';
+}
+function smartRows(root, ctx, q) {
+  const off = (id) => rowOff('tv', id);
+  const lp = lowPriority(ctx.alive);
+  const types = 'IncludeItemTypes=Movie,Series&Recursive=true';
+  if (!off('nextup')) load(`/Shows/NextUp?UserId={userId}&Limit=20&${q}`, (d) => smartRow(root, 'nextup', 'Next Up', 'The next episode of every show you\'re watching', d?.Items || [], { shape: 'wide', clickPlay: true }), ctx.alive).catch(() => {});
+  // Because you watched: the last thing you finished (a show, if it was an episode).
+  if (!off('because')) cachedRow('tv', 'because', async () => {
+    const d = await api.get(`/Users/{userId}/Items?Recursive=true&IncludeItemTypes=Movie,Episode&Filters=IsPlayed&SortBy=DatePlayed&SortOrder=Descending&Limit=1&Fields=SeriesId`).catch(() => null);
+    const last = d?.Items?.[0]; if (!last) return null;
+    const id = last.Type === 'Episode' ? last.SeriesId : last.Id, name = last.Type === 'Episode' ? last.SeriesName : last.Name;
+    if (!id) return null;
+    const r = await api.get(`/Items/${id}/Similar?UserId={userId}&Limit=20&${q}`).catch(() => null);
+    return { name, items: (r?.Items || []).filter((i) => !i.UserData?.Played) };
+  }, (d) => ctx.alive() && smartRow(root, 'because', `Because you watched ${esc(d.name || '')}`, '', d.items, {}), lp).catch(() => {});
+  // Your most watched genre, things you haven't seen yet. Watch again: favorites, oldest watch first.
+  if (!off('unseen')) cachedRow('tv', 'unseen', async () => {
+    const d = await api.get(`/Users/{userId}/Items?${types}&Filters=IsPlayed&Fields=Genres&Limit=300`).catch(() => null);
+    const n = new Map();
+    (d?.Items || []).forEach((i) => (i.Genres || []).forEach((g) => n.set(g, (n.get(g) || 0) + 1)));
+    const top = [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]; if (!top) return null;
+    const r = await api.get(`/Users/{userId}/Items?${types}&Genres=${encodeURIComponent(top)}&Filters=IsUnplayed&SortBy=Random&Limit=20&${q}`).catch(() => null);
+    return { top, items: r?.Items || [] };
+  }, (d) => ctx.alive() && smartRow(root, 'unseen', `${esc(d.top)} you haven't seen`, 'Your most watched genre', d.items, {}), lp).catch(() => {});
+  if (!off('again')) load(`/Users/{userId}/Items?${types}&Filters=IsFavorite,IsPlayed&SortBy=DatePlayed&SortOrder=Ascending&Limit=20&${q}`,
+    (d) => smartRow(root, 'again', 'Watch again', "Favorites you haven't seen in a while", d?.Items || [], {}), ctx.alive).catch(() => {});
 }
 
 // ---------------- Browse by genre ----------------
@@ -422,6 +476,9 @@ const HERO_SLIDES = 6;
 const DAY = 86400000;
 const heroChecked = new Map(); // backdrop url -> true/false (only definite answers are kept)
 
+// Banner and page backdrops always ask for 4K (Jayden's pick: big TVs). Emby never sends more
+// than the original, so art that's smaller than 4K comes at its full size.
+const bigW = () => 3840;
 function heroBackdrop(it) {
   if (it.BackdropImageTags?.length) return { id: it.Id, tag: it.BackdropImageTags[0] };
   if (it.ParentBackdropImageTags?.length && it.ParentBackdropItemId) return { id: it.ParentBackdropItemId, tag: it.ParentBackdropImageTags[0] };
@@ -501,7 +558,9 @@ async function heroPools() {
 let heroTimer = null;
 let heroGen = 0;
 const heroReady = () => window.dispatchEvent(new Event('scrappy:ready'));
-const heroCacheKey = (ctx) => `heroCache:${ctx.session?.server || ''}:${ctx.session?.userId || ''}`;
+// Settings: the banner shows picks for you (default), only recently added, or nothing.
+const heroMode = () => (pref('heroMode') === 'recent' ? 'recent' : pref('heroMode') === 'off' ? 'off' : 'picks');
+const heroCacheKey = (ctx) => `heroCache:${ctx.session?.server || ''}:${ctx.session?.userId || ''}${heroMode() === 'recent' ? ':recent' : ''}`;
 // Just what a slide needs, so the saved copy stays small.
 const HERO_KEEP = ['Id', 'Type', 'Name', 'SeriesId', 'SeriesName', 'ProductionYear', 'ChildCount', 'RunTimeTicks', 'OfficialRating', 'Overview', 'UserData', 'IndexNumber', 'ParentIndexNumber'];
 function saveHeroCache(ctx, picks, seriesInfo) {
@@ -517,6 +576,7 @@ async function buildHero(root, ctx) {
   const slot = root.querySelector('[data-row=hero]');
   if (!slot) return;
   const my = ++heroGen;
+  if (heroMode() === 'off') { clearInterval(heroTimer); slot.innerHTML = ''; slot._hero = null; heroReady(); return; }
   // Show last time's first slide straight away; the rest are fetched fresh.
   if (!slot._hero) {
     try {
@@ -537,7 +597,7 @@ async function buildHero(root, ctx) {
 // The banner keeps the same set of picks for a few hours, so it doesn't
 // reshuffle every time Home reloads (after watching or editing something).
 const HERO_KEEP_FOR = 6 * 60 * 60 * 1000;
-const heroSetKey = (ctx) => `heroSet:${ctx.session?.server || ''}:${ctx.session?.userId || ''}`;
+const heroSetKey = (ctx) => `heroSet:${ctx.session?.server || ''}:${ctx.session?.userId || ''}${heroMode() === 'recent' ? ':recent' : ''}`;
 async function keptHeroPicks(ctx) {
   let saved;
   try { saved = JSON.parse(localStorage.getItem(heroSetKey(ctx)) || 'null'); } catch {}
@@ -551,7 +611,7 @@ async function keptHeroPicks(ctx) {
     if (!it || (it.Type !== 'Series' && it.UserData?.Played)) continue;
     const b = heroBackdrop(it);
     if (!b) continue;
-    picks.push({ it, kicker: x.kicker, why: x.why, url: img(b.id, 'Backdrop', b.tag, 1920, 0) });
+    picks.push({ it, kicker: x.kicker, why: x.why, url: img(b.id, 'Backdrop', b.tag, bigW(), 0) });
   }
   return picks.length >= Math.min(3, saved.list.length) ? picks : null;
 }
@@ -566,8 +626,8 @@ async function fillHero(slot, ctx, my) {
   for (const k of ['pickBack', 'newEps', 'because', 'added', 'never', 'oldFavs']) P[k] = P[k] || [];
   if (my !== heroGen || !ctx.alive()) return;
   // Take turns from each reason so the banner is a mix; at most 2 "pick back up".
-  const order = [P.pickBack, P.newEps, P.because, P.added, P.never, P.oldFavs];
-  const caps = new Map([[P.pickBack, 2]]);
+  const order = heroMode() === 'recent' ? [P.added] : [P.pickBack, P.newEps, P.because, P.added, P.never, P.oldFavs];
+  const caps = new Map(heroMode() === 'recent' ? [[P.added, 99]] : [[P.pickBack, 2]]);
   const seen = new Set();
   const queue = [];
   for (let round = 0; round < 8; round++) {
@@ -590,7 +650,7 @@ async function fillHero(slot, ctx, my) {
     const batch = queue.slice(i, i + 4);
     const ok = await Promise.all(batch.map((c) => {
       const b = heroBackdrop(c.it);
-      c.url = img(b.id, 'Backdrop', b.tag, 1920, 0);
+      c.url = img(b.id, 'Backdrop', b.tag, bigW(), 0);
       return backdropIsGood(c.url);
     }));
     if (my !== heroGen || !ctx.alive()) return;
@@ -694,7 +754,7 @@ function renderHero(slot, ctx, picks, seriesInfo) {
   el.addEventListener('mouseleave', () => (paused = false));
   const restart = () => {
     clearInterval(heroTimer);
-    if (picks.length > 1) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden) show(i + 1); }, 8000);
+    if (picks.length > 1) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden && !document.documentElement.classList.contains('calm')) show(i + 1); }, 8000);
   };
   drawNav();
   restart();
@@ -869,9 +929,12 @@ export async function libraryView(root, ctx, id, genreId = '') {
 
 // ---------------- Item detail ----------------
 
+// Everything about the item except the play-history details that change on their own
+// (last played time, play count), so an edit to any field (year, rating, tagline, cast...) redraws.
+const itemKey = (it) => { const { UserData: u = {}, ...rest } = it; return JSON.stringify([rest, u.Played, u.IsFavorite, Math.round((u.PlaybackPositionTicks || 0) / 6e8), u.UnplayedItemCount]); };
 export async function itemView(root, ctx, id, seasonId = '') {
   root.innerHTML = loadingHtml();
-  let moved = false;
+  let moved = false, shownKey = '';
   try {
     await load(`/Users/{userId}/Items/${id}`, (it) => {
       // A season opens as its show's page with that season's tab picked,
@@ -880,6 +943,12 @@ export async function itemView(root, ctx, id, seasonId = '') {
         if (!moved) { moved = true; location.replace(`#/item/${encodeURIComponent(it.SeriesId)}/${encodeURIComponent(it.Id)}`); }
         return;
       }
+      // Fresh data that only differs in small details (last played time, etc.) doesn't redraw
+      // the whole page; that redraw is what made it blink.
+      const key = itemKey(it);
+      if (it.Type === 'BoxSet' && !shownKey) noteCollection(it);
+      if (key === shownKey) return;
+      shownKey = key;
       renderItem(root, ctx, it, seasonId);
     }, () => ctx.alive() && !moved);
   } catch (e) {
@@ -1039,15 +1108,18 @@ function wireIconButtons(scope, it) {
     const kind = b.dataset.toggle;
     const on = !b.classList.contains('on');
     const path = kind === 'played' ? `/Users/{userId}/PlayedItems/${it.Id}` : `/Users/{userId}/FavoriteItems/${it.Id}`;
+    // Change the button straight away; Emby can take a moment for a whole show.
+    const setTip = (v) => { b.querySelector('.tip').textContent = kind === 'played'
+      ? (v ? 'Mark unwatched' : it.Type === 'Series' ? 'Mark whole show watched' : 'Mark watched')
+      : (v ? 'Remove from favorites' : 'Add to favorites'); };
+    b.classList.toggle('on', on); setTip(on); b.disabled = true;
     try {
       await (on ? api.post(path) : api.del(path));
-      b.classList.toggle('on', on);
-      b.querySelector('.tip').textContent = kind === 'played'
-        ? (on ? 'Mark unwatched' : it.Type === 'Series' ? 'Mark whole show watched' : 'Mark watched')
-        : (on ? 'Remove from favorites' : 'Add to favorites');
       toast(kind === 'played' ? (on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`) : (on ? `Added ${it.Name} to Favorites` : `Removed ${it.Name} from Favorites`));
-      if (kind === 'played') window.dispatchEvent(new Event('scrappy:refresh'));
-    } catch (e) { toast(String(e), true); }
+      // Only the episode list updates (in place, no reload of the page).
+      if (kind === 'played') document.getElementById('epList')?._soft?.();
+    } catch (e) { b.classList.toggle('on', !on); setTip(!on); toast(String(e), true); }
+    b.disabled = false;
   }));
 }
 
@@ -1087,8 +1159,8 @@ function renderItem(root, ctx, it, seasonId = '') {
   const isSeries = it.Type === 'Series';
   const t = it.ImageTags || {};
   let backdrop = null;
-  if (it.BackdropImageTags?.length) backdrop = img(it.Id, 'Backdrop', it.BackdropImageTags[0], 1920, 0);
-  else if (it.ParentBackdropImageTags?.length) backdrop = img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], 1920, 0);
+  if (it.BackdropImageTags?.length) backdrop = img(it.Id, 'Backdrop', it.BackdropImageTags[0], bigW(), 0);
+  else if (it.ParentBackdropImageTags?.length) backdrop = img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], bigW(), 0);
 
   let poster, wide = false;
   if (isEp && t.Primary) { poster = img(it.Id, 'Primary', t.Primary, 800); wide = true; }
@@ -1200,17 +1272,22 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
     // Specials go last.
     seasons = [...seasons.filter((s) => s.IndexNumber !== 0), ...seasons.filter((s) => s.IndexNumber === 0)];
     if (!seasons.length) { el.innerHTML = ''; return; }
+    const many = seasons.length > 1;
     const pick =
       seasons.find((s) => s.Id === (selected || wantSeasonId)) ||
       seasons.find((s) => s.IndexNumber !== 0 && s.UserData?.UnplayedItemCount) ||
       seasons[0];
-    selected = pick.Id;
-    const tabs = seasons.length > 1
-      ? `<div class="season-tabs" role="tablist">${seasons.map((s) => `
+    // Shows with more than one season get an "All" tab at the end: every episode in one
+    // long list. The Grid layout opens on it.
+    selected = many && (selected === 'all' || (!selected && view === 'grid')) ? 'all' : pick.Id;
+    const total = seasons.reduce((n, s) => n + (s.ChildCount || 0), 0);
+    const tabs = many
+      ? `<div class="season-tabs" role="tablist">${[...seasons, { Id: 'all', Name: 'All', ChildCount: total }].map((s) => `
           <button class="season-tab ${s.Id === selected ? 'active' : ''}" role="tab" data-season="${esc(s.Id)}" data-name="${esc(s.Name)}">
             ${esc(s.Name)}${s.ChildCount ? `<span class="n">${s.ChildCount}</span>` : ''}
           </button>`).join('')}</div>`
       : '';
+    const seasonName = (id) => (id === 'all' ? 'All episodes' : (seasons.find((s) => s.Id === id) || pick).Name);
     el.innerHTML = `
       <section class="section">
         <div class="section-head"><h2>${seasons.length > 1 ? 'Episodes' : esc(pick.Name || 'Episodes')}</h2><span class="count" id="epCount"></span><span class="spacer"></span>
@@ -1228,15 +1305,15 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       crumbEl.previousElementSibling?.removeAttribute('hidden');
       if (animate) { crumbEl.style.animation = 'none'; void crumbEl.offsetWidth; crumbEl.style.animation = ''; }
     };
-    setCrumb(pick.Name, false);
+    setCrumb(seasonName(selected), false);
     el.querySelectorAll('.season-tab').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.season === selected) return;
       selected = b.dataset.season;
       el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t === b));
       b.classList.add('live');
-      setCrumb(b.dataset.name, true);
+      setCrumb(seasonName(selected), true);
       // Keep the address in step so Back and refresh land on this season.
-      if (crumbEl) history.replaceState(null, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`);
+      if (crumbEl && selected !== 'all') history.replaceState(history.state, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`);
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
     }));
     el.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => {
@@ -1245,9 +1322,17 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       localStorage.setItem(viewKey, view);
       el.querySelectorAll('[data-view]').forEach((x) => x.classList.toggle('on', x === b));
       list.className = `episodes view-${view}`;
+      // Picking Grid opens on All.
+      if (view === 'grid' && many && selected !== 'all') {
+        selected = 'all';
+        el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t.dataset.season === 'all'));
+        setCrumb(seasonName(selected), true);
+      }
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
     }));
     renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, false, view);
+    // Quiet redraw after Mark watched: same list, new ticks, no entrance animation.
+    list._soft = () => { list.classList.add('soft'); renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, false, view).finally(() => setTimeout(() => list.classList.remove('soft'), 400)); };
   }, ctx.alive).catch(() => {});
 }
 
@@ -1257,8 +1342,15 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
   const my = ++epListToken;
   const alive = () => ctx.alive() && my === epListToken && list.isConnected;
   list.classList.toggle('live', live);
-  await load(`/Shows/${seriesId}/Episodes?SeasonId=${seasonId}&UserId={userId}&Fields=Overview,PrimaryImageAspectRatio`, (data) => {
-    const eps = data?.Items || [];
+  const all = seasonId === 'all';
+  await load(`/Shows/${seriesId}/Episodes?${all ? '' : `SeasonId=${seasonId}&`}UserId={userId}&Fields=Overview,PrimaryImageAspectRatio`, (data) => {
+    let eps = data?.Items || [];
+    // All: specials go last, like the tabs.
+    if (all) eps = [...eps.filter((e) => e.ParentIndexNumber !== 0), ...eps.filter((e) => e.ParentIndexNumber === 0)];
+    // A small heading where each season starts (All only).
+    const groups = [];
+    for (const e of eps) { const k = e.SeasonId || e.ParentIndexNumber; if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, name: e.SeasonName || (e.ParentIndexNumber ? `Season ${e.ParentIndexNumber}` : 'Specials'), eps: [] }); groups[groups.length - 1].eps.push(e); }
+    const head = (g) => (all ? `<h3 class="ep-season">${esc(g.name)}</h3>` : '');
     count.textContent = `${eps.length} episode${eps.length === 1 ? '' : 's'}`;
     const metaOf = (e) => {
       const ud = e.UserData || {};
@@ -1270,6 +1362,18 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
       // Every episode as a small picture with its number and name; long seasons
       // split into blocks of 100, opening on the block with your next episode.
       const upNext = eps.find((e) => e.UserData?.PlaybackPositionTicks > 0 && !e.UserData?.Played) || eps.find((e) => !e.UserData?.Played);
+      const thumb = (e, i) => `
+            <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
+              ${card(e, { shape: 'wide', noTitle: true })}
+              <span class="ep-num">${e.IndexNumber ?? '•'}</span>
+              <div class="ep-name">${esc(e.Name)}</div>
+            </div>`;
+      if (all) {
+        // Every episode, season by season, in one long grid.
+        let i = 0;
+        list.innerHTML = groups.map((g) => `<div class="ep-sgroup">${head(g)}<div class="ep-grid">${g.eps.map((e) => thumb(e, i++)).join('')}</div></div>`).join('');
+        return;
+      }
       const blocks = Math.ceil(eps.length / GRID_BLOCK);
       let block = Math.max(0, Math.floor(Math.max(0, eps.indexOf(upNext)) / GRID_BLOCK));
       const draw = () => {
@@ -1279,12 +1383,7 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
             const a = eps[b * GRID_BLOCK], z = eps[Math.min(eps.length, (b + 1) * GRID_BLOCK) - 1];
             return `<button class="ep-block ${b === block ? 'on' : ''}" data-block="${b}">${a?.IndexNumber ?? b * GRID_BLOCK + 1}–${z?.IndexNumber ?? (b + 1) * GRID_BLOCK}</button>`;
           }).join('')}</div>` : ''}
-          <div class="ep-grid">${part.map((e, i) => `
-            <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
-              ${card(e, { shape: 'wide', noTitle: true })}
-              <span class="ep-num">${e.IndexNumber ?? '•'}</span>
-              <div class="ep-name">${esc(e.Name)}</div>
-            </div>`).join('')}</div>`;
+          <div class="ep-grid">${part.map(thumb).join('')}</div>`;
         list.querySelectorAll('[data-block]').forEach((b) => b.addEventListener('click', () => { block = Number(b.dataset.block); draw(); }));
       };
       draw();
@@ -1299,7 +1398,8 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
       const cur = list.querySelector('.ep-card.current') || list.querySelector('.ep-card:has(.progress)');
       cur?.scrollIntoView({ block: 'nearest', inline: 'start' });
     } else {
-      list.innerHTML = eps.map((e, i) => `
+      let n = 0;
+      list.innerHTML = groups.map((g) => head(g) + g.eps.map((e) => [e, n++]).map(([e, i]) => `
         <div class="episode ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" style="animation-delay:${Math.min(i, 10) * 35}ms">
           ${card(e, { shape: 'wide', noTitle: true })}
           <div class="ep-text">
@@ -1307,18 +1407,20 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
             <div class="ep-meta">${metaOf(e)}</div>
             <div class="ep-overview">${esc(e.Overview || '')}</div>
           </div>
-        </div>`).join('');
+        </div>`).join('')).join('');
     }
   }, alive).catch(() => {});
 }
 
-// Clicking anywhere on an episode plays it (or resumes it if you're part-way).
+// Episodes: the picture plays it (or resumes it); the name and text open the episode's page.
 document.addEventListener('click', (e) => {
   const row = e.target.closest('#epList [data-ep]');
   if (!row || e.target.closest('[data-play], [data-block]')) return;
   e.preventDefault();
   e.stopPropagation();
-  playItem(row.dataset.ep);
+  const onPicture = e.target.closest('.art') && !e.target.closest('.ep-name');
+  if (onPicture) playItem(row.dataset.ep);
+  else location.hash = `#/item/${encodeURIComponent(row.dataset.ep)}`;
 }, true);
 
 async function renderChildren(el, ctx, folder) {
@@ -1329,6 +1431,58 @@ async function renderChildren(el, ctx, folder) {
           <div class="grid">${items.map((i) => card(i)).join('')}</div></section>`
       : '';
   }, ctx.alive).catch(() => {});
+}
+
+
+// ---------------- Genres and Favorites (side menu pages) ----------------
+
+// Every genre in your movie and TV libraries as colour tiles; a tile opens that library filtered by it.
+export async function genresView(root, ctx) {
+  root.innerHTML = loadingHtml();
+  let vs = [];
+  try { vs = ((await api.cached('/Users/{userId}/Views')) || (await api.get('/Users/{userId}/Views')))?.Items || []; } catch (e) { return ctx.fail(e); }
+  const libs = vs.filter((v) => GENRE_LIBS.has(v.CollectionType) && v.CollectionType !== 'boxsets');
+  if (!ctx.alive()) return;
+  if (!libs.length) { root.innerHTML = '<div class="empty">No movie or TV libraries found.</div>'; return; }
+  let cur = localStorage.getItem('tvGenLib');
+  if (!libs.some((l) => l.Id === cur)) cur = libs[0].Id;
+  root.innerHTML = `<section class="section">
+      <div class="section-head"><h2>Genres</h2><span class="count" id="gcount"></span></div>
+      ${libs.length > 1 ? `<div class="season-tabs">${libs.map((l) => `<button class="season-tab ${l.Id === cur ? 'active' : ''}" data-lib="${esc(l.Id)}">${esc(l.Name)}</button>`).join('')}</div>` : ''}
+      <div class="tvgen-grid" id="ggrid"></div></section>`;
+  const grid = root.querySelector('#ggrid'), count = root.querySelector('#gcount');
+  const draw = async () => {
+    const lib = libs.find((l) => l.Id === cur);
+    await load(`/Genres?ParentId=${lib.Id}&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&Fields=ItemCounts`, (d) => {
+      const gs = d?.Items || [];
+      count.textContent = `${gs.length} genre${gs.length === 1 ? '' : 's'}`;
+      grid.innerHTML = gs.map((g) => {
+        const look = genreLook(g.Name), n = g.MovieCount || g.SeriesCount || g.ChildCount || 0;
+        return `<a class="tvgen" href="#/library/${encodeURIComponent(lib.Id)}/${encodeURIComponent(g.Id)}" style="--c1:${look.c[0]};--c2:${look.c[1]};--c3:${look.c[2]}"><span class="gf-sym" aria-hidden="true">${look.sym}</span><b>${esc(g.Name)}</b>${n ? `<small>${n} title${n === 1 ? '' : 's'}</small>` : ''}</a>`;
+      }).join('') || '<div class="empty">No genres in this library yet.</div>';
+    }, ctx.alive).catch(() => {});
+  };
+  root.querySelectorAll('[data-lib]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.lib === cur) return;
+    cur = b.dataset.lib; try { localStorage.setItem('tvGenLib', cur); } catch {}
+    root.querySelectorAll('[data-lib]').forEach((x) => x.classList.toggle('active', x === b));
+    draw();
+  }));
+  draw();
+}
+
+// Everything you've hearted, split into Movies, Shows, Episodes and Collections.
+export async function favoritesView(root, ctx) {
+  root.innerHTML = loadingHtml();
+  await load(`/Users/{userId}/Items?Filters=IsFavorite&Recursive=true&IncludeItemTypes=Movie,Series,Episode,BoxSet&SortBy=SortName&Fields=${FIELDS}&${IMG_OPTS}&Limit=1000`, (d) => {
+    const items = d?.Items || [];
+    const groups = [['Movie', 'Movies'], ['Series', 'Shows'], ['Episode', 'Episodes'], ['BoxSet', 'Collections']]
+      .map(([t, name]) => [name, items.filter((i) => i.Type === t)]).filter(([, l]) => l.length);
+    root.innerHTML = groups.length
+      ? groups.map(([name, l], k) => `<section class="section"><div class="section-head">${k === 0 ? `<h2>Favorites <span class="h-dim">· ${esc(name)}</span></h2>` : `<h2>${esc(name)}</h2>`}<span class="count">${l.length}</span></div>
+          <div class="grid">${l.map((i) => card(i, i.Type === 'Episode' ? { shape: 'wide' } : {})).join('')}</div></section>`).join('')
+      : `<section class="section"><div class="section-head"><h2>Favorites</h2></div><div class="empty">Nothing here yet. Press the heart on any movie or show to add it.</div></section>`;
+  }, ctx.alive).catch((e) => ctx.fail(e));
 }
 
 
@@ -1363,19 +1517,15 @@ export async function personView(root, ctx, id) {
   try { views = ((await api.cached('/Users/{userId}/Views')) || (await api.get('/Users/{userId}/Views')))?.Items || []; } catch {}
   views = views.filter((v) => GENRE_LIBS.has(v.CollectionType) && v.CollectionType !== 'boxsets');
   const q = `PersonIds=${id}&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=PremiereDate,ProductionYear,SortName&SortOrder=Descending&Fields=${FIELDS},People&${IMG_OPTS}&Limit=300`;
-  const groups = (await Promise.all(views.map(async (v) => {
-    try { const d = await api.get(`/Users/{userId}/Items?ParentId=${v.Id}&${q}`); return { v, items: d?.Items || [] }; }
-    catch { return { v, items: [] }; }
-  }))).filter((g) => g.items.length);
-  if (!ctx.alive()) return;
-  const all = groups.flatMap((g) => g.items);
-  if (!all.length) { box.innerHTML = '<div class="empty">Nothing on your server with them in it yet.</div>'; return; }
+  const paths = views.map((v) => `/Users/{userId}/Items?ParentId=${v.Id}&${q}`);
+  let groups = [], all = [], tab = 'all';
+  const use = (answers) => { groups = views.map((v, i) => ({ v, items: answers[i]?.Items || [] })).filter((g) => g.items.length); all = groups.flatMap((g) => g.items); if (tab !== 'all' && !groups.some((g) => g.v.Id === tab)) tab = 'all'; };
   const roleOf = (it) => {
     const me = (it.People || []).find((x) => x.Id === id);
     return me?.Role || (me?.Type && me.Type !== 'Actor' ? me.Type : '') || String(it.ProductionYear || '');
   };
-  let tab = 'all';
   const draw = () => {
+    if (!all.length) { box.innerHTML = '<div class="empty">Nothing on your server with them in it yet.</div>'; return; }
     const items = tab === 'all' ? all : groups.find((g) => g.v.Id === tab)?.items || [];
     box.innerHTML = `
       <div class="section-head"><h2>On your server</h2><span class="count">${all.length} title${all.length === 1 ? '' : 's'}</span></div>
@@ -1383,45 +1533,17 @@ export async function personView(root, ctx, id) {
       <div class="grid">${items.map((it) => card(it, { shape: 'portrait', subtitle: roleOf(it) })).join('')}</div>`;
     box.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; draw(); }));
   };
-  draw();
-}
-
-// ---------------- Search ----------------
-
-export function searchView(root, ctx) {
-  root.innerHTML = `
-    <section class="section">
-      <div class="search-box"><input type="search" id="q" placeholder="Search movies, shows and episodes" spellcheck="false"></div>
-      <div id="results"></div>
-    </section>`;
-  const q = root.querySelector('#q');
-  const out = root.querySelector('#results');
-  q.value = sessionStorage.getItem('lastSearch') || '';
-  q.focus();
-  let timer, seq = 0;
-  const run = async () => {
-    const term = q.value.trim();
-    sessionStorage.setItem('lastSearch', term);
-    if (term.length < 2) { out.innerHTML = ''; return; }
-    const my = ++seq;
-    try {
-      const data = await api.get(`/Users/{userId}/Items?SearchTerm=${encodeURIComponent(term)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode,BoxSet&Limit=80&Fields=${FIELDS}&${IMG_OPTS}`);
-      if (my !== seq || !ctx.alive()) return;
-      const items = data.Items || [];
-      if (!items.length) { out.innerHTML = `<div class="empty">Nothing found for “${esc(term)}”.</div>`; return; }
-      const groups = [['Movie', 'Movies'], ['Series', 'Shows'], ['BoxSet', 'Collections'], ['Episode', 'Episodes']];
-      out.innerHTML = groups.map(([type, label]) => {
-        const g = items.filter((i) => i.Type === type);
-        if (!g.length) return '';
-        return `<div class="section-head" style="margin-top:10px"><h2>${label}</h2><span class="count">${g.length}</span></div>
-          <div class="grid ${type === 'Episode' ? 'wide' : ''}" style="margin-bottom:28px">${g.map((i) => card(i)).join('')}</div>`;
-      }).join('');
-    } catch (e) {
-      ctx.fail(e, true);
-    }
-  };
-  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 250); });
-  if (q.value) run();
+  // What they are in: the copy saved last time straight away, then the server's answer
+  // (drawn again only if it differs).
+  const saved = await Promise.all(paths.map((path) => api.cached(path).catch(() => null)));
+  if (!ctx.alive()) return;
+  const had = saved.length > 0 && saved.every(Boolean);
+  if (had) { use(saved); draw(); }
+  const fresh = await Promise.all(paths.map((path, i) => api.get(path).catch(() => saved[i])));
+  if (!ctx.alive()) return;
+  if (had && JSON.stringify(fresh) === JSON.stringify(saved)) return;
+  if (had) quiet();
+  use(fresh); draw();
 }
 
 // ---------------- Music / Audiobooks (later) ----------------

@@ -31,8 +31,11 @@ function scopeFor(el) {
   return layers.at(-1) || document.getElementById('view')?.parentElement || document.body;
 }
 
+// Row titles ("Latest Movies") are links on the PC; on the TV the highlight skips them,
+// so Down goes straight from one row of posters to the next.
+const SKIP = '.section-head h2 a';
 function candidates(scope) {
-  return [...scope.querySelectorAll(FOCUSABLE)].filter(shown);
+  return [...scope.querySelectorAll(FOCUSABLE)].filter((el) => !el.matches(SKIP) && shown(el));
 }
 
 // Pick the closest element in the direction pressed. Straight-line neighbours win
@@ -56,10 +59,20 @@ function nearest(from, dir, list) {
   return best;
 }
 
+// Move the highlight and bring it into view. In a row of posters the row slides
+// sideways to keep the poster centred, and the page lines up the whole row (title
+// and posters) in the middle of the screen, so it never stops half way between rows.
 function go(el) {
   el.focus({ preventScroll: true });
-  const vertical = !el.closest('.row, .mrow');
-  el.scrollIntoView({ block: vertical ? 'center' : 'nearest', inline: 'center', behavior: 'smooth' });
+  const row = el.closest('.row, .mrow');
+  const hero = el.closest('[data-row="hero"], .hero');
+  if (hero) { hero.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+  if (!row) { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); return; }
+  const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2;
+  row.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  const sec = row.closest('section, [data-row]') || row;
+  const tall = sec.offsetHeight > (innerHeight / (parseFloat(root.style.zoom) || 1)) * 0.9;
+  sec.scrollIntoView({ block: tall ? 'start' : 'center', inline: 'nearest', behavior: 'smooth' });
 }
 
 function first(scope) {

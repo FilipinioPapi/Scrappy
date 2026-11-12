@@ -190,7 +190,10 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
   private fun selectTrack(p: ExoPlayer, type: String, id: String) {
     val cType = if (type == "audio") C.TRACK_TYPE_AUDIO else C.TRACK_TYPE_TEXT
     val b = p.trackSelectionParameters.buildUpon().clearOverridesOfType(cType)
-    if (id == "no" || id.isEmpty()) {
+    if (id == "auto") {
+      // Back to the TV player's own pick (a new video starts fresh).
+      b.setTrackTypeDisabled(cType, false)
+    } else if (id == "no" || id.isEmpty()) {
       if (cType == C.TRACK_TYPE_TEXT) b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
     } else {
       val loc = trackMap["$type:$id"] ?: return

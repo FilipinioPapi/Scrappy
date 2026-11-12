@@ -276,7 +276,7 @@ const ACTIONS = {
     try {
       await api.post(`/Items/${it.Id}/Refresh?Recursive=true&MetadataRefreshMode=FullRefresh&ImageRefreshMode=FullRefresh&ReplaceAllMetadata=false&ReplaceAllImages=false`);
       toast(`Refreshing ${it.Name} from online sources. This can take a minute.`);
-      setTimeout(refreshPage, 4000);
+      setTimeout(refreshPage, 4000); setTimeout(refreshPage, 15000);
     } catch (e) { toast(String(e), true); }
   },
   delete: (it) => deleteDialog(it),

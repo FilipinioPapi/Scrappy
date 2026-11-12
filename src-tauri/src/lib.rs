@@ -7,11 +7,20 @@ mod mpv;
 #[path = "mpv_android.rs"]
 mod mpv;
 mod music;
+mod requests;
 mod servers;
+#[cfg(desktop)]
+mod updates;
+// On the TV: updates come as a new app file for the TV to install (see updates_android.rs).
+#[cfg(mobile)]
+#[path = "updates_android.rs"]
+mod updates;
+mod appset;
 
 use emby::Config;
 use serde_json::{json, Value};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -237,8 +246,80 @@ async fn api_upload_image(state: State<'_, AppState>, path: String, base64: Stri
     emby::send_raw(&state.http, &cfg, reqwest::Method::POST, &path, base64, &content_type).await
 }
 
-/// Return the last saved copy of a request, or null.
+/// Follow along in its own window: open it (or bring it to the front if it's already open).
+/// The main window keeps playing the book and sends the pop-out its position.
 #[tauri::command]
+async fn fa_popout(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("follow") {
+        #[cfg(desktop)]
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    #[cfg(desktop)]
+    let made = tauri::WebviewWindowBuilder::new(&app, "follow", tauri::WebviewUrl::App("follow.html".into()))
+        .title("Scrappy \u{b7} Follow along")
+        .inner_size(1100.0, 760.0)
+        .min_inner_size(560.0, 420.0)
+        .center()
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string());
+    #[cfg(not(desktop))]
+    let made: Result<(), String> = Err("Pop-out windows are only on the PC app.".into());
+    made
+}
+
+/// Send the text back into the main window: close the pop-out (the main window hears "fa-popin").
+#[tauri::command]
+fn fa_popin(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("follow") {
+        let _ = w.close();
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_focus();
+    }
+}
+
+/// Save a picture (PNG bytes) in Pictures\Scrappy, e.g. a Year in Review card,
+/// then show it in the file manager. Returns where it went.
+#[tauri::command]
+fn save_png(app: AppHandle, name: String, data: Vec<u8>) -> Result<String, String> {
+    if !data.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Err("Not a picture".into());
+    }
+    let base = app
+        .path()
+        .picture_dir()
+        .or_else(|_| app.path().download_dir())
+        .map_err(|e| e.to_string())?;
+    let dir = base.join("Scrappy");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stem: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' })
+        .collect();
+    let stem = stem.trim().to_string();
+    let mut path = dir.join(format!("{stem}.png"));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{stem} ({n}).png"));
+        n += 1;
+    }
+    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path.display()))
+            .spawn();
+    }
+    Ok(path.display().to_string())
+}
+
+/// Return the last saved copy of a request, or null.
+// (async) = read off the main thread, so a page opening from its saved copies never
+// holds the window up while files are read.
+#[tauri::command(async)]
 fn api_cached(state: State<'_, AppState>, path: String) -> Value {
     let cfg = state.cfg();
     let file = meta_cache_file(&state, &cfg, &path);
@@ -278,7 +359,9 @@ async fn nd_get(state: State<'_, AppState>, endpoint: String, query: String) -> 
     Ok(v)
 }
 
-#[tauri::command]
+// (async) = read off the main thread, so a page opening from its saved copies never
+// holds the window up while files are read.
+#[tauri::command(async)]
 fn nd_cached(state: State<'_, AppState>, endpoint: String, query: String) -> Value {
     let cfg = state.cfg();
     read_cache(&cache_file(&state, &nd_key(&cfg, &endpoint, &query)))
@@ -290,6 +373,27 @@ async fn abs_get(state: State<'_, AppState>, path: String) -> Result<Value, Stri
     let v = servers::abs_get(&state.http, &cfg, &path).await?;
     save_cache(&cache_file(&state, &format!("abs|{}|{}|{}", cfg.abs_server, cfg.abs_user, path)), &v);
     Ok(v)
+}
+
+#[tauri::command]
+async fn req_call(state: State<'_, AppState>, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+    let cfg = state.cfg();
+    requests::call(&state.http, &cfg, &method, &path, body).await
+}
+
+/// Where the request service is: (address in use, whether it was set by hand).
+#[tauri::command]
+fn req_address(state: State<'_, AppState>) -> Value {
+    let c = state.cfg();
+    json!({ "address": requests::base(&c), "custom": !c.requests_url.trim().is_empty() })
+}
+
+/// Set the request service address by hand (empty = back to the Emby address + /requests).
+#[tauri::command]
+fn req_set_address(state: State<'_, AppState>, address: String) -> Result<(), String> {
+    let mut c = state.cfg.lock().unwrap();
+    c.requests_url = address.trim().trim_end_matches('/').to_string();
+    c.save(&state.cfg_path)
 }
 
 #[tauri::command]
@@ -343,7 +447,9 @@ async fn lyrics_find(state: State<'_, AppState>, artist: String, title: String, 
     servers::lyrics_find(&state.http, &artist, &title, &album, duration).await
 }
 
-#[tauri::command]
+// (async) = read off the main thread, so a page opening from its saved copies never
+// holds the window up while files are read.
+#[tauri::command(async)]
 fn abs_cached(state: State<'_, AppState>, path: String) -> Value {
     let cfg = state.cfg();
     read_cache(&cache_file(&state, &format!("abs|{}|{}|{}", cfg.abs_server, cfg.abs_user, path)))
@@ -404,7 +510,13 @@ fn finish_current(app: &AppHandle) -> Option<NowPlaying> {
     Some(np)
 }
 
-fn on_mpv_event(app: &AppHandle, player_id: usize, last_emit: &Mutex<std::time::Instant>, ev: mpv::Event) {
+fn on_mpv_event(
+    app: &AppHandle,
+    player_id: usize,
+    last_emit: &Mutex<std::time::Instant>,
+    last_cache: &Mutex<std::time::Instant>,
+    ev: mpv::Event,
+) {
     let state = app.state::<AppState>();
     match ev {
         mpv::Event::Property(name, value) => {
@@ -414,9 +526,17 @@ fn on_mpv_event(app: &AppHandle, player_id: usize, last_emit: &Mutex<std::time::
                         np.pos_ticks = (secs * 10_000_000.0) as i64;
                     }
                 }
-                // Only update the UI about 4 times a second.
+                // Only update the UI about 4 times a second (the page glides the bar in between).
                 let mut last = last_emit.lock().unwrap();
                 if last.elapsed().as_millis() < 250 {
+                    return;
+                }
+                *last = std::time::Instant::now();
+            }
+            if name == "demuxer-cache-time" {
+                // The buffered bar doesn't need more than one update a second.
+                let mut last = last_cache.lock().unwrap();
+                if last.elapsed().as_millis() < 1000 {
                     return;
                 }
                 *last = std::time::Instant::now();
@@ -526,7 +646,17 @@ fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String>
         ("force-window", "yes".into()),
         ("hwdec", "auto-safe".into()),
         ("vo", "gpu".into()),
+        // Smooth motion: match the video to the screen's refresh rate and blend
+        // frames, so 24fps films don't judder on 60/120/144Hz screens.
+        ("video-sync", "display-resample".into()),
+        ("interpolation", "yes".into()),
+        ("tscale", "oversample".into()),
+        // Arrow-key skips land exactly where you asked, not on the nearest keyframe.
+        ("hr-seek", "yes".into()),
         ("sub-auto", "fuzzy".into()),
+        // Don't let mpv jump to forced subtitles just because they match the audio
+        // language (it picked Dark's German forced ones over its English default).
+        ("subs-fallback-forced", "no".into()),
         ("cache", "yes".into()),
         ("demuxer-max-bytes", "150MiB".into()),
         ("user-agent", "Scrappy/mpv".into()),
@@ -555,8 +685,9 @@ fn ensure_player(app: &AppHandle, embedded: bool) -> Result<mpv::Player, String>
     let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let app2 = app.clone();
     let last_emit = Mutex::new(std::time::Instant::now());
+    let last_cache = Mutex::new(std::time::Instant::now());
     let player = mpv::Player::create(&state.mpv_dirs, &opts, OBSERVED, move |ev| {
-        on_mpv_event(&app2, id, &last_emit, ev)
+        on_mpv_event(&app2, id, &last_emit, &last_cache, ev)
     })?;
     *state.player.lock().unwrap() = Some((id, embedded, player.clone()));
     Ok(player)
@@ -594,7 +725,15 @@ async fn play(
 ) -> Result<Value, String> {
     let embedded = embedded.unwrap_or(true);
     let cfg = state.cfg();
-    let item = emby::get(&state.http, &cfg, &format!("/Users/{{userId}}/Items/{item_id}?Fields=Chapters")).await?;
+    // Fetch the item and the stream details at the same time.
+    let item_path = format!("/Users/{{userId}}/Items/{item_id}?Fields=Chapters");
+    let (item, target) = tokio::join!(
+        emby::get(&state.http, &cfg, &item_path),
+        // mpv seeks to the start point itself, so the stream always starts at 0 and
+        // positions stay true to the file even when Emby transcodes.
+        emby::playback_target(&state.http, &cfg, &item_id, 0, max_bitrate),
+    );
+    let (item, target) = (item?, target?);
     let start_ticks = if let Some(s) = start_secs {
         (s * 10_000_000.0) as i64
     } else if from_start.unwrap_or(false) {
@@ -602,9 +741,6 @@ async fn play(
     } else {
         item["UserData"]["PlaybackPositionTicks"].as_i64().unwrap_or(0)
     };
-    // mpv seeks to the start point itself, so the stream always starts at 0 and
-    // positions stay true to the file even when Emby transcodes.
-    let target = emby::playback_target(&state.http, &cfg, &item_id, 0, max_bitrate).await?;
 
     // Save the resume point of whatever was playing before.
     finish_current(&app);
@@ -643,6 +779,10 @@ async fn play(
     for s in &target.external_subs {
         let _ = player.command(&["sub-add", &s.url, "auto", &s.title, &s.lang]);
     }
+    // Track picks from the last video must not carry over to this one (a subtitle
+    // number that was English there can be German here). The page picks again.
+    let _ = player.set_property("sid", "auto");
+    let _ = player.set_property("aid", "auto");
     player.command(&["loadfile", &target.url, "replace"])?;
 
     Ok(json!({
@@ -740,6 +880,31 @@ async fn player_set(state: State<'_, AppState>, name: String, value: String) -> 
     p.ok_or("Nothing is playing.")?.set_property(&name, &value)
 }
 
+/// Add a subtitle file that was just downloaded to the server to the video that's
+/// playing, and turn it on. `index` is Emby's stream number for the new subtitles.
+#[tauri::command]
+fn player_add_sub(state: State<'_, AppState>, index: i64, codec: String, title: String, lang: String) -> Result<(), String> {
+    let c = state.cfg();
+    let url = {
+        let mut now = state.now.lock().unwrap();
+        let np = now.as_mut().ok_or("Nothing is playing.")?;
+        let fmt = match codec.to_lowercase().as_str() {
+            "ass" | "ssa" => codec.to_lowercase(),
+            "vtt" | "webvtt" => "vtt".to_string(),
+            _ => "srt".to_string(),
+        };
+        let url = format!(
+            "{}/Videos/{}/{}/Subtitles/{}/Stream.{}?api_key={}",
+            c.server.trim_end_matches('/'), np.item_id, np.media_source_id, index, fmt, c.token
+        );
+        // Also add it again if the same video gets reloaded.
+        np.external_subs.push((url.clone(), title.clone(), lang.clone()));
+        url
+    };
+    let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
+    p.ok_or("Nothing is playing.")?.command(&["sub-add", &url, "select", &title, &lang])
+}
+
 #[tauri::command]
 async fn player_get(state: State<'_, AppState>, name: String) -> Result<Value, String> {
     let p = state.player.lock().unwrap().as_ref().map(|(_, _, p)| p.clone());
@@ -749,8 +914,15 @@ async fn player_get(state: State<'_, AppState>, name: String) -> Result<Value, S
 #[tauri::command]
 async fn stop_playback(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     finish_current(&app);
-    let p = state.player.lock().unwrap().take();
-    if let Some((_, _, p)) = p {
+    let mut slot = state.player.lock().unwrap();
+    // The in-app player stays running (idle, hidden behind the page) so the next
+    // video starts without booting mpv again. A pop-out window is closed.
+    let keep = slot.as_ref().map(|(_, embedded, p)| *embedded && p.alive()).unwrap_or(false);
+    if keep {
+        if let Some((_, _, p)) = slot.as_ref() {
+            let _ = p.command(&["stop"]);
+        }
+    } else if let Some((_, _, p)) = slot.take() {
         p.quit();
     }
     Ok(())
@@ -951,33 +1123,110 @@ async fn serve_nd_cover(state: &AppState, id: &str, parsed: &reqwest::Url) -> Re
     let not_found = || img_response(StatusCode::NOT_FOUND, "text/plain", Vec::new());
     let size = parsed.query_pairs().find(|(k, _)| k == "w").map(|(_, v)| v.to_string()).unwrap_or_else(|| "300".into());
     let file = state.cache_dir.join("img").join(format!("nd_{}_{}", sanitize(id), sanitize(&size)));
-    if let Ok(bytes) = std::fs::read(&file) {
-        return img_response(StatusCode::OK, sniff_mime(&bytes), bytes);
-    }
+    let cached = std::fs::read(&file).ok();
     let cfg = state.cfg();
+    if let Some(bytes) = cached {
+        // An artist picture saved before the album-cover fallback existed can be Navidrome's
+        // grey placeholder: check it once more (the placeholder is fetched once per session).
+        let stale = id.starts_with("ar-") && cfg.nd_logged_in() && nd_artist_placeholder(state, &cfg, &size).await.as_deref() == Some(&bytes[..]);
+        if !stale {
+            return img_response(StatusCode::OK, sniff_mime(&bytes), bytes);
+        }
+    }
     if !cfg.nd_logged_in() {
         return not_found();
     }
-    let url = servers::nd_url(&cfg, "getCoverArt", &format!("id={}&size={}", servers::enc(id), servers::enc(&size)));
-    match state.http.get(url).send().await {
-        Ok(r) if r.status().is_success() && r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false) => match r.bytes().await {
-            Ok(b) => {
-                let b = b.to_vec();
-                if let Some(d) = file.parent() {
-                    let _ = std::fs::create_dir_all(d);
-                }
-                let _ = std::fs::write(&file, &b);
-                // Navidrome picture ids end in a version stamp ("al-123_65a1b2c3"): drop older versions.
-                if let Some((base, ver)) = id.rsplit_once('_') {
-                    if ver != "0" && !base.is_empty() {
-                        prune_siblings(&file, &format!("nd_{}_", sanitize(base)), &format!("_{}", sanitize(&size)));
-                    }
-                }
-                img_response(StatusCode::OK, sniff_mime(&b), b)
+    let got = nd_cover_bytes(&state.http, &cfg, id, &size).await;
+    let got = if id.starts_with("ar-") { artist_fallback(state, &cfg, id, &size, got).await } else { got };
+    match got {
+        Some(b) => {
+            if let Some(d) = file.parent() {
+                let _ = std::fs::create_dir_all(d);
             }
-            Err(_) => not_found(),
-        },
-        _ => not_found(),
+            let _ = std::fs::write(&file, &b);
+            // Navidrome picture ids end in a version stamp ("al-123_65a1b2c3"): drop older versions.
+            if let Some((base, ver)) = id.rsplit_once('_') {
+                if ver != "0" && !base.is_empty() {
+                    prune_siblings(&file, &format!("nd_{}_", sanitize(base)), &format!("_{}", sanitize(&size)));
+                }
+            }
+            img_response(StatusCode::OK, sniff_mime(&b), b)
+        }
+        None => not_found(),
+    }
+}
+
+/// One picture from Navidrome, or None when it doesn't send an image.
+async fn nd_cover_bytes(http: &reqwest::Client, cfg: &Config, id: &str, size: &str) -> Option<Vec<u8>> {
+    let url = servers::nd_url(cfg, "getCoverArt", &format!("id={}&size={}", servers::enc(id), servers::enc(size)));
+    let r = http.get(url).timeout(std::time::Duration::from_secs(20)).send().await.ok()?;
+    let is_img = r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false);
+    if !r.status().is_success() || !is_img { return None; }
+    r.bytes().await.ok().map(|b| b.to_vec())
+}
+
+/// Navidrome's "no artist picture" placeholder at a given size (what it sends for an artist
+/// that doesn't exist). It is looked up once per session however many pictures ask for it at
+/// the same moment, and a copy is kept on disk so the first artist pictures of a session
+/// don't wait on the server: the saved copy answers straight away and is refreshed behind it.
+async fn nd_artist_placeholder(state: &AppState, cfg: &Config, size: &str) -> Option<Vec<u8>> {
+    type Cell = std::sync::Arc<tokio::sync::OnceCell<Option<Vec<u8>>>>;
+    static SEEN: std::sync::OnceLock<Mutex<HashMap<String, Cell>>> = std::sync::OnceLock::new();
+    const NO_ARTIST: &str = "ar-scrappy-no-such-artist";
+    let key = format!("{}|{}", cfg.nd_server, size);
+    let cell = SEEN.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().entry(key).or_default().clone();
+    cell.get_or_init(|| async {
+        let file = state.cache_dir.join("img").join(format!("ndph_{}_{}", sanitize(&cfg.nd_server), sanitize(size)));
+        if let Ok(saved) = std::fs::read(&file) {
+            if !saved.is_empty() {
+                let (http, cfg, size) = (state.http.clone(), cfg.clone(), size.to_string());
+                tauri::async_runtime::spawn(async move {
+                    if let Some(now) = nd_cover_bytes(&http, &cfg, NO_ARTIST, &size).await {
+                        let _ = std::fs::write(&file, &now);
+                    }
+                });
+                return Some(saved);
+            }
+        }
+        let got = nd_cover_bytes(&state.http, cfg, NO_ARTIST, size).await;
+        if let Some(b) = &got {
+            if let Some(d) = file.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            let _ = std::fs::write(&file, b);
+        }
+        got
+    }).await.clone()
+}
+
+/// When an artist has no picture of its own (Navidrome sends nothing or its grey placeholder),
+/// use the cover of the artist's most played album instead.
+async fn artist_fallback(state: &AppState, cfg: &Config, id: &str, size: &str, got: Option<Vec<u8>>) -> Option<Vec<u8>> {
+    let placeholder = nd_artist_placeholder(state, cfg, size).await;
+    let mut missing = match (&got, &placeholder) {
+        (None, _) => true,
+        (Some(b), Some(p)) => b == p,
+        _ => false,
+    };
+    let artist_id = id.trim_start_matches("ar-").split('_').next().unwrap_or("");
+    if artist_id.is_empty() { return got; }
+    if !missing {
+        // Last.fm's grey star counts as no picture too (Navidrome passes it through from Last.fm).
+        const LASTFM_STAR: &str = "2a96cbd8b46e442fc41c2b86b821562f";
+        if let Ok(info) = servers::nd_get(&state.http, cfg, "getArtistInfo2", &format!("id={}", servers::enc(artist_id))).await {
+            let i = &info["artistInfo2"];
+            missing = ["smallImageUrl", "mediumImageUrl", "largeImageUrl"].iter().any(|k| i[*k].as_str().map(|u| u.contains(LASTFM_STAR)).unwrap_or(false));
+        }
+    }
+    if !missing { return got; }
+    let Ok(v) = servers::nd_get(&state.http, cfg, "getArtist", &format!("id={}", servers::enc(artist_id))).await else { return got };
+    let albums = v["artist"]["album"].as_array().cloned().unwrap_or_default();
+    let best = albums.iter()
+        .filter(|a| a["coverArt"].as_str().map(|c| !c.is_empty()).unwrap_or(false))
+        .max_by_key(|a| (a["playCount"].as_i64().unwrap_or(0), a["songCount"].as_i64().unwrap_or(0)));
+    match best.and_then(|a| a["coverArt"].as_str()) {
+        Some(cv) => nd_cover_bytes(&state.http, cfg, cv, size).await.or(got),
+        None => got,
     }
 }
 
@@ -1013,8 +1262,11 @@ async fn refresh_covers(state: State<'_, AppState>, kind: String) -> Result<u32,
         if r.status() == StatusCode::NOT_MODIFIED || !r.status().is_success() { continue; }
         if !r.headers().get("content-type").map(|v| v.to_str().unwrap_or("").starts_with("image")).unwrap_or(false) { continue; }
         let Ok(b) = r.bytes().await else { continue };
+        let b = if id.starts_with("ar-") {
+            match artist_fallback(&state, &cfg, &id, &size, Some(b.to_vec())).await { Some(x) => x, None => continue }
+        } else { b.to_vec() };
         let old = std::fs::read(&path).unwrap_or_default();
-        if old != b.as_ref() {
+        if old != b {
             let _ = std::fs::write(&path, &b);
             changed += 1;
         } else {
@@ -1061,9 +1313,16 @@ async fn tokio_sleep(secs: u64) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
+    // Only one Scrappy at a time: starting it again brings the open window to the front.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| appset::show_main(app)))
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    // On the TV: the TV's own video player.
     #[cfg(target_os = "android")]
     let builder = builder.plugin(mpv::plugin());
     builder
+        .manage(updates::Ready::default())
         .register_asynchronous_uri_scheme_protocol("img", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let uri = request.uri().to_string();
@@ -1072,6 +1331,7 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            let _ = emby::APP_VERSION.set(app.package_info().version.to_string());
             let cfg_dir = app.path().app_config_dir()?;
             let cache_dir = app.path().app_cache_dir()?;
             let cfg_path = cfg_dir.join("config.json");
@@ -1099,6 +1359,14 @@ pub fn run() {
                 bif: Mutex::new(None),
             });
 
+            // Tray icon (closing can keep music playing); started by Windows: stay in the tray.
+            let _ = appset::make_tray(app.handle());
+            if appset::started_hidden() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+
             // Every 10 seconds, tell Emby where we are (so resume works elsewhere).
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -1114,8 +1382,23 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // The Follow along pop-out closed: tell the main window to show the text again.
+            if window.label() == "follow" {
+                if let tauri::WindowEvent::Destroyed = event {
+                    let _ = window.app_handle().emit_to("main", "fa-popin", ());
+                }
+                return;
+            }
             // Closing the app mid-video: save the resume point first.
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Settings: closing hides to the tray and music keeps playing (a video stops).
+                let to_tray = window.label() == "main" && appset::CLOSE_TO_TRAY.load(std::sync::atomic::Ordering::Relaxed);
+                if to_tray {
+                    api.prevent_close();
+                }
+                if let Some(w) = window.app_handle().get_webview_window("follow") {
+                    let _ = w.destroy();
+                }
                 let app = window.app_handle().clone();
                 let state = app.state::<AppState>();
                 let np = state.now.lock().unwrap().take();
@@ -1135,10 +1418,18 @@ pub fn run() {
                 if let Some((_, _, p)) = player {
                     p.quit();
                 }
+                if to_tray {
+                    let _ = window.app_handle().emit_to("main", "player-closed", json!({}));
+                    let _ = window.hide();
+                    return;
+                }
                 music::quit(&app);
             }
         })
         .invoke_handler(tauri::generate_handler![
+            updates::app_version,
+            updates::upd_check,
+            updates::upd_install,
             set_zoom,
             get_session,
             login,
@@ -1151,6 +1442,9 @@ pub fn run() {
             abs_get,
             abs_cached,
             abs_send,
+            req_call,
+            req_address,
+            req_set_address,
             refresh_covers,
             music::book_play,
             follow::fa_info,
@@ -1160,11 +1454,14 @@ pub fn run() {
             follow::fa_cached,
             follow::fa_saved,
             follow::fa_clear,
+            fa_popout,
+            fa_popin,
             nd_playlist_image,
             nd_reauth,
             lyrics_find,
             nd_native_get,
             music::music_play,
+            music::nd_snippet_url,
             music::music_upnext,
             music::music_command,
             music::music_set,
@@ -1175,15 +1472,22 @@ pub fn run() {
             api_cached,
             api_send,
             api_upload_image,
+            save_png,
             load_previews,
             play,
             player_command,
+            player_add_sub,
             player_set,
             player_get,
             stop_playback,
             set_fullscreen,
             is_fullscreen,
-            clear_cache
+            clear_cache,
+            appset::set_close_to_tray,
+            appset::autostart_get,
+            appset::autostart_set,
+            appset::cache_size,
+            appset::cache_trim
         ])
         .run(tauri::generate_context!())
         .expect("error while running Scrappy");

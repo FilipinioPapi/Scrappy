@@ -2,12 +2,14 @@
 // this page; this file draws the controls on top and talks to mpv.
 import { api, listen, img, load, IMG_BASE } from './api.js';
 import { esc, toast, epCode, runtime } from './components.js';
+import { pref, on, onPref, SUB_STYLES, NIGHT_FILTER } from './prefs.js';
 
 const { invoke } = window.__TAURI__.core;
 
 const ICONS = {
   play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
   pause: '<svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   back: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></g></svg>',
   next: '<svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2z"/><path d="M5 5.5v13L15 12z"/></svg>',
   vol: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></g></svg>',
@@ -42,6 +44,10 @@ const S = {
   aspect: 'auto', quality: ls.get('quality', ''), intro: null, credits: null,
   creditsHandled: false, introDismissed: false, prefsApplied: false, settingsOpen: false,
 };
+// Languages offered when downloading subtitles (Emby wants 3-letter codes).
+const DL_LANGS = [['eng', 'English'], ['spa', 'Spanish'], ['fre', 'French'], ['ger', 'German'], ['ita', 'Italian'], ['por', 'Portuguese'],
+  ['dut', 'Dutch'], ['swe', 'Swedish'], ['nor', 'Norwegian'], ['dan', 'Danish'], ['fin', 'Finnish'], ['pol', 'Polish'], ['rus', 'Russian'],
+  ['tur', 'Turkish'], ['ara', 'Arabic'], ['hin', 'Hindi'], ['jpn', 'Japanese'], ['kor', 'Korean'], ['chi', 'Chinese']];
 const skipBack = () => Number(ls.get('skipBack', 10));
 const skipFwd = () => Number(ls.get('skipFwd', 10));
 
@@ -55,8 +61,8 @@ el.innerHTML = `
     <button class="p-btn" data-act="exit" title="Back (Esc)" aria-label="Back">${ICONS.back}</button>
     <div class="p-title"><div class="p-t1"></div><div class="p-t2"></div></div>
   </div>
-  <button class="p-skip" data-act="skip" hidden>${ICONS.skip}<span>Skip Intro</span><i class="p-skip-bar"></i></button>
-  <div class="p-upnext" hidden>
+  <button class="p-skip" data-act="skip" aria-hidden="true" tabindex="-1">${ICONS.skip}<span>Skip Intro</span><i class="p-skip-bar"></i></button>
+  <div class="p-upnext" aria-hidden="true">
     <div class="p-up-main">
       <div class="p-up-thumb"></div>
       <div class="p-up-text">
@@ -79,7 +85,7 @@ el.innerHTML = `
       <div class="p-pi-meta"></div>
     </div>
   </div>
-  <div class="p-eps" hidden>
+  <div class="p-eps" aria-hidden="true">
     <div class="p-eps-head"><b class="p-eps-show"></b><div class="p-eps-tabs"></div></div>
     <div class="p-eps-row"></div>
   </div>
@@ -93,10 +99,14 @@ el.innerHTML = `
       </div>
     </div>
   </div>
-  <div class="p-settings" hidden>
+  <div class="p-settings" aria-hidden="true">
+   <div class="p-set-main">
     <div class="p-set-head"><b>Playback settings</b><span class="p-set-scope"></span></div>
     <label>Audio<select data-set="audio"></select></label>
-    <label>Subtitles<select data-set="sub"></select></label>
+    <div class="p-set-sub">
+      <label>Subtitles<select data-set="sub"></select></label>
+      <button class="p-sub-add" data-act="sub-dl" title="Download subtitles" aria-label="Download subtitles" hidden>${ICONS.plus}</button>
+    </div>
     <div class="p-set-2">
       <label>Subtitle size<select data-set="subScale">${SUB_SIZES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label>Speed<select data-set="speed">${SPEEDS.map((v) => `<option value="${v}">${v}×</option>`).join('')}</select></label>
@@ -110,6 +120,17 @@ el.innerHTML = `
       <label>Skip forward (+)<select data-set="skipFwd">${SKIPS.map((v) => `<option value="${v}">${v} seconds</option>`).join('')}</select></label>
     </div>
     <div class="p-set-note"></div>
+   </div>
+   <div class="p-set-dl" hidden>
+    <div class="p-set-head"><button class="p-dl-back" data-act="sub-dl-back" title="Back to Playback settings" aria-label="Back">${ICONS.back}</button><b>Download subtitles</b></div>
+    <div class="p-set-note p-dl-what"></div>
+    <div class="p-dl-search">
+      <select data-dl-lang>${DL_LANGS.map(([c, n]) => `<option value="${c}">${n}</option>`).join('')}</select>
+      <button class="btn" data-act="sub-dl-search">Search</button>
+    </div>
+    <div class="p-dl-results"><div class="p-dl-empty">Pick a language and press Search.</div></div>
+    <div class="p-set-note">Best matches first. Downloaded subtitles are saved on your Emby server, so they show up on every device.</div>
+   </div>
   </div>
   <div class="p-bottom">
     <div class="p-seek-row">
@@ -123,8 +144,9 @@ el.innerHTML = `
     </div>
     <div class="p-row">
       <button class="p-pill" data-act="rew" title="Skip back (←)"></button>
-      <button class="p-play" data-act="pause" title="Play/Pause (Space)" aria-label="Play or pause"></button>
+      <button class="p-play" data-act="pause" title="Play/Pause (Space)" aria-label="Play or pause"><span class="i-pause">${ICONS.pause}</span><span class="i-play">${ICONS.play}</span></button>
       <button class="p-pill" data-act="fwd" title="Skip forward (→)"></button>
+      <div class="p-ends" aria-live="off"><b></b><small></small></div>
       <div class="p-spacer"></div>
       <button class="p-btn p-epsbtn" data-act="eps" title="Episodes (E)" hidden>${ICONS.eps}<span>Episodes</span></button>
       <button class="p-btn p-next" data-act="next" title="Next episode (N)" hidden>${ICONS.next}<span>Next episode</span></button>
@@ -138,6 +160,13 @@ el.innerHTML = `
   </div>`;
 document.body.appendChild(el);
 const $ = (s) => el.querySelector(s);
+// Pop-ups slide in and back out (instead of popping on and off).
+function reveal(sel, on) {
+  const n = $(sel);
+  n.classList.toggle('show', !!on);
+  n.setAttribute('aria-hidden', String(!on));
+  n.inert = !on;
+}
 
 const fmt = (t) => {
   t = Math.max(0, Math.floor(t || 0));
@@ -205,10 +234,15 @@ function wanted() {
     sub: p.sub || (d.subKnown ? (d.sub || 'off') : null),
   };
 }
-// Languages come as 'en', 'eng' or 'English' depending on where they're from.
-const LANGS = { en: 'en', eng: 'en', english: 'en', de: 'de', ger: 'de', deu: 'de', german: 'de', fr: 'fr', fre: 'fr', fra: 'fr', french: 'fr', es: 'es', spa: 'es', spanish: 'es', it: 'it', ita: 'it', ja: 'ja', jpn: 'ja', japanese: 'ja' };
-const langOf = (l) => { const k = String(l || '').toLowerCase().trim(); return LANGS[k] || k; };
-const SUB_LANG = 'en'; // your subtitle language
+// Languages come as 'en', 'eng', 'English' or with a region like 'en-US' depending on
+// where they're from. Emby says 'eng'; mpv says 'en-US' for newer files (Dark), so the
+// region is dropped before comparing.
+const LANGS = { eng: 'en', english: 'en', ger: 'de', deu: 'de', german: 'de', fre: 'fr', fra: 'fr', french: 'fr', spa: 'es', spanish: 'es', ita: 'it', italian: 'it', jpn: 'ja', japanese: 'ja', por: 'pt', portuguese: 'pt', dut: 'nl', nld: 'nl', dutch: 'nl', swe: 'sv', swedish: 'sv', nor: 'no', nob: 'no', norwegian: 'no', dan: 'da', danish: 'da', fin: 'fi', finnish: 'fi', pol: 'pl', polish: 'pl', rus: 'ru', russian: 'ru', kor: 'ko', korean: 'ko', chi: 'zh', zho: 'zh', chinese: 'zh', ara: 'ar', arabic: 'ar', hin: 'hi', hindi: 'hi', tur: 'tr', turkish: 'tr' };
+const langOf = (l) => {
+  const k = String(l || '').toLowerCase().trim().split(/[-_]/)[0];
+  return LANGS[k] || k;
+};
+const subLangPref = () => langOf(pref('subLang')) || 'en'; // your subtitle language (Settings)
 const sameLang = (a, b) => !a || !b || langOf(a) === langOf(b);
 function matchTrack(type, ref) {
   const list = S.tracks.filter((t) => t.type === type);
@@ -218,61 +252,153 @@ function matchTrack(type, ref) {
       const ext = list.filter((t) => t.external);
       return ext.find((t) => (t.title || '') === ref.displayTitle) || ext.find((t) => sameLang(t.lang, ref.lang) && t.lang) || null;
     }
-    if (S.playMethod !== 'Transcode') { const t = list.find((x) => !x.external && x['ff-index'] === ref.index); if (t && sameLang(t.lang, ref.lang)) return t; }
+    if (S.playMethod !== 'Transcode') {
+      // Only trust the number when the language (or, without one, the name) agrees too.
+      const t = list.find((x) => !x.external && x['ff-index'] === ref.index);
+      const ok = t && (t.lang && ref.lang ? langOf(t.lang) === langOf(ref.lang) : (t.title || '') === (ref.title || ''));
+      if (ok) return t;
+    }
   }
   return findTrack(type, ref);
 }
+// A subtitle track's language, from its language tag or else the first word of its title.
+const subLang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
 function pickTracks() {
   if (!S.pick || S.defaults === undefined || !S.tracks.length) return;
   const w = wanted();
   const tp = loadTrackPrefs();
-  S.subWhy = tp.sub ? 'your last pick for this show' : (S.defaults?.subKnown ? 'Emby\'s default for you' : 'the video\'s default');
+  if (S.pick.audio && !tp.audio && pref('audioLang')) {
+    // Settings: a preferred audio language, when the video has it (else Emby's pick below).
+    const L = langOf(pref('audioLang'));
+    const t = S.tracks.find((x) => x.type === 'audio' && langOf(x.lang) === L);
+    if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.wantAid = t.id; S.pick.audio = false; }
+  }
   if (S.pick.audio) {
     if (!w.audio) S.pick.audio = false;
     else { const t = matchTrack('audio', w.audio); if (t) { if (t.id !== S.aid) setProp('aid', t.id); S.wantAid = t.id; S.pick.audio = false; } }
   }
-  if (S.pick.sub) {
-    if (!w.sub) S.pick.sub = false;
-    else if (w.sub === 'off' && (tp.sub || !hasMySubs())) { if (S.sid != null) setProp('sid', 'no'); }
-    else {
-      let t = w.sub === 'off' ? null : matchTrack('sub', w.sub), done = !!t;
-      // Not your own pick: always start on a full English subtitle track when there is one
-      // (never a German or "forced" one). Subtitle files can arrive late, so keep looking
-      // for one until the lookout ends.
-      if (!tp.sub) {
-        const lang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
-        const mine = SUB_LANG;
-        if (!t || lang(t) !== mine || t.forced) {
-          const alt = S.tracks.find((x) => x.type === 'sub' && !x.forced && lang(x) === mine);
-          if (alt) { t = alt; done = true; S.subWhy = 'English subtitles first'; }
-          else done = false;
-        }
-      }
-      if (t) { if (t.id !== S.sid) setProp('sid', t.id); S.lastSid = t.id; }
-      if (done) S.pick.sub = false;
-    }
+  if (!S.pick.sub) return;
+  // The chosen subtitles are held (see holdSubs): mpv can switch by itself afterwards,
+  // e.g. to forced subtitles that match the audio language.
+  const use = (t) => { S.subTarget = t.id; S.lastSid = t.id; holdSubs(); };
+  const off = () => { S.subTarget = 'no'; holdSubs(); };
+  if (tp.sub) {
+    // Your own pick for this show wins. "Off" is held off for the whole lookout.
+    S.subWhy = 'your last pick for this show';
+    if (tp.sub === 'off') { off(); return; }
+    const t = matchTrack('sub', tp.sub);
+    if (t) { use(t); S.pick.sub = false; }
+    return;
   }
-}
-// Is there a full English subtitle track?
-function hasMySubs() {
-  const lang = (x) => langOf(x.lang) || langOf((String(x.title || '').match(/[A-Za-z]+/) || [''])[0]);
-  return S.tracks.some((x) => x.type === 'sub' && !x.forced && lang(x) === SUB_LANG);
+  // Settings: "Always my language" or "Off unless I turn them on".
+  const mode = pref('subStart');
+  if (mode === 'off') { S.subWhy = 'your Settings (off)'; off(); return; }
+  if (mode === 'mine') {
+    const subs = S.tracks.filter((x) => x.type === 'sub' && !x.forced);
+    const t = subs.find((x) => subLang(x) === subLangPref());
+    if (t) { S.subWhy = 'your Settings (your language)'; use(t); S.pick.sub = false; return; }
+  }
+  // Otherwise the show's own default: the subtitles Emby itself would start with
+  // (it knows the file's default flag and your Emby settings), then the subtitles
+  // the file marks as default, otherwise off.
+  if (w.sub && w.sub !== 'off') {
+    S.subWhy = 'Emby\'s default';
+    const t = matchTrack('sub', w.sub); // an external file can arrive a few seconds late
+    if (t) { use(t); S.pick.sub = false; return; }
+    // Subtitles inside the video are all there from the start, so if Emby's pick can't be
+    // found among them, fall back to the video's own default now rather than leaving the
+    // choice to the player (which goes for forced subtitles in the audio's language).
+    if (w.sub.external) return;
+  }
+  const subs = S.tracks.filter((x) => x.type === 'sub');
+  const fileDefault = (!w.sub || w.sub !== 'off') && (subs.find((x) => x.default && !x.forced) || subs.find((x) => x.default));
+  if (fileDefault) { use(fileDefault); S.subWhy = 'the video\'s default'; S.pick.sub = false; return; }
+  S.subWhy = w.sub === 'off' ? 'Emby\'s default (off)' : 'the video\'s default (none)';
+  off();
 }
 function stopPicking() { S.pick = null; }
+// Keep the subtitles the app chose for this video, until you change them yourself.
+function holdSubs() {
+  if (S.subTarget == null) return;
+  const want = S.subTarget === 'no' ? null : S.subTarget;
+  if (S.sid !== want) setProp('sid', S.subTarget);
+}
+const letGoOfSubs = () => { S.subTarget = null; if (S.pick) S.pick.sub = false; };
+
+// One-time clean-up: forget saved subtitle picks, so every show starts again on
+// its own default subtitles. (Run again after the 'en-US' language fix: before it,
+// turning subtitles on with C could save the wrong language as your pick.)
+try {
+  if (!ls.get('subFix4')) {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('tracks:')) continue;
+      const v = ls.json(k);
+      if (v?.sub) { delete v.sub; ls.set(k, JSON.stringify(v)); }
+    }
+    ls.set('subFix4', '1');
+  }
+} catch {}
 
 // ---------- Drawing ----------
 
+// Only touch the page when a value really changed.
+const shown = {};
+function put(sel, key, value, apply) {
+  if (shown[sel + key] === value) return;
+  shown[sel + key] = value;
+  apply($(sel), value);
+}
+const setText = (sel, v) => put(sel, 'text', v, (n, x) => { n.textContent = x; });
+const setStyle = (sel, prop, v) => put(sel, prop, v, (n, x) => { n.style[prop] = x; });
+const setHTML = (sel, v) => put(sel, 'html', v, (n, x) => { n.innerHTML = x; });
+
+// mpv reports the position 4 times a second. In between, the bar glides on its own
+// so it moves smoothly instead of in steps.
+let posAt = 0; // when S.pos was last set
+const markPos = () => { posAt = performance.now(); };
+function livePos() {
+  if (S.paused || S.buffering || !S.frameSeen || S.starting) return S.pos;
+  const p = S.pos + Math.min(1, (performance.now() - posAt) / 1000) * (S.speed || 1);
+  const d = dur();
+  return d ? Math.min(p, d) : p;
+}
+function drawBar(pos) {
+  const d = dur();
+  const pct = (d ? Math.min(100, (pos / d) * 100) : 0).toFixed(3) + '%';
+  setStyle('.p-fill', 'width', pct);
+  setStyle('.p-knob', 'left', pct);
+  setText('.p-cur', fmt(pos));
+}
 function drawTime() {
   const d = dur();
-  const pct = d ? Math.min(100, (S.pos / d) * 100) : 0;
-  if (!S.dragging) {
-    $('.p-fill').style.width = pct + '%';
-    $('.p-knob').style.left = pct + '%';
-    $('.p-cur').textContent = fmt(S.pos);
-  }
-  $('.p-buf').style.width = d ? Math.min(100, (S.cache / d) * 100) + '%' : '0';
-  $('.p-dur').textContent = fmt(d);
+  if (!S.dragging) drawBar(livePos());
+  setStyle('.p-buf', 'width', d ? Math.min(100, (S.cache / d) * 100).toFixed(2) + '%' : '0');
+  setText('.p-dur', fmt(d));
+  drawEnds();
 }
+
+// "Ends at 10:42 PM" and the time left, counting playback speed.
+// While paused the clock still moves, so refresh it now and then.
+setInterval(() => { if (S.open) drawEnds(); }, 10000);
+function drawEnds() {
+  const d = dur();
+  if (!d) { setText('.p-ends b', ''); setText('.p-ends small', ''); return; }
+  const left = Math.max(0, d - livePos()) / (S.speed || 1);
+  const ends = new Date(Date.now() + left * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const mins = Math.ceil(left / 60);
+  const h = Math.floor(mins / 60), m = mins % 60;
+  setText('.p-ends b', `Ends at ${ends}`);
+  setText('.p-ends small', `${h ? `${h} h ${m} min` : `${mins} min`} left`);
+}
+let glideRaf = 0;
+function glide() {
+  glideRaf = 0;
+  if (!S.open) return;
+  if (!S.dragging && !el.classList.contains('idle')) drawBar(livePos());
+  glideRaf = requestAnimationFrame(glide);
+}
+const startGlide = () => { if (!glideRaf) glideRaf = requestAnimationFrame(glide); };
 
 // Replay the little "tick" pop on a button.
 function bounce(b) {
@@ -282,17 +408,11 @@ function bounce(b) {
 }
 
 function drawButtons() {
-  const playBtn = $('[data-act=pause]');
-  const playIcon = S.paused ? ICONS.play : ICONS.pause;
-  if (playBtn.dataset.icon !== playIcon) {
-    if (playBtn.dataset.icon) bounce(playBtn);
-    playBtn.dataset.icon = playIcon;
-    playBtn.innerHTML = playIcon;
-  }
-  $('[data-act=mute]').innerHTML = S.muted || S.volume === 0 ? ICONS.muted : ICONS.vol;
-  $('[data-act=fs]').innerHTML = S.fullscreen ? ICONS.fsExit : ICONS.fs;
-  $('[data-act=rew]').textContent = `−${skipBack()}`;
-  $('[data-act=fwd]').textContent = `+${skipFwd()}`;
+  $('[data-act=pause]').classList.toggle('is-paused', S.paused);
+  setHTML('[data-act=mute]', S.muted || S.volume === 0 ? ICONS.muted : ICONS.vol);
+  setHTML('[data-act=fs]', S.fullscreen ? ICONS.fsExit : ICONS.fs);
+  setText('[data-act=rew]', `−${skipBack()}`);
+  setText('[data-act=fwd]', `+${skipFwd()}`);
   const speedBtn = $('[data-act=speed]');
   if (speedBtn.textContent !== `${S.speed}×`) {
     if (speedBtn.textContent) bounce(speedBtn);
@@ -301,8 +421,12 @@ function drawButtons() {
   $('.p-cc').classList.toggle('on', S.sid != null);
   $('.p-cc').setAttribute('aria-pressed', String(S.sid != null));
   $('.p-cog').classList.toggle('on', S.settingsOpen);
-  $('.p-vol').value = S.volume;
-  $('.p-vol').style.setProperty('--v', S.volume + '%');
+  if (shown.vol !== S.volume) {
+    shown.vol = S.volume;
+    $('.p-vol').max = volMax();
+    $('.p-vol').value = S.volume;
+    $('.p-vol').style.setProperty('--v', (S.volume / volMax() * 100) + '%');
+  }
   $('.p-next').hidden = !S.next;
   $('.p-epsbtn').hidden = !(S.item?.Type === 'Episode' && S.item?.SeriesId);
   $('.p-epsbtn').classList.toggle('on', !!S.epsOpen);
@@ -334,6 +458,7 @@ function drawSettings() {
     : '<option>No audio tracks</option>';
   $('[data-set=sub]').innerHTML = `<option value="no" ${S.sid == null ? 'selected' : ''}>Off</option>` +
     subs.map((t) => `<option value="${t.id}" ${t.id === S.sid ? 'selected' : ''}>${esc(trackLabel(t))}</option>`).join('');
+  drawSubAdd();
   $('[data-set=subScale]').value = S.subScale;
   $('[data-set=speed]').value = String(S.speed);
   $('[data-set=aspect]').value = S.aspect;
@@ -342,7 +467,11 @@ function drawSettings() {
   $('[data-set=skipFwd]').value = String(skipFwd());
   const name = S.item?.SeriesName || S.item?.Name || 'this title';
   $('.p-set-scope').textContent = S.item?.SeriesName ? 'for this show' : 'for this title';
-  $('.p-set-note').textContent = `Audio, subtitles and speed are remembered for ${name}. Skip lengths and quality apply everywhere.${S.subWhy ? ` Subtitles started from ${S.subWhy}.` : ''}`;
+  // Where the subtitles came from, spelled out, so a wrong pick can be traced.
+  const ed = S.defaults?.sub;
+  const emby = !S.defaults ? 'unknown' : ed ? (ed.displayTitle || langName(ed.lang) || 'a track') + ` (#${ed.index})` : (S.defaults.subKnown ? 'Off' : 'none given');
+  const fd = S.tracks.filter((t) => t.type === 'sub' && t.default).map(trackLabel).join(', ') || 'none';
+  $('.p-set-note').textContent = `Audio, subtitles and speed are remembered for ${name}. Skip lengths and quality apply everywhere.${S.subWhy ? ` Subtitles started from ${S.subWhy}.` : ''} Emby's default subtitles: ${emby}. The video marks as default: ${fd}. Held on: ${S.subTarget == null ? 'nothing' : S.subTarget === 'no' ? 'Off' : (S.tracks.find((t) => t.type === 'sub' && t.id === S.subTarget) ? trackLabel(S.tracks.find((t) => t.type === 'sub' && t.id === S.subTarget)) : '#' + S.subTarget)}.`;
 }
 
 // ---------- Skip Intro / credits ----------
@@ -360,14 +489,19 @@ function showSkip(mode) {
   if (skipMode === mode) return;
   skipMode = mode;
   $('.p-skip span').textContent = mode === 'intro' ? 'Skip Intro' : 'Skip Credits';
-  $('.p-skip').hidden = !mode;
+  reveal('.p-skip', !!mode);
 }
 
 function checkMarkers() {
   if (!S.open || S.starting) return;
   const p = S.pos;
   // Intro
-  if (S.intro && p >= S.intro.start && p < S.intro.end - 1 && !S.introDismissed) {
+  if (S.intro && p >= S.intro.start && p < S.intro.end - 1 && !S.introDismissed && on('skipIntro')) {
+    // Settings: skip intros by themselves (once; seeking back into it lets it play).
+    S.introDismissed = true;
+    cmd('seek', S.intro.end.toFixed(2), 'absolute');
+    toast('Skipped the intro');
+  } else if (S.intro && p >= S.intro.start && p < S.intro.end - 1 && !S.introDismissed) {
     showSkip('intro');
     const left = (S.intro.end - p) / (S.intro.end - S.intro.start);
     $('.p-skip-bar').style.width = Math.max(0, Math.min(100, left * 100)) + '%';
@@ -376,19 +510,24 @@ function checkMarkers() {
   }
   if (S.intro && p < S.intro.start) S.introDismissed = false;
 
-  // Credits
-  if (S.credits != null) {
-    if (p < S.credits - 2 && S.creditsHandled) {
+  // Credits. Many episodes have no credits marker from Emby, so then Up next
+  // shows for the last 40 seconds of an episode instead.
+  const d = dur();
+  const guess = S.credits == null && S.next && S.item?.Type === 'Episode' && d > 300 ? d - 40 : null;
+  const cs = S.credits ?? guess;
+  if (cs != null) {
+    if (p < cs - 2 && S.creditsHandled) {
       // Seeked back before the credits: reset.
       S.creditsHandled = false;
       if (S.upNextMode === 'credits') hideUpNext();
       if (skipMode === 'credits') showSkip(null);
     }
-    if (p >= S.credits && !S.creditsHandled) {
+    if (p >= cs && !S.creditsHandled) {
       S.creditsHandled = true;
       const autoplay = ls.get('autoplay', 'on') !== 'off';
-      if (S.next && autoplay) showUpNext('credits');
-      else if (S.next) showSkip('credits');
+      // Settings: skip credits straight to the next episode, only on Emby's own credits marker.
+      if (S.next && S.credits != null && on('skipCredits')) playNext(true);
+      else if (S.next && autoplay) showUpNext('credits');
       else showSkip('credits');
     }
   }
@@ -408,23 +547,174 @@ function doSkip() {
 
 // ---------- Show / hide controls ----------
 
+// Controls shown or hidden. Subtitles move up above the player bar while it shows.
+function setIdle(idle) {
+  if (el.classList.contains('idle') === idle) return;
+  el.classList.toggle('idle', idle);
+  liftSubs(!idle);
+}
+
+// mpv's sub-pos: 100 = normal spot at the bottom, lower numbers sit higher up.
+let subPos = 100, subGoal = 100, subRaf = 0;
+function liftSubs(up, instant = false) {
+  if (!S.embedded) return;
+  let goal = 100;
+  if (up && S.open) {
+    // Measure where the bar sits when shown, ignoring its slide animation: while it
+    // slides back in it is still pushed off screen, and measuring that left the
+    // subtitles down under the bar.
+    const bar = $('.p-bottom'), row = $('.p-seek-row');
+    const h = el.clientHeight || window.innerHeight || 1;
+    const top = h - bar.offsetHeight + row.offsetTop;
+    goal = Math.min(100, Math.max(50, Math.round(100 - ((h - top) / h) * 100)));
+  }
+  if (goal === subGoal && subRaf) return;
+  subGoal = goal;
+  cancelAnimationFrame(subRaf); subRaf = 0;
+  if (instant) { subPos = goal; setProp('sub-pos', goal); return; }
+  const from = subPos, t0 = performance.now(), len = 420;
+  cancelAnimationFrame(subRaf);
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / len);
+    const e = 1 - Math.pow(1 - k, 3);
+    const v = Math.round(from + (goal - from) * e);
+    if (v !== subPos) { subPos = v; setProp('sub-pos', v); }
+    subRaf = k < 1 ? requestAnimationFrame(step) : 0;
+  };
+  subRaf = requestAnimationFrame(step);
+}
+window.addEventListener('resize', () => { if (S.open && !el.classList.contains('idle')) { subGoal = -1; liftSubs(true); } });
+
 let idleTimer;
 function wake() {
-  el.classList.remove('idle');
+  setIdle(false);
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (!S.paused && !S.dragging && !S.settingsOpen && !S.epsOpen && !S.stillOpen && !el.querySelector('.p-bottom:hover, .p-top:hover, .p-eps:hover')) el.classList.add('idle');
-  }, 3000);
+    if (!S.paused && !S.dragging && !S.settingsOpen && !S.epsOpen && !S.stillOpen && !el.querySelector('.p-bottom:hover, .p-top:hover, .p-eps:hover')) setIdle(true);
+  }, 1500);
   schedulePauseInfo();
 }
 el.addEventListener('mousemove', wake);
+// Mouse left the window: hide the controls straight away.
+document.documentElement.addEventListener('mouseleave', () => {
+  if (!S.open || S.paused || S.dragging || S.settingsOpen || S.epsOpen || S.stillOpen) return;
+  clearTimeout(idleTimer);
+  setIdle(true);
+});
 
 function toggleSettings(force) {
   S.settingsOpen = force ?? !S.settingsOpen;
-  $('.p-settings').hidden = !S.settingsOpen;
-  if (S.settingsOpen) drawSettings();
+  reveal('.p-settings', S.settingsOpen);
+  if (S.settingsOpen) { showDlPage(false); drawSettings(); }
   drawButtons();
   wake();
+}
+
+// ---------- Download subtitles from inside the player ----------
+
+// Only accounts allowed to manage or download subtitles get the + button.
+let canDownloadSubs = null;
+async function checkSubRights() {
+  if (canDownloadSubs != null) return canDownloadSubs;
+  try {
+    const p = (await api.get('/Users/{userId}'))?.Policy || {};
+    canDownloadSubs = !!(p.IsAdministrator || p.EnableSubtitleManagement || p.EnableSubtitleDownloading);
+  } catch { canDownloadSubs = false; }
+  return canDownloadSubs;
+}
+window.addEventListener('hashchange', () => { if (location.hash === '#/login') canDownloadSubs = null; });
+function drawSubAdd() {
+  const b = $('.p-sub-add');
+  checkSubRights().then((ok) => { b.hidden = !ok || !S.item; });
+}
+
+let dlRun = 0; // stops old search results from showing after a new search
+function showDlPage(on) {
+  const main = $('.p-set-main'), dl = $('.p-set-dl');
+  if (!on) {
+    if (!dl.hidden) { dl.hidden = true; main.hidden = false; main.classList.remove('p-slide-back'); void main.offsetWidth; main.classList.add('p-slide-back'); }
+    return;
+  }
+  const it = S.item;
+  if (!it) return;
+  $('.p-dl-what').textContent = (it.Type === 'Episode'
+    ? [it.SeriesName, `S${it.ParentIndexNumber}:E${it.IndexNumber}`, it.Name].filter(Boolean).join(' · ')
+    : it.Name) + '. Searches the subtitle sources set up on your Emby server (like OpenSubtitles).';
+  $('[data-dl-lang]').value = localStorage.getItem('subSearchLang') || pref('subLang');
+  if (dl.dataset.item !== it.Id) {
+    dl.dataset.item = it.Id;
+    dlRun++;
+    $('.p-dl-results').innerHTML = '<div class="p-dl-empty">Pick a language and press Search.</div>';
+  }
+  main.hidden = true;
+  dl.hidden = false;
+  dl.classList.remove('p-slide-in'); void dl.offsetWidth; dl.classList.add('p-slide-in');
+}
+
+async function searchSubs() {
+  const it = S.item;
+  if (!it) return;
+  const code = $('[data-dl-lang]').value;
+  localStorage.setItem('subSearchLang', code);
+  const out = $('.p-dl-results');
+  const run = ++dlRun;
+  out.innerHTML = '<div class="p-dl-empty"><div class="spinner"></div>Searching…</div>';
+  let list;
+  try {
+    const res = await api.get(`/Items/${it.Id}/RemoteSearch/Subtitles/${code}?IsPerfectMatch=false`);
+    // Subtitles made for this exact file (hash match) go first.
+    list = (Array.isArray(res) ? res : []).map((r, n) => ({ r, n }))
+      .sort((a, b) => (b.r.IsHashMatch ? 1 : 0) - (a.r.IsHashMatch ? 1 : 0) || a.n - b.n).map((x) => x.r).slice(0, 30);
+  } catch (e) {
+    if (run === dlRun) out.innerHTML = `<div class="p-dl-empty">${esc(String(e))}</div>`;
+    return;
+  }
+  if (run !== dlRun) return;
+  out.innerHTML = list.length ? list.map((r, i) => `
+    <div class="p-dl-row">
+      <div class="p-dl-text">${r.IsHashMatch ? '<span class="p-dl-match" title="Made for this exact file, so the timing should line up">MATCHES YOUR FILE</span>' : ''}<b>${esc(r.Name || r.Id)}</b><span>${[r.ProviderName, (r.Format || "").toUpperCase(), r.DownloadCount ? `${r.DownloadCount.toLocaleString()} downloads` : ''].filter(Boolean).map(esc).join(' · ')}</span></div>
+      <button class="p-dl-get" data-get="${i}">Download</button>
+    </div>`).join('') : '<div class="p-dl-empty">Nothing found in that language.</div>';
+  out.querySelectorAll('[data-get]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    downloadSub(it, list[Number(b.dataset.get)], b, code);
+  }));
+}
+
+const subStreams = (item) => (item?.MediaSources?.[0]?.MediaStreams || item?.MediaStreams || []).filter((s) => s.Type === 'Subtitle');
+
+async function downloadSub(it, r, b, code) {
+  if (b.classList.contains('busy') || b.classList.contains('done')) return;
+  b.classList.add('busy');
+  b.textContent = 'Downloading…';
+  try {
+    // What subtitles the server knows about before, so the new one can be spotted after.
+    const before = new Set(subStreams(await api.get(`/Users/{userId}/Items/${it.Id}`)).map((s) => s.Index));
+    await api.post(`/Items/${it.Id}/RemoteSearch/Subtitles/${encodeURIComponent(r.Id)}`);
+    // The server can take a moment to list the new file.
+    let added = null;
+    for (let i = 0; i < 8 && !added; i++) {
+      await new Promise((ok) => setTimeout(ok, i ? 1500 : 600));
+      const fresh = await api.get(`/Users/{userId}/Items/${it.Id}`).catch(() => null);
+      added = subStreams(fresh).find((s) => s.IsExternal && !before.has(s.Index)) || null;
+    }
+    if (S.item?.Id !== it.Id) return; // moved on to another video meanwhile
+    if (!added) throw new Error('Downloaded, but the server hasn\'t listed the new subtitles yet. Try reopening the video in a moment.');
+    letGoOfSubs();
+    const title = added.DisplayTitle || added.Title || 'Downloaded';
+    const lang = added.Language || code;
+    await invoke('player_add_sub', { index: added.Index, codec: added.Codec || r.Format || 'srt', title, lang });
+    saveTrackPrefs({ sub: { lang, title, forced: false } });
+    b.classList.remove('busy');
+    b.classList.add('done');
+    b.textContent = '✓ Turned on';
+    toast(`${langName(lang) || 'New'} subtitles added and turned on`);
+    setTimeout(() => { if (S.settingsOpen) { showDlPage(false); drawSettings(); } }, 900);
+  } catch (e) {
+    b.classList.remove('busy');
+    b.textContent = 'Download';
+    toast(String(e?.message || e), true);
+  }
 }
 
 // ---------- Opening and closing ----------
@@ -434,6 +724,7 @@ function showOverlay() {
   S.open = true;
   el.hidden = false;
   document.documentElement.classList.add('playing');
+  startGlide();
   wake();
 }
 
@@ -451,6 +742,8 @@ async function hideOverlay() {
   hideStill();
   clearTimeout(pauseInfoTimer);
   el.classList.remove('pause-info');
+  cancelAnimationFrame(subRaf); subRaf = 0; subGoal = 100;
+  if (subPos !== 100) { subPos = 100; setProp('sub-pos', 100); }
   if (S.fullscreen) await setFullscreen(false);
   if (wasOpen) window.dispatchEvent(new Event('scrappy:refresh'));
 }
@@ -467,9 +760,9 @@ export async function startPlayback(id, opts = {}) {
     S.item = null; S.next = null; S.intro = null; S.credits = null;
     S.aspect = 'auto';
   }
-  S.pos = opts.startSecs || 0; S.duration = 0; S.cache = 0; S.buffering = true;
+  S.pos = opts.startSecs || 0; markPos(); S.duration = 0; S.cache = 0; S.buffering = true;
   S.tracks = []; S.aid = null; S.sid = null; S.prefsApplied = false;
-  S.defaults = undefined; S.playMethod = ''; S.pick = { audio: true, sub: true }; S.wantAid = null;
+  S.defaults = undefined; S.playMethod = ''; S.pick = { audio: true, sub: true }; S.wantAid = null; S.subTarget = null;
   clearTimeout(S.pickTimer);
   S.creditsHandled = false; S.introDismissed = false; S.previews = null;
   toggleEps(false);
@@ -533,7 +826,7 @@ function showUpNext(mode) {
   if (!n) return false;
   hideUpNext();
   S.upNextMode = mode;
-  let count = 10;
+  let count = Number(pref('upNextSecs')) || 10;
   const thumb = n.ImageTags?.Primary ? img(n.Id, 'Primary', n.ImageTags.Primary, 320) : null;
   $('.p-up-thumb').innerHTML = thumb ? `<img src="${esc(thumb)}" alt="">` : '';
   $('.p-up-title').textContent = [epCode(n), n.Name].filter(Boolean).join(' · ');
@@ -541,7 +834,7 @@ function showUpNext(mode) {
   $('.p-up-count').textContent = count;
   $('[data-act=up-cancel]').textContent = mode === 'credits' ? 'Watch credits' : 'Cancel';
   if (!S.embedded) { playNext(); return true; }
-  $('.p-upnext').hidden = false;
+  reveal('.p-upnext', true);
   S.upNextTimer = setInterval(() => {
     count--;
     $('.p-up-count').textContent = count;
@@ -554,7 +847,7 @@ function hideUpNext() {
   clearInterval(S.upNextTimer);
   S.upNextTimer = null;
   S.upNextMode = null;
-  $('.p-upnext').hidden = true;
+  reveal('.p-upnext', false);
 }
 
 // auto: started by the countdown rather than by you.
@@ -590,17 +883,17 @@ function setVideoOn(on) {
 listen('mpv-prop', ({ payload: { name, value } }) => {
   switch (name) {
     case 'time-pos':
-      S.pos = value ?? 0; drawTime(); checkMarkers();
+      S.pos = value ?? 0; markPos(); drawTime(); checkMarkers();
       if (value != null && !S.frameSeen) { S.frameSeen = true; updateVideoOn(); }
       break;
     case 'vo-configured': S.vo = !!value; updateVideoOn(); break;
     case 'duration': S.duration = value ?? 0; drawTime(); break;
     case 'demuxer-cache-time': S.cache = value ?? 0; drawTime(); break;
-    case 'pause': S.paused = !!value; drawButtons(); wake(); break;
-    case 'paused-for-cache': case 'seeking': S.buffering = !!value; drawButtons(); break;
+    case 'pause': S.pos = livePos(); markPos(); S.paused = !!value; drawButtons(); wake(); break;
+    case 'paused-for-cache': case 'seeking': S.pos = livePos(); markPos(); S.buffering = !!value; drawButtons(); break;
     case 'volume': if (value != null) { S.volume = Math.round(value); drawButtons(); } break;
     case 'mute': S.muted = !!value; drawButtons(); break;
-    case 'speed': if (value != null) { S.speed = Math.round(value * 100) / 100; drawButtons(); } break;
+    case 'speed': if (value != null) { S.pos = livePos(); markPos(); S.speed = Math.round(value * 100) / 100; drawButtons(); drawTime(); } break;
     case 'track-list': {
       S.tracks = Array.isArray(value) ? value : [];
       const a = S.tracks.find((t) => t.type === 'audio' && t.selected);
@@ -609,6 +902,7 @@ listen('mpv-prop', ({ payload: { name, value } }) => {
       S.sid = s ? s.id : null;
       if (S.sid != null) S.lastSid = S.sid;
       pickTracks();
+      holdSubs();
       if (S.settingsOpen) drawSettings();
       drawButtons();
       break;
@@ -616,20 +910,35 @@ listen('mpv-prop', ({ payload: { name, value } }) => {
   }
 });
 
+// Settings that go straight to mpv: picture decoding, subtitle look, night mode, volume boost.
+function applyPrefs() {
+  setProp('hwdec', pref('hwdec'));
+  Object.entries(SUB_STYLES[pref('subStyle')] || SUB_STYLES.outline).forEach(([k, v]) => setProp(k, v));
+  setProp('af', on('nightMode') ? NIGHT_FILTER : '');
+  setProp('volume-max', volMax());
+  if (S.volume > volMax()) { S.volume = volMax(); ls.set('volume', S.volume); setProp('volume', S.volume); }
+}
+onPref(['hwdec', 'subStyle', 'nightMode', 'volBoost'], () => { if (S.open) { applyPrefs(); shown.vol = null; drawButtons(); } });
+onPref('subScale', (v) => { S.subScale = v; if (S.open) setProp('sub-scale', v); });
+onPref('quality', (v) => { S.quality = v; });
+
 listen('player-loaded', ({ payload }) => {
   loadPreviews(payload?.itemId);
   S.frameSeen = false;
   updateVideoOn();
   S.buffering = false;
   drawButtons();
+  applyPrefs();
   setProp('volume', S.volume);
   setProp('sub-scale', S.subScale);
+  liftSubs(!el.classList.contains('idle'), true);
   applyAspect();
   // External subtitles are added just after loading; give them a moment.
   if (!S.prefsApplied) { S.prefsApplied = true; const sp = loadPrefs().speed; if (sp) setProp('speed', sp); }
   pickTracks();
-  // Keep a lookout for late subtitle tracks, then stop. Subtitles set to "off" are held off the whole time.
-  clearTimeout(S.pickTimer); S.pickTimer = setTimeout(() => { pickTracks(); stopPicking(); }, 10000);
+  holdSubs();
+  // Keep a lookout for late subtitle tracks, then stop looking (the choice stays held).
+  clearTimeout(S.pickTimer); S.pickTimer = setTimeout(() => { pickTracks(); stopPicking(); holdSubs(); }, 10000);
 });
 
 listen('player-ended', ({ payload }) => {
@@ -661,9 +970,10 @@ async function setFullscreen(on) {
 }
 const toggleFullscreen = () => setFullscreen(!S.fullscreen);
 const togglePause = () => cmd('cycle', 'pause');
-const seekBy = (s) => { cmd('seek', s, 'relative'); S.pos = Math.max(0, S.pos + s); drawTime(); wake(); };
+const seekBy = (s) => { const p = livePos(); cmd('seek', s, 'relative+exact'); S.pos = Math.max(0, p + s); markPos(); drawTime(); wake(); };
+const volMax = () => (on('volBoost') ? 150 : 100);
 const changeVolume = (d) => {
-  S.volume = Math.max(0, Math.min(100, S.volume + d));
+  S.volume = Math.max(0, Math.min(volMax(), S.volume + d));
   ls.set('volume', S.volume);
   setProp('volume', S.volume);
   if (S.muted) setProp('mute', 'no');
@@ -682,7 +992,7 @@ function cycleSpeed() {
 }
 
 function toggleSubs() {
-  if (S.pick) S.pick.sub = false;
+  letGoOfSubs();
   if (S.sid != null) {
     setProp('sid', 'no');
     saveTrackPrefs({ sub: 'off' });
@@ -693,7 +1003,7 @@ function toggleSubs() {
   // Turning subtitles on: your own last pick, then English, then Emby's pick.
   const pref = loadTrackPrefs().sub, d = S.defaults || {};
   const full = subs.filter((t) => !t.forced);
-  const t = (pref && pref !== 'off' && matchTrack('sub', pref)) || full.find((x) => langOf(x.lang) === SUB_LANG)
+  const t = (pref && pref !== 'off' && matchTrack('sub', pref)) || full.find((x) => langOf(x.lang) === subLangPref())
     || (d.sub && matchTrack('sub', d.sub)) || full[0] || subs[0];
   setProp('sid', t.id);
   saveTrackPrefs({ sub: trackRef(t) });
@@ -720,7 +1030,7 @@ el.querySelector('.p-settings').addEventListener('change', (e) => {
       break;
     }
     case 'sub': {
-      if (S.pick) S.pick.sub = false;
+      letGoOfSubs();
       setProp('sid', v);
       saveTrackPrefs({ sub: v === 'no' ? 'off' : trackRef(S.tracks.find((t) => String(t.id) === v)) });
       break;
@@ -756,6 +1066,9 @@ el.addEventListener('click', (e) => {
     case 'cc': toggleSubs(); break;
     case 'speed': cycleSpeed(); break;
     case 'settings': toggleEps(false); toggleSettings(); break;
+    case 'sub-dl': showDlPage(true); break;
+    case 'sub-dl-back': showDlPage(false); break;
+    case 'sub-dl-search': searchSubs(); break;
     case 'eps': toggleSettings(false); toggleEps(); break;
     case 'still-yes': {
       const n = S.stillNext;
@@ -819,19 +1132,28 @@ seek.addEventListener('mousemove', (e) => {
 });
 seek.addEventListener('mousedown', (e) => {
   S.dragging = true;
+  // While dragging, the picture follows along (quick keyframe jumps, a few a second).
+  let lastScrub = 0, scrubTimer;
+  const scrub = (t) => {
+    clearTimeout(scrubTimer);
+    const wait = 120 - (performance.now() - lastScrub);
+    if (wait > 0) { scrubTimer = setTimeout(() => scrub(t), wait); return; }
+    lastScrub = performance.now();
+    cmd('seek', t.toFixed(2), 'absolute+keyframes');
+  };
   const move = (ev) => {
-    const r = ratioAt(ev.clientX);
-    $('.p-fill').style.width = r * 100 + '%';
-    $('.p-knob').style.left = r * 100 + '%';
-    $('.p-cur').textContent = fmt(r * dur());
+    const t = ratioAt(ev.clientX) * dur();
+    drawBar(t);
+    if (ev !== e) scrub(t);
   };
   const up = (ev) => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
+    clearTimeout(scrubTimer);
     const t = ratioAt(ev.clientX) * dur();
-    S.pos = t;
+    S.pos = t; markPos();
     S.dragging = false;
-    cmd('seek', t.toFixed(2), 'absolute');
+    cmd('seek', t.toFixed(2), 'absolute+exact');
     drawTime();
   };
   move(e);
@@ -851,7 +1173,7 @@ async function loadPreviews(itemId) {
 
 function toggleEps(force) {
   S.epsOpen = force ?? !S.epsOpen;
-  $('.p-eps').hidden = !S.epsOpen;
+  reveal('.p-eps', S.epsOpen);
   if (S.epsOpen) drawEps(S.item?.SeasonId);
   drawButtons();
   if (force === undefined) wake();
@@ -919,7 +1241,7 @@ function showStill(next) {
   setProp('pause', 'yes');
   $('.p-still-sub').textContent = [next.SeriesName, epCode(next), next.Name].filter(Boolean).join(' · ');
   $('.p-still').hidden = false;
-  el.classList.remove('idle');
+  setIdle(false);
 }
 function hideStill() {
   S.stillOpen = false;
@@ -938,7 +1260,8 @@ function schedulePauseInfo() {
   pauseInfoTimer = setTimeout(() => {
     if (!S.open || !S.paused || S.settingsOpen || S.epsOpen || S.stillOpen || S.dragging || S.upNextMode) return;
     drawPauseInfo();
-    el.classList.add('pause-info', 'idle');
+    el.classList.add('pause-info');
+    setIdle(true);
   }, 5000);
 }
 function drawPauseInfo() {

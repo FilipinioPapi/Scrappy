@@ -12,17 +12,20 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart"] }
 libloading = "0.8"
 uuid = { version = "1", features = ["v4"] }
 raw-window-handle = "0.6"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "macros", "sync"] }
 
 # Secure connections: Windows' own system on the PC; a built-in one on Android TV.
 [target.'cfg(not(target_os = "android"))'.dependencies]
+# PC only: self-updates and one-window-at-a-time.
+tauri-plugin-updater = "2"
+tauri-plugin-single-instance = "2"
 reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
 
 [target.'cfg(target_os = "android")'.dependencies]

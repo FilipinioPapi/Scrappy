@@ -7,6 +7,11 @@ on:
 permissions:
   contents: write
 
+# A newer push replaces a build that is still running (only one TV build at a time).
+concurrency:
+  group: tv-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-tv:
     runs-on: ubuntu-latest

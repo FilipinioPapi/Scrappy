@@ -4,7 +4,17 @@
 import { api, listen, IMG_BASE } from './api.js';
 import { esc, toast } from './components.js';
 
+import { on, onPref } from './prefs.js';
+
 const { invoke } = window.__TAURI__.core;
+
+// Settings: gapless playback and volume levelling (ReplayGain tags in the files).
+const audioPrefs = () => {
+  invoke('music_set', { name: 'gapless-audio', value: on('gapless') ? 'weak' : 'no' }).catch(() => {});
+  invoke('music_set', { name: 'replaygain', value: on('rgain') ? 'track' : 'no' }).catch(() => {});
+};
+listen('music-loaded', audioPrefs);
+onPref(['gapless', 'rgain'], audioPrefs);
 
 export const cover = (id, w = 300) => (id ? `${IMG_BASE}/nd/${encodeURIComponent(id)}?w=${w}` : '');
 export const fmt = (s) => { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -193,15 +203,21 @@ export function setVolume(v) {
   save(); drawBar();
 }
 // Scrolling over a volume bar or mute button nudges the volume, 5% per notch.
-document.addEventListener('wheel', (e) => {
-  const el = e.target.closest?.('.mseek.vol, #mbMute, #mnMute, #tpMute');
-  if (!el) return;
+// The blocking wheel listener goes on those controls only (added the first time the pointer
+// is over one), so it never slows down scrolling the page.
+const VOL_SEL = '.mseek.vol, #mbMute, #mnMute, #tpMute';
+document.addEventListener('pointerover', (e) => {
+  const el = e.target.closest?.(VOL_SEL);
+  if (el && !el._volWheel) { el._volWheel = true; el.addEventListener('wheel', volWheel, { passive: false }); }
+}, { passive: true });
+function volWheel(e) {
+  const el = e.currentTarget;
   e.preventDefault();
   const bar = el.matches('.mseek') ? el : el.nextElementSibling;
   bar?.classList.add('wheel'); clearTimeout(bar?._wt); if (bar) bar._wt = setTimeout(() => bar.classList.remove('wheel'), 300);
   setVolume((S.muted ? 0 : S.volume) + (e.deltaY < 0 ? 5 : -5));
   notify();
-}, { passive: false });
+}
 export function toggleMute() {
   S.muted = !S.muted;
   invoke('music_set', { name: 'volume', value: String(S.muted ? 0 : S.volume) }).catch(() => {});

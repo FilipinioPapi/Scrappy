@@ -212,4 +212,4 @@ function addRowArrows(row) {
 
 // Every sideways row: Movies & TV rows (.row) and Music / Audiobooks rows (.mrow).
 const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows]), #view .mrow:not([data-arrows])').forEach(addRowArrows);
-new MutationObserver(scanRows).observe(document.getElementById('view'), { childList: true, subtree: true });
+{ const v = document.getElementById('view'); if (v) new MutationObserver(scanRows).observe(v, { childList: true, subtree: true }); }
