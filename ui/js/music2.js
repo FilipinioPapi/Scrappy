@@ -1,6 +1,7 @@
 // Music screens, part 2: Genres, a genre's page, Playlists and a playlist's page.
 import { esc, toast, loadingHtml } from './components.js';
 import { api } from './api.js';
+import { autoArt, autoKind, yearOf, yearName } from './autoart.js';
 import { music, current, playSongs, setFavorite, cover, fmt, IC } from './mplayer.js';
 import {
   EXTRA, nd, ndLoad, ndFast, coverHtml, songTable, songRow, wireSongs, albumCard, artistCard, row, wireCards, wireMoods, moodTile,
@@ -149,7 +150,7 @@ EXTRA.genre = async (v, name) => {
 // ---------- Playlists ----------
 const AUTO = [
   { id: 'auto:fav', name: 'Favorite songs', blurb: 'Every song you added to Favorites' },
-  { id: 'auto:most', name: 'Most played', blurb: 'Your top songs by plays' },
+  { id: 'auto:most', name: 'Most played', blurb: 'Your top songs by plays, all time' },
   { id: 'auto:new', name: 'Recently added', blurb: 'Songs from your newest albums' },
 ];
 async function autoSongs(id) {
@@ -167,7 +168,10 @@ EXTRA.playlists = async (v) => {
   const { main, alive } = v;
   let sort = localStorage.getItem('mplsort') || 'updated';
   await ndLoad('getPlaylists', {}, (r) => {
-    const lists = r.playlists?.playlist || [];
+    // Scrappy's yearly top 50s sit with the made-for-you playlists, not with the ones you made.
+    const all = r.playlists?.playlist || [];
+    const lists = all.filter((p) => !yearOf(p));
+    const years = all.filter((p) => yearOf(p)).sort((a, b) => yearOf(b) - yearOf(a));
     const draw = () => {
       const pins = lib.hpins || [];
       const sorted = lists.slice().sort((a, b) => sort === 'az' ? a.name.localeCompare(b.name) : sort === 'songs' ? b.songCount - a.songCount : (b.changed || '').localeCompare(a.changed || ''));
@@ -183,8 +187,9 @@ EXTRA.playlists = async (v) => {
             <div class="t1">${esc(p.name)}</div><div class="t2">${pinned ? `<span class="pinmark">${MI.pinOn}</span>` : ''}${plural(p.songCount, 'song')}</div></a>`; }).join('')}
         </div>
         <section class="msec"><div class="msec-h" style="justify-content:flex-start;gap:12px"><h2>Made automatically</h2><span class="badge-s">Updates by itself</span></div>
-          <div class="t2" style="margin:-8px 0 16px">Built from your favorites and your listening</div>
-          <div class="mgrid">${AUTO.map((a) => `<a class="mcard" href="${href('playlist', a.id)}"><div class="mcard-art"><div class="mcv auto" style="--h:${hue(a.name)}"><span>${esc(a.name)}</span></div><button type="button" class="hoverplay" data-playpl="${a.id}" aria-label="Play">${IC.play}</button></div><div class="t1">${esc(a.name)}</div><div class="t2">${esc(a.blurb)}</div></a>`).join('')}</div></section>`;
+          <div class="t2" style="margin:-8px 0 16px">Built from your favorites and your listening. Kept apart from the playlists you make.</div>
+          <div class="mgrid plgrid">${[...years.map((p) => ({ id: p.id, name: yearName(yearOf(p)), blurb: +yearOf(p) === new Date().getFullYear() ? 'Your most played songs this year' : `Your most played songs of ${yearOf(p)}`, art: autoArt('year', { year: yearOf(p) }) })),
+            ...AUTO.map((a) => ({ ...a, art: autoArt(autoKind(a.id)) }))].map((a) => `<a class="mcard" href="${href('playlist', a.id)}"><div class="mcard-art">${a.art}<button type="button" class="hoverplay" data-playpl="${esc(a.id)}" aria-label="Play">${IC.play}</button></div><div class="t1">${esc(a.name)}</div><div class="t2">${esc(a.blurb)}</div></a>`).join('')}</div></section>`;
       // Slide cards to their new spots when pinning.
       main.querySelectorAll('#plGrid [data-pk]').forEach((el) => { const b = before.get(el.dataset.pk); if (!b) return; const a = el.getBoundingClientRect(); const dx = b.left - a.left, dy = b.top - a.top; if (dx || dy) el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2,.8,.2,1)' }); });
     };
@@ -222,17 +227,19 @@ EXTRA.playlist = async (v, id) => {
   const { songs: loaded, pl, auto } = await loadPlaylist(id);
   if (!alive()) return;
   let songs = loaded.slice();
-  const meta = pl || { name: auto.name, comment: auto.blurb, coverArt: '', readonly: true };
-  const canEdit = !!pl && !pl.readonly;
-  if (pl) bump({ k: 'pl:' + pl.id, t: pl.name, sub: `Playlist · ${plural(songs.length, 'song')}`, cv: pl.coverArt });
+  const yr = yearOf(pl);
+  const meta = yr ? { ...pl, name: yearName(yr), comment: 'Your most played songs of ' + yr + '. Made by Scrappy from your Year in Review.' } : pl || { name: auto.name, comment: auto.blurb, coverArt: '', readonly: true };
+  const canEdit = !!pl && !pl.readonly && !yr;
+  const poster = yr ? autoArt('year', { year: yr, cls: 'big' }) : auto ? autoArt(autoKind(id), { cls: 'big' }) : '';
+  if (pl) bump({ k: 'pl:' + pl.id, t: meta.name, sub: `Playlist · ${plural(songs.length, 'song')}`, cv: pl.coverArt });
   let editing = false;
   const from = { type: 'playlist', id, name: meta.name };
   const ago = (iso) => { if (!iso) return ''; const d = (Date.now() - Date.parse(iso)) / 864e5; return d < 1 ? 'Updated today' : d < 2 ? 'Updated yesterday' : d < 8 ? 'Updated this week' : d < 15 ? 'Updated last week' : `Updated ${new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`; };
   main.innerHTML = `
     <div class="plwrap" id="plWrap"><div class="plpage">
     <div class="mhero" style="--h:${hue(meta.name)}"><div class="mhero-bg">${meta.coverArt ? `<img src="${cover(meta.coverArt, 600)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
-      <div class="mhero-in">${canEdit ? `<button type="button" class="plcv" id="plCover" title="Change playlist art">${coverHtml(meta.coverArt, meta.name, 600, 'big')}<span class="ov">${IMG}<span>Change image</span></span></button>` : coverHtml(meta.coverArt, meta.name, 600, 'big')}
-        <div style="min-width:0"><div class="kicker">${auto ? 'MADE AUTOMATICALLY' : 'PLAYLIST'}</div>
+      <div class="mhero-in">${canEdit ? `<button type="button" class="plcv" id="plCover" title="Change playlist art">${coverHtml(meta.coverArt, meta.name, 600, 'big')}<span class="ov">${IMG}<span>Change image</span></span></button>` : poster || coverHtml(meta.coverArt, meta.name, 600, 'big')}
+        <div style="min-width:0"><div class="kicker">${auto || yr ? 'MADE AUTOMATICALLY' : 'PLAYLIST'}</div>
           <h1 class="disp mtitle" id="plName">${esc(meta.name)}</h1>
           <div class="pldesc" id="plDesc">${esc(meta.comment || '')}</div>
           <div class="meta" id="plMeta"></div></div></div></div>
