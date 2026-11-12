@@ -381,7 +381,8 @@ fn req_address(state: State<'_, AppState>) -> Value {
 #[tauri::command]
 fn req_set_address(state: State<'_, AppState>, address: String) -> Result<(), String> {
     let mut c = state.cfg.lock().unwrap();
-    c.requests_url = address.trim().trim_end_matches('/').to_string();
+    let a = address.trim();
+    c.requests_url = if a.is_empty() { String::new() } else { emby::normalize_server(a) };
     c.save(&state.cfg_path)
 }
 
@@ -1281,6 +1282,40 @@ async fn tokio_sleep(secs: u64) {
     tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
 }
 
+async fn upgrade_to_https(handle: &AppHandle) {
+    let state = handle.state::<AppState>();
+    let cfg = state.cfg();
+    let mut moved: Vec<(usize, String, String)> = Vec::new();
+    for (i, url) in [&cfg.server, &cfg.nd_server, &cfg.abs_server, &cfg.requests_url].into_iter().enumerate() {
+        let Some(rest) = url.strip_prefix("http://") else { continue };
+        if emby::is_lan_host(emby::host_of(url)) {
+            continue;
+        }
+        let https = format!("https://{rest}");
+        // Any answer over https (even an error page) means the certificate works.
+        if state.http.get(&https).send().await.is_ok() {
+            moved.push((i, url.clone(), https));
+        }
+    }
+    if moved.is_empty() {
+        return;
+    }
+    let mut c = state.cfg.lock().unwrap();
+    for (i, was, https) in moved {
+        // Only if it wasn't changed (a new sign-in) while we were checking.
+        let slot = match i {
+            0 => &mut c.server,
+            1 => &mut c.nd_server,
+            2 => &mut c.abs_server,
+            _ => &mut c.requests_url,
+        };
+        if *slot == was {
+            *slot = https;
+        }
+    }
+    let _ = c.save(&state.cfg_path);
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Only one Scrappy at a time: starting it again brings the open window to the front.
@@ -1330,6 +1365,11 @@ pub fn run() {
                     let _ = w.hide();
                 }
             }
+
+            // Servers saved as http:// with an internet name (older builds added http:// to bare
+            // names) move to https when the server answers there, so sign-ins stop going out unencrypted.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move { upgrade_to_https(&handle).await });
 
             // Every 10 seconds, tell Emby where we are (so resume works elsewhere).
             let handle = app.handle().clone();

@@ -99,12 +99,33 @@ pub fn http_client() -> reqwest::Client {
         .expect("http client")
 }
 
+/// True for addresses on the home network (an IP address, "localhost", a one-word name or a
+/// .local/.lan/.home name). Those usually have no certificate, so they stay on plain http.
+pub fn is_lan_host(host_port: &str) -> bool {
+    if host_port.starts_with('[') {
+        return true; // IPv6 literal
+    }
+    let host = host_port.split(':').next().unwrap_or("").to_ascii_lowercase();
+    host.parse::<std::net::Ipv4Addr>().is_ok()
+        || host == "localhost"
+        || !host.contains('.')
+        || [".local", ".lan", ".home", ".internal", ".home.arpa"].iter().any(|t| host.ends_with(t))
+}
+
+/// The host (and port) part of a base URL like "https://emby.me:8920/emby".
+pub fn host_of(url: &str) -> &str {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    rest.split('/').next().unwrap_or("")
+}
+
 /// Turn whatever the user typed ("192.168.1.10:8096", "https://emby.me/")
-/// into a clean base URL.
+/// into a clean base URL. A bare internet name ("movies.example.com") gets https, so the
+/// password is never sent unencrypted; home-network addresses keep plain http.
 pub fn normalize_server(input: &str) -> String {
     let mut s = input.trim().trim_end_matches('/').to_string();
     if !s.starts_with("http://") && !s.starts_with("https://") {
-        s = format!("http://{s}");
+        let scheme = if is_lan_host(host_of(&s)) { "http" } else { "https" };
+        s = format!("{scheme}://{s}");
     }
     // If the user pasted the web app address, drop the web part.
     for suffix in ["/web/index.html", "/web"] {
