@@ -7,6 +7,13 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 33 · Nov 11, 7:40 PM
+**Music**
+- New: the made-for-you playlists (Favorite songs, Most played, Recently added) each have their own poster art
+- Changed: "Your 2026" is now called "Your top 50 of 2026". It moved out of your own playlists into Made automatically, and it shows under its own "Made for you" heading in the side menu's Playlists list. The playlist in Navidrome gets renamed the next time you open your Music Year in Review
+
+<sub>Built from 0608401 · includes: Music</sub>
+
 ### Preview 32 · Nov 11, 6:10 PM
 **Music**
 - Fixed: Music side menu Recents were saved only on the PC you played on. Albums you play on any device now show up too, in time order
