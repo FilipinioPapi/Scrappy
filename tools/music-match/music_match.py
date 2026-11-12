@@ -260,7 +260,22 @@ def group_albums(rows):
             "all_artists": sorted(count),
             "tracks": tracks,
         })
-    return albums
+    # Spotify often has several copies of one album (explicit/clean, deluxe, regional).
+    # Merge them so each album appears once.
+    merged = {}
+    for al in sorted(albums, key=lambda x: -x["liked"]):
+        k = (norm_album(al["album"]), norm_artist(al["artist"]))
+        if k not in merged:
+            merged[k] = al
+            continue
+        m = merged[k]
+        names = {norm_title(t["Track Name"]) for t in m["tracks"]}
+        extra = [t for t in al["tracks"] if norm_title(t["Track Name"]) not in names]
+        m["tracks"] += extra
+        m["liked"] = len(m["tracks"])
+        m["all_artists"] = sorted(set(m["all_artists"]) | set(al["all_artists"]))
+        m["year"] = min(filter(None, [m["year"], al["year"]]), default="")
+    return list(merged.values())
 
 # ---------------------------------------------------------------- matching
 
@@ -388,7 +403,7 @@ def run_missing(csvs, cache, out, refresh, config_path):
                 f"{r:.2f}" if r else "", f"{s:.2f}" if s else "", a.get("id")] for sp, a, how, r, s in owned])
 
     stats = {
-        "Liked songs (unique)": sum(sp["liked"] for sp in sp_albums),
+        "Songs in the CSV(s)": len({r.get("Track URI") or (r.get("Track Name"), r.get("Album Name")) for r in rows}),
         "Spotify albums": len(sp_albums),
         "Owned": len(owned),
         "Missing": len(missing),
