@@ -1565,7 +1565,7 @@ export async function genresView(root, ctx) {
   grid.classList.toggle('tvgen-tv', TVG);
   const fanPosters = async (lib) => {
     const fans = [...grid.querySelectorAll('.tvfan')];
-    const paint = (f, urls) => f.querySelectorAll('i').forEach((el, k) => { if (urls[k]) el.style.backgroundImage = `url("${urls[k]}")`; });
+    const paint = (f, urls) => f.querySelectorAll('i').forEach((el, k) => { if (urls[k]) el.style.backgroundImage = `url("${urls[k]}")`; else if (urls.length) el.style.display = 'none'; });
     for (let k = 0; k < fans.length; k += 4) {
       await Promise.all(fans.slice(k, k + 4).map(async (f) => {
         const key = lib.Id + '/' + f.dataset.g;

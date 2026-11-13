@@ -195,6 +195,12 @@ addEventListener('keydown', (e) => {
   if (k === 'ArrowLeft' && cur.closest('.set-body')) { const f = nearest(cur, k, candidates(scope).filter((el) => el.closest('.set-body')), true) || document.querySelector('.set-side a.on'); if (f) { go(f); return; } }
   const next = nearest(cur, k, candidates(scope).filter((el) => !inRail(el)), scope === pageScope());
   if (next) {
+    // Down from a text box (Search) lands on the first thing in the line below, not the one under the middle of the box.
+    if (isText(cur) && k === 'ArrowDown') {
+      const t = next.getBoundingClientRect().top;
+      const line = candidates(scope).filter((el) => !inRail(el) && Math.abs(el.getBoundingClientRect().top - t) < 8).sort((x, y) => x.getBoundingClientRect().left - y.getBoundingClientRect().left);
+      go(line[0] || next); return;
+    }
     // Coming down (or up) into a row of posters from buttons lands on the row's first one.
     // Coming down into a show's episodes lands on the one you are up to.
     const here = k === 'ArrowDown' && !cur.closest('#epList') ? next.closest('#epList')?.querySelector('[data-tvhere] .card') : null;
