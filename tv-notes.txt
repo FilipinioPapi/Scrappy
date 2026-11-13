@@ -1,5 +1,5 @@
-Speed: pages are kept as you left them, so Back and the side bar bring them up at once, in the same spot
-Speed: posters already shown appear instantly next time; PC-only work no longer runs on the TV
-Fixed: PC layout flashing while the app opens; Back losing your place and highlight
-Fixed: see-through title header, cut-off Settings icon and Edit home, long-show season tabs
+Fixed: the remote getting lost in "Browse by genre" on Home (the highlight now always stays on screen)
+Fixed: Settings at the bottom of the side bar being cut off when you have many libraries
+Fixed: the Settings page jumping as you move down its list
+Speed: pages are kept as you left them, so Back and the side bar bring them up at once
 Still included: smooth scrolling and the speed pass

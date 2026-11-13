@@ -3664,3 +3664,5 @@ html.tv #tvrail { padding-bottom: 46px; }
 html.tv .hedit-wrap { padding-bottom: 96px; }
 /* Long shows: the season tabs slide inside their own strip, with room for the highlight. */
 html.tv .tvs-bar .season-tabs { padding: 5px 6px; scroll-padding: 0 56px; }
+html.tv #tvrail { overflow-y: auto; }
+html.tv #tvrail .tr-i { height: clamp(34px, calc((100vh / var(--tvzoom, 1) - 170px) / var(--trn, 10) - 6px), 52px); }

@@ -92,12 +92,29 @@ function glideTo(box, prop, to) {
     if (Math.abs(d) > cap) d = Math.sign(d) * cap;
     g.v = Math.abs(d);
     g.pos += d;
-    if (Math.abs(g.to - g.pos) < 0.6) { write(g.to); glides.delete(box); return; }
+    if (Math.abs(g.to - g.pos) < 0.6) { write(g.to); glides.delete(box); if (page) keepInView(); return; }
     write(g.pos);
     requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
 }
+// The highlight never ends up off the screen. Rows that fill in late change the page's height
+// while it is still sliding, so once things settle the page lines up on the highlight again.
+const probe = document.createElement('div');
+probe.style.cssText = 'position:fixed;inset:0;visibility:hidden;pointer-events:none';
+document.body.appendChild(probe);
+const viewH = () => probe.getBoundingClientRect().height || innerHeight;
+let keepT = 0;
+function keepInView() {
+  clearTimeout(keepT);
+  keepT = setTimeout(() => {
+    const el = document.activeElement, view = document.getElementById('view');
+    if (!el || el === document.body || !view?.contains(el) || root.classList.contains('playing') || el.closest(LAYERS) || glides.has(window)) return;
+    const r = el.getBoundingClientRect(), H = viewH();
+    if (r.height < H * 0.9 && (r.top < -2 || r.bottom > H + 2)) go(el);
+  }, 140);
+}
+{ const v = document.getElementById('view'); if (v && window.ResizeObserver) new ResizeObserver(keepInView).observe(v); }
 // Where the page would sit with this element lined up: ask the browser, then put it back.
 function pageTarget(el, block) {
   const y0 = scrollY;
@@ -119,12 +136,12 @@ function go(el) {
   const hero = el.closest('[data-row="hero"], .hero');
   if (hero || el.closest('.tvd .detail-main')) { glideTo(window, '', 0); return; }
   // Settings' left list stays put while you move through it (it all fits on the screen).
-  if (el.closest('.set-side')) { const r = el.getBoundingClientRect(); if (r.top >= 0 && r.bottom <= innerHeight) return; }
+  if (el.closest('.set-side')) { const r = el.getBoundingClientRect(); if (r.top < 0 || r.bottom > viewH()) glideTo(window, '', pageTarget(el, 'nearest')); return; }
   if (!row) { glideTo(window, '', pageTarget(el, 'center')); return; }
   warm(row);
   const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2;
   glideTo(row, 'scrollLeft', Math.max(0, Math.min(left, row.scrollWidth - row.clientWidth)));
-  const sec = row.closest('section, [data-row]') || row;
+  const sec = row.closest('.genre-row, section, [data-row]') || row;
   const tall = sec.offsetHeight > (innerHeight / (parseFloat(root.style.zoom) || 1)) * 0.9;
   glideTo(window, '', pageTarget(sec, tall || sec.closest('.tvd') ? 'start' : 'center'));
 }

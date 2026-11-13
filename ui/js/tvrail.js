@@ -39,6 +39,8 @@ function draw() {
     ${item('audiobooks', 'Audiobooks', 'audiobooks', '#/audiobooks')}
     <div class="tr-sp"></div>
     ${item('settings', 'Settings', 'settings', '#/settings')}`;
+  // With many libraries the entries get a little shorter so Settings always fits on the screen.
+  rail.style.setProperty('--trn', String(rail.querySelectorAll('.tr-i').length));
   mark();
 }
 // Light up where you are. Movie and show pages keep the last place lit.
@@ -62,6 +64,7 @@ async function loadViews() {
 }
 
 draw();
+rail.addEventListener('focusin', (e) => e.target.scrollIntoView?.({ block: 'nearest' }));
 addEventListener('hashchange', () => { mark(); if (!views.length) loadViews(); });
 // Picking the screen you're already on just closes the rail.
 rail.addEventListener('click', (e) => { const a = e.target.closest('.tr-i'); if (!a) return; if (a.getAttribute('href') === (location.hash || '#/home')) { e.preventDefault(); window.dispatchEvent(new Event('tv:leave-rail')); } else window.dispatchEvent(new Event('tv:rail-go')); });
