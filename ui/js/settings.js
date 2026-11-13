@@ -107,7 +107,7 @@ const lookHtml = (admin) => card('DISPLAY', [
   sw('introSplash', 'Intro splash', 'The “Powered by Jaydenater” intro when Scrappy opens.'),
   admin ? sw('yirEarly', 'Show Year in Review early', 'Normally appears on December 1. Only admins see this.') : '',
 ]) + card('STORAGE', [
-  row('Image cache', '<span id="setCache">Posters and covers kept on this PC so pages load fast.</span>', '<button type="button" class="btn small secondary" data-act="clearCache">Clear</button>'),
+  row('Image cache', `<span id="setCache">Posters and covers kept on this ${TV ? 'TV' : 'PC'} so pages load fast.</span>`, '<button type="button" class="btn small secondary" data-act="clearCache">Clear</button>'),
   dd('cacheMax', 'Cache size limit', 'The oldest pictures are removed when it gets bigger.', [['0', 'No limit'], ['500', '500 MB'], ['1024', '1 GB'], ['2048', '2 GB'], ['5120', '5 GB']]),
 ]);
 const updatesHtml = () => `<div class="set-card" id="updSettings">
@@ -208,7 +208,7 @@ export async function settingsPage(root, ctx, secId) {
     if (secId === 'updates') mountUpdates();
     if (secId === 'health') fillHealth(box, ctx.alive);
     if (secId === 'requests') fillRequests(box, ctx.alive);
-    if (secId === 'look') invoke('cache_size').then((c) => { const el = box.querySelector('#setCache'); if (el) el.textContent = `Posters and covers kept on this PC so pages load fast. Using ${fmtMB(c.bytes)}.`; }).catch(() => {});
+    if (secId === 'look') invoke('cache_size').then((c) => { const el = box.querySelector('#setCache'); if (el) el.textContent = `Posters and covers kept on this ${TV ? 'TV' : 'PC'} so pages load fast. Using ${fmtMB(c.bytes)}.`; }).catch(() => {});
     if (secId === 'account') invoke('autostart_get').then((v) => { const el = box.querySelector('#setAutostart'); if (el) el.checked = !!v; }).catch(() => {});
   };
   draw();
@@ -267,7 +267,7 @@ export async function settingsPage(root, ctx, secId) {
       toast(`Signed out of ${name}.`);
       if (ctx.alive()) settingsPage(root, { ...ctx, session: await api.session().catch(() => ctx.session) }, 'account');
     } else if (act === 'signoutAll') {
-      if (!confirm('Sign out of Emby, Navidrome and Audiobookshelf on this PC?')) return;
+      if (!confirm(`Sign out of Emby, Navidrome and Audiobookshelf on this ${TV ? 'TV' : 'PC'}?`)) return;
       await api.logout().catch(() => {});
       await ctx.refreshSession();
       location.hash = '#/login';

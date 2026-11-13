@@ -328,14 +328,18 @@ const watcher = new MutationObserver(() => {});
 watcher.observe(document.body, { attributes: true, attributeOldValue: true, childList: true, subtree: true });
 window.__tvBack = () => {
   // On the side rail, Back just closes it.
-  if (inRail(document.activeElement)) { leaveRail(); return true; }
+  // (An empty screen has nothing to land on, so there Back acts on the screen itself.)
+  const railOnly = inRail(document.activeElement) && !(fromPage && fromPage.isConnected && shown(fromPage)) && !candidates(pageScope()).some((el) => !inRail(el));
+  if (inRail(document.activeElement) && !railOnly) { leaveRail(); return true; }
   // 1. Let whatever is open close itself (menus, panels, the player) through Escape.
+  if (!railOnly) {
   watcher.takeRecords();
   const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document;
   target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
   const changed = watcher.takeRecords().some((r) => r.type === 'childList' ? (r.addedNodes.length || r.removedNodes.length) : r.target.getAttribute(r.attributeName) !== r.oldValue);
   // While a video is up, Back belongs to the player (it closes panels, hides the bar, then leaves).
   if (changed || root.classList.contains('playing')) return true;
+  }
   // 2. Otherwise go back a screen, until you're on a tab's home screen.
   const h = location.hash;
   if (TOP.has(h)) return false;

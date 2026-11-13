@@ -1,5 +1,5 @@
 Your picks from the guide are in.
-Back from a library, Genres, Favorites, Search or Settings goes Home.
+Back from a library, Genres, Favorites, Search or Settings goes Home, at the spot you left.
+Fixed: Back doing nothing on an empty Favorites screen.
 Libraries open on the first poster, and A to Z jumps without cutting the list.
 Settings follows the highlight, and OK pauses a playing video.
-The intro goes away as soon as Home is ready.

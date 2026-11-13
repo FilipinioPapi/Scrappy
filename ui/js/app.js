@@ -184,11 +184,14 @@ const KEEP = new Map(); // history key -> { hash, frag, y, focus, ctx, at }
 let shownPage = null;
 function dropKept(k) { const e = KEEP.get(k); if (e) { e.ctx._kept = 0; KEEP.delete(k); } }
 function clearKept() { [...KEEP.keys()].forEach(dropKept); }
+// The last thing highlighted inside the page, so leaving by the side bar still remembers the spot.
+let lastInView = null;
+if (ON_TV) document.addEventListener('focusin', (e) => { if (viewEl?.contains(e.target)) lastInView = e.target; });
 function keepPage() {
   const from = shownPage; shownPage = null;
   if (!from || from.ctx !== curCtx || !viewEl.firstElementChild || viewEl.querySelector('.loading, .empty > .btn')) return null;
   const ae = document.activeElement;
-  const e = { hash: from.hash, y: window.scrollY, focus: ae && viewEl.contains(ae) ? ae : null, ctx: from.ctx, at: Date.now(), frag: document.createDocumentFragment() };
+  const e = { hash: from.hash, y: window.scrollY, focus: ae && viewEl.contains(ae) ? ae : (lastInView && viewEl.contains(lastInView) ? lastInView : null), ctx: from.ctx, at: Date.now(), frag: document.createDocumentFragment() };
   // It may finish what it was loading for a few seconds, then it rests.
   from.ctx._kept = Date.now() + 5000;
   dropKept(from.k); KEEP.set(from.k, e);
