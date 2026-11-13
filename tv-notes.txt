@@ -1,5 +1,5 @@
-Speed pass: going Back, and pages you have already opened, now appear at once
-Speed pass: a movie or show starts loading while you rest on its poster; libraries are ready before you open them
-Sign-in: Down from a server tile goes to its box, and the screen resets when Back closes the keyboard
-The remote works from the first press after opening the app; Back on sign-in no longer changes the phone code
-Still included: smooth scrolling
+Speed: pages are kept as you left them, so Back and the side bar bring them up at once, in the same spot
+Speed: posters already shown appear instantly next time; PC-only work no longer runs on the TV
+Fixed: PC layout flashing while the app opens; Back losing your place and highlight
+Fixed: see-through title header, cut-off Settings icon and Edit home, long-show season tabs
+Still included: smooth scrolling and the speed pass

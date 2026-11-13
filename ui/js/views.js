@@ -360,6 +360,7 @@ function genreSection(root, ctx, views) {
   }));
   let io = null;
   ctx.onLeave(() => io?.disconnect());
+  ctx.onReturn?.(() => rowsEl?.querySelectorAll('.genre-row:not(.filled)').forEach((r) => io?.observe(r)));
   let gen = 0;
   // Each tab's rows are kept once built, so switching back is instant.
   const built = new Map(); // lib id -> { nodes, observe }
@@ -760,7 +761,7 @@ function renderHero(slot, ctx, picks, seriesInfo) {
   };
   drawNav();
   restart();
-  ctx.onLeave(() => clearInterval(heroTimer));
+  ctx.onLeave(() => clearInterval(heroTimer)); ctx.onReturn?.(restart);
   return {
     el,
     // Swap in a fresh set of slides without touching the one on screen.
@@ -776,7 +777,7 @@ function renderHero(slot, ctx, picks, seriesInfo) {
       i = 0;
       drawNav();
       restart();
-      ctx.onLeave(() => clearInterval(heroTimer));
+      ctx.onLeave(() => clearInterval(heroTimer)); ctx.onReturn?.(restart);
     },
   };
 }
@@ -968,6 +969,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
   const io = new IntersectionObserver((entries) => entries[0].isIntersecting && more(), { rootMargin: '800px' });
   io.observe(sentinel);
   ctx.onLeave(() => io.disconnect());
+  ctx.onReturn?.(() => io.observe(sentinel));
 
   const reload = () => { gen++; start = 0; total = Infinity; busy = false; grid.innerHTML = ''; more(); };
   root.querySelector('#sort')?.addEventListener('change', (e) => {
@@ -1314,6 +1316,7 @@ function renderItem(root, ctx, it, seasonId = '') {
     const onScroll = () => strip.classList.toggle('show', main.getBoundingClientRect().bottom < innerHeight * (tvShow ? 0.12 : 0.55));
     addEventListener('scroll', onScroll, { passive: true });
     ctx.onLeave(() => removeEventListener('scroll', onScroll));
+    ctx.onReturn?.(() => { addEventListener('scroll', onScroll, { passive: true }); onScroll(); });
   }
   root.querySelector('#backBtn').addEventListener('click', () => {
     if (history.length > 1) history.back(); else location.hash = '#/home';

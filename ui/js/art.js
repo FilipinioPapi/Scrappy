@@ -13,9 +13,21 @@ const MAX_WAIT = 240;   // longest a page waits for its pictures
 const EARLY = 1600;     // how long after a page change new pieces count as part of that page
 const seen = new Set(); // picture addresses that have loaded this session
 
-document.addEventListener('load', (e) => { const t = e.target; if (t && t.tagName === 'IMG' && t.naturalWidth) seen.add(t.currentSrc || t.src); }, true);
+// Google TV: every picture is fetched through the app (a slow trip on a TV, even from its own
+// storage), and the browser forgets a picture as soon as nothing on screen uses it. Holding on to
+// the ones already shown means the next page that uses them draws them at once.
+const TV = document.documentElement.classList.contains('tv');
+const held = new Map(); // address -> Image
+function hold(src) {
+  if (!TV || !src || src.startsWith('data:')) return;
+  const had = held.get(src);
+  if (had) { held.delete(src); held.set(src, had); return; }
+  const im = new Image(); im.decoding = 'async'; im.src = src; held.set(src, im);
+  if (held.size > 320) held.delete(held.keys().next().value);
+}
+document.addEventListener('load', (e) => { const t = e.target; if (t && t.tagName === 'IMG' && t.naturalWidth) { const src = t.currentSrc || t.src; seen.add(src); if (t.naturalWidth <= 800) hold(src); } }, true);
 // Clearing the picture cache (Settings) or signing out: those pictures have to load again.
-export const forgetArt = () => seen.clear();
+export const forgetArt = () => { seen.clear(); held.clear(); };
 window.addEventListener('scrappy:rowcache-clear', forgetArt);
 window.addEventListener('scrappy:art-clear', forgetArt);
 

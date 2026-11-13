@@ -18,6 +18,7 @@ import { tvShell } from './tvside.js';
 import { artPageStart } from './art.js';
 
 const viewEl = document.getElementById('view');
+const ON_TV = document.documentElement.classList.contains('tv');
 
 // Opening intro: stays until the first page is ready (the home banner, or any
 // other page), at least 1.2s so it doesn't flash, and never past ~2.5s.
@@ -42,6 +43,7 @@ let leaveHandlers = [];
 let enterTimer;
 
 async function refreshSession() {
+  clearKept();
   session = await api.session();
   setSearchSession(session);
   const sv = session.servers || {};
@@ -58,15 +60,23 @@ async function refreshSession() {
 }
 const escapeText = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
+// Each page gets a context. Its leave handlers run when you move away; on the TV a page can be
+// kept and brought back by Back, and then its return handlers run (timers and watchers start again).
+let curCtx = null;
+function leaveCtx() {
+  const c = curCtx; curCtx = null;
+  if (c) c._leave.forEach((f) => { try { f(); } catch {} });
+}
 function makeCtx() {
   const my = ++routeId;
-  leaveHandlers.forEach((f) => { try { f(); } catch {} });
-  leaveHandlers = [];
-  return {
+  leaveCtx();
+  const c = {
+    _leave: [], _return: [],
     session,
     refreshSession,
-    alive: () => my === routeId,
-    onLeave: (f) => leaveHandlers.push(f),
+    alive: () => curCtx === c || c._kept > Date.now(),
+    onLeave: (f) => c._leave.push(f),
+    onReturn: (f) => c._return.push(f),
     fail(e, soft = false) {
       const msg = String(e);
       const expired = { SESSION_EXPIRED: 'emby', 'Not logged in.': 'emby', ND_SESSION_EXPIRED: 'navidrome', ABS_SESSION_EXPIRED: 'audiobookshelf' }[msg];
@@ -76,13 +86,16 @@ function makeCtx() {
         return;
       }
       if (soft) toast(msg, true);
-      else if (my === routeId) viewEl.innerHTML = `<div class="empty">${escapeText(msg)}<br><br><button class="btn secondary" onclick="location.reload()">Try again</button></div>`;
+      else if (curCtx === c) viewEl.innerHTML = `<div class="empty">${escapeText(msg)}<br><br><button class="btn secondary" onclick="location.reload()">Try again</button></div>`;
     },
   };
+  curCtx = c;
+  return c;
 }
 
 // The red pill behind the active top tab slides to whichever tab is picked.
 function moveTabPill() {
+  if (ON_TV) return;
   const nav = document.querySelector('.tabs'); if (!nav || nav.closest('[hidden]')) return;
   let pill = nav.querySelector('.tab-pill');
   if (!pill) { pill = document.createElement('span'); pill.className = 'tab-pill'; nav.prepend(pill); nav.classList.add('has-pill'); }
@@ -100,21 +113,26 @@ let ghost = null, ghostObs = null, ghostTimer = 0;
 function dropGhost() {
   clearTimeout(ghostTimer); ghostObs?.disconnect(); ghostObs = null;
   const g = ghost; ghost = null;
-  if (g) { g.classList.add('out'); setTimeout(() => g.remove(), 180); }
+  if (g) { g.classList.add('out'); setTimeout(() => { fillKept(g._entry); g.remove(); }, 180); }
 }
-function holdOldPage() {
+// A kept page (Google TV) is itself the picture that stays up while the next page draws; afterwards it goes on the shelf.
+function fillKept(e) { if (e?.src) { e.frag.append(...e.src.childNodes); e.src = null; } }
+function holdOldPage(entry) {
   dropGhost();
-  if (!viewEl.firstElementChild || viewEl.querySelector(':scope > .loading') || viewEl.getElementsByTagName('*').length > 5000) return;
+  if (!viewEl.firstElementChild || viewEl.querySelector(':scope > .loading') || (!entry && viewEl.getElementsByTagName('*').length > 5000)) { if (entry) entry.frag.append(...viewEl.childNodes); return; }
   const r = viewEl.getBoundingClientRect();
   const g = document.createElement('div');
   g.className = 'view-ghost'; g.setAttribute('aria-hidden', 'true');
   g.style.cssText = `left:${r.left}px;top:${Math.max(r.top, 0)}px;width:${r.width}px;height:${window.innerHeight - Math.max(r.top, 0)}px`;
   const inner = document.createElement('div');
   inner.style.transform = `translateY(${Math.min(r.top, 0)}px)`;
-  inner.append(...[...viewEl.childNodes].map((n) => n.cloneNode(true)));
-  // A picture only: no ids, so nothing else in the app can find or update the copy.
-  inner.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
-  inner.querySelectorAll('[data-hold]').forEach((e) => e.removeAttribute('data-hold'));
+  if (entry) { inner.append(...viewEl.childNodes); entry.src = inner; g._entry = entry; }
+  else {
+    inner.append(...[...viewEl.childNodes].map((n) => n.cloneNode(true)));
+    // A picture only: no ids, so nothing else in the app can find or update the copy.
+    inner.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+    inner.querySelectorAll('[data-hold]').forEach((e) => e.removeAttribute('data-hold'));
+  }
   g.inert = true;
   g.appendChild(inner);
   document.body.appendChild(g);
@@ -155,7 +173,45 @@ function restoreScroll(y) {
 }
 
 let lastRouteName = '';
+
+// ---------- Google TV: kept pages ----------
+// The page you leave is set aside whole (its posters, its scroll spot, its highlight) instead of
+// being thrown away, so coming back to it costs nothing: no reload, no redraw, no pop-in.
+// Anything that changes what a page should show (watching, favorites, a refresh) empties the shelf.
+const KEEPABLE = new Set(['home', 'library', 'item', 'person', 'genres', 'favorites']);
+const KEEP = new Map(); // history key -> { hash, frag, y, focus, ctx, at }
+let shownPage = null;
+function dropKept(k) { const e = KEEP.get(k); if (e) { e.ctx._kept = 0; KEEP.delete(k); } }
+function clearKept() { [...KEEP.keys()].forEach(dropKept); }
+function keepPage() {
+  const from = shownPage; shownPage = null;
+  if (!from || from.ctx !== curCtx || !viewEl.firstElementChild || viewEl.querySelector('.loading, .empty > .btn')) return null;
+  const ae = document.activeElement;
+  const e = { hash: from.hash, y: window.scrollY, focus: ae && viewEl.contains(ae) ? ae : null, ctx: from.ctx, at: Date.now(), frag: document.createDocumentFragment() };
+  // It may finish what it was loading for a few seconds, then it rests.
+  from.ctx._kept = Date.now() + 5000;
+  dropKept(from.k); KEEP.set(from.k, e);
+  while (KEEP.size > 8) dropKept(KEEP.keys().next().value);
+  return e;
+}
+function takeKept(nk, hash) {
+  const fresh = (e) => e && e.hash === hash && Date.now() - e.at < 600000;
+  let k = nk.seen && fresh(KEEP.get(nk.k)) ? nk.k : null, back = !!k;
+  // Not a Back, but a screen that is still on the shelf (Home from the side bar): show it from the top.
+  if (!k && !hash.startsWith('#/item') && !hash.startsWith('#/person')) for (const [kk, e] of KEEP) if (fresh(e)) k = kk;
+  if (!k) return null;
+  const e = KEEP.get(k); KEEP.delete(k); fillKept(e);
+  return { ...e, back };
+}
+['scrappy:memclear', 'scrappy:refresh', 'scrappy:rowcache-clear', 'scrappy:art-clear'].forEach((n) => window.addEventListener(n, clearKept));
+
+// (On the TV each page change notes how long it took, so slow screens can be found from the TV's log.)
 async function route(opts = {}) {
+  const t0 = performance.now(), h = location.hash || '#/home';
+  try { return await routeNow(opts); }
+  finally { if (ON_TV) requestAnimationFrame(() => requestAnimationFrame(() => console.log(`[perf] ${h} drawn in ${Math.round(performance.now() - t0)} ms`))); }
+}
+async function routeNow(opts = {}) {
   // Remember where you came from, so Back buttons on pages can return there.
   if (location.hash !== window.__curHash) { window.__prevHash = window.__curHash || ''; window.__curHash = location.hash; }
   if (!session) await refreshSession();
@@ -193,8 +249,24 @@ async function route(opts = {}) {
     a.classList.toggle('active', !statsKind && name !== 'requests' && name !== 'settings' && a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
 
-  if (!opts.keepScroll && !statsSwitch) holdOldPage();
   const nk = navKey(); const backTo = nk.seen && !opts.keepScroll ? SCROLL.get(nk.k) : undefined;
+  // Google TV: Back (or picking a screen you were just on) brings the kept page straight back.
+  const kept = ON_TV && !opts.keepScroll && !notSigned ? takeKept(nk, hash) : null;
+  const entry = ON_TV && !opts.keepScroll ? keepPage() : null;
+  if (!opts.keepScroll && !statsSwitch && !kept) holdOldPage(entry);
+  else if (entry) entry.frag.append(...viewEl.childNodes);
+  if (kept) {
+    dropGhost(); leaveCtx(); restoreRun++;
+    clearTimeout(enterTimer); viewEl.classList.remove('entering', 'tabswap'); viewEl.classList.add('quiet');
+    viewEl.replaceChildren(kept.frag);
+    curCtx = kept.ctx; kept.ctx._kept = 0;
+    kept.ctx._return.forEach((f) => { try { f(); } catch {} });
+    scrollKey = nk.k; window.scrollTo(0, kept.back ? kept.y : 0); SCROLL.set(nk.k, kept.back ? kept.y : 0);
+    if (kept.back && kept.focus?.isConnected) kept.focus.focus({ preventScroll: true });
+    shownPage = { k: nk.k, hash, ctx: kept.ctx };
+    hideIntro();
+    return;
+  }
   restoreRun++; scrollKey = null;
   const ctx = makeCtx();
   if (opts.keepScroll) quiet();
@@ -206,13 +278,17 @@ async function route(opts = {}) {
     if (backTo > 0) restoreScroll(backTo);
     // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
     viewEl.classList.remove('entering', 'tabswap');
-    void viewEl.offsetWidth;
-    // Moving between the audio tabs and Movies & TV gets a softer, slightly longer cross-fade.
-    viewEl.classList.add('entering'); viewEl.classList.toggle('tabswap', swapped);
-    clearTimeout(enterTimer);
-    enterTimer = setTimeout(() => viewEl.classList.remove('entering', 'tabswap'), 900);
+    // (The TV has no page entrance, so it skips this and the layout pass it forces.)
+    if (!ON_TV) {
+      void viewEl.offsetWidth;
+      // Moving between the audio tabs and Movies & TV gets a softer, slightly longer cross-fade.
+      viewEl.classList.add('entering'); viewEl.classList.toggle('tabswap', swapped);
+      clearTimeout(enterTimer);
+      enterTimer = setTimeout(() => viewEl.classList.remove('entering', 'tabswap'), 900);
+    }
   }
   scrollKey = nk.k;
+  shownPage = ON_TV && !notSigned && KEEPABLE.has(name || 'home') ? { k: nk.k, hash, ctx } : null;
   // Home says when its banner is ready; every other page is ready once drawn.
   if (!['home', undefined, ''].includes(name)) setTimeout(hideIntro, 0);
   if (notSigned) return connectView(viewEl, need);

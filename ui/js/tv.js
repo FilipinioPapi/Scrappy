@@ -118,6 +118,8 @@ function go(el) {
   const row = el.closest('.row, .mrow');
   const hero = el.closest('[data-row="hero"], .hero');
   if (hero || el.closest('.tvd .detail-main')) { glideTo(window, '', 0); return; }
+  // Settings' left list stays put while you move through it (it all fits on the screen).
+  if (el.closest('.set-side')) { const r = el.getBoundingClientRect(); if (r.top >= 0 && r.bottom <= innerHeight) return; }
   if (!row) { glideTo(window, '', pageTarget(el, 'center')); return; }
   warm(row);
   const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2;

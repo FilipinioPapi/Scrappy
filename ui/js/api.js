@@ -17,7 +17,7 @@ const KIND = new Map();
 export const kindOf = (id) => KIND.get(id);
 const memPut = (path, v) => { if (!TV || v == null) return;
   if (Array.isArray(v.Items)) { if (KIND.size > 6000) KIND.clear(); for (const x of v.Items) if (x?.Id && x.Type) KIND.set(x.Id, x.Type); } if (MEM.size > 500) MEM.delete(MEM.keys().next().value); MEM.set(path, { v, t: Date.now() }); };
-export const memClear = () => MEM.clear();
+export const memClear = () => { MEM.clear(); window.dispatchEvent(new Event('scrappy:memclear')); };
 export const memHas = (path) => MEM.has(path);
 if (TV) {
   ['player-closed', 'player-ended'].forEach((n) => window.__TAURI__.event.listen(n, memClear));

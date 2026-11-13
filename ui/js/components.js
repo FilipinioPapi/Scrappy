@@ -67,9 +67,8 @@ export function card(it, opts = {}) {
       title = it.SeriesName || it.Name;
       sub = [epCode(it), it.Name].filter(Boolean).join(' · ');
     } else if (it.ProductionYear) {
-      sub = it.Type === 'Series' && it.EndDate && it.Status === 'Ended'
-        ? `${it.ProductionYear}–${new Date(it.EndDate).getFullYear()}`
-        : String(it.ProductionYear);
+      const endY = it.Type === 'Series' && it.EndDate && it.Status === 'Ended' ? new Date(it.EndDate).getFullYear() : 0;
+      sub = endY && endY !== it.ProductionYear ? `${it.ProductionYear}–${endY}` : String(it.ProductionYear);
     }
   }
   const pct = ud.PlayedPercentage && !ud.Played ? ud.PlayedPercentage : 0;
@@ -212,4 +211,5 @@ function addRowArrows(row) {
 
 // Every sideways row: Movies & TV rows (.row) and Music / Audiobooks rows (.mrow).
 const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows]), #view .mrow:not([data-arrows])').forEach(addRowArrows);
-{ const v = document.getElementById('view'); if (v) new MutationObserver(scanRows).observe(v, { childList: true, subtree: true }); }
+// (Not on the TV: arrows and bars are for the mouse, and measuring every row costs time.)
+{ const v = document.getElementById('view'); if (v && !/Android/.test(navigator.userAgent)) new MutationObserver(scanRows).observe(v, { childList: true, subtree: true }); }

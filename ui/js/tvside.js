@@ -105,6 +105,11 @@ window.addEventListener('scrappy:refresh', () => { recentsAt = 0; });
 /** Make sure the Movies & TV shell is on screen and return the page area inside it. */
 export function tvShell(viewEl) {
   let shell = viewEl.querySelector(':scope > .tvshell');
+  // Google TV has its own side rail: the page area is all that's needed (no PC side menu to build or fill).
+  if (document.documentElement.classList.contains('tv')) {
+    if (!shell) { viewEl.innerHTML = '<div class="mshell tvshell"><section class="mmain tvmain" id="tvmain"></section></div>'; shell = viewEl.firstChild; }
+    return shell.querySelector('#tvmain');
+  }
   if (!shell) {
     viewEl.innerHTML = shellHtml();
     shell = viewEl.querySelector('.tvshell');

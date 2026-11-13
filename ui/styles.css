@@ -3654,3 +3654,13 @@ html.tv .tvsi { position: fixed; inset: 0; overflow: hidden; min-height: 0; }
 html.tv .tvsi.typing .tvsi-brand, html.tv .tvsi.typing .tvsi-tiles { display: none; }
 html.tv .tvsi.typing .tvsi-main { margin-top: 0; }
 html.tv .tvsi-in[readonly] { color: #E9DADB; }
+
+/* ---------- Google TV: fixes from the first full pass on a real library ---------- */
+/* The small title header on movie and show pages is solid behind its words, and rows stop below it. */
+html.tv .tvd-strip { background: linear-gradient(var(--bg) 86%, rgba(18,12,12,0)); padding-bottom: 30px; }
+html.tv .tvd section, html.tv .tvd [data-row] { scroll-margin-top: 136px; }
+/* Keep the last things on a screen clear of the TV's edge. */
+html.tv #tvrail { padding-bottom: 46px; }
+html.tv .hedit-wrap { padding-bottom: 96px; }
+/* Long shows: the season tabs slide inside their own strip, with room for the highlight. */
+html.tv .tvs-bar .season-tabs { padding: 5px 6px; scroll-padding: 0 56px; }

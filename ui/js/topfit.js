@@ -60,7 +60,7 @@ function fit() {
 }
 
 let queued = false;
-const schedule = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; fit(); }); };
+const schedule = () => { if (queued || document.documentElement.classList.contains('tv')) return; queued = true; requestAnimationFrame(() => { queued = false; fit(); }); };
 
 // ---------- Search as a round button: opens out over the tabs ----------
 const box = top?.querySelector('.tsearch');
