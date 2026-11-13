@@ -97,15 +97,39 @@ export const IMG_BASE = /Windows|Android/.test(navigator.userAgent) ? 'http://im
 // Posters and thumbnails are drawn about two thirds the PC size, so ask for smaller files.
 const fitW = (w) => (!TV ? w : w >= 1280 ? Math.min(w, 1920) : Math.ceil((w * 0.7) / 20) * 20);
 
+// Google TV: pictures come straight from Emby. The route through the app hands the TV's browser
+// one picture at a time and never lets it keep a copy, which is what made artwork crawl on a TV;
+// asked for directly, the browser fetches many at once and keeps them on the TV itself.
+let DIRECT = '';
+export const setImgServer = (address) => { DIRECT = TV && /^https?:\/\//.test(address || '') ? String(address).replace(/\/+$/, '') : ''; };
+const direct = (itemId, type, idx, width, tag) => `${DIRECT}/Items/${encodeURIComponent(itemId)}/Images/${type}${idx}?maxWidth=${width}&quality=90${tag ? `&tag=${encodeURIComponent(tag)}` : ''}`;
+
+// Safety net: if a server won't hand a picture over directly, that picture (and after a few, all of
+// them) goes back to the route through the app.
+if (TV) {
+  let misses = 0;
+  document.addEventListener('error', (e) => {
+    const t = e.target; if (!t || t.tagName !== 'IMG' || !DIRECT || t.dataset.viaApp) return;
+    const m = (t.getAttribute('src') || '').startsWith(DIRECT + '/Items/') && t.getAttribute('src').slice(DIRECT.length).match(/^\/Items\/([^/]+)\/Images\/([^/?]+)(\/\d+)?\?maxWidth=(\d+)(?:.*?&tag=([^&]+))?/);
+    if (!m) return;
+    e.stopImmediatePropagation();
+    t.dataset.viaApp = '1';
+    t.src = `${IMG_BASE}/${m[1]}/${m[2]}${m[3] || ''}?${m[5] ? `tag=${m[5]}&` : ''}w=${m[4]}`;
+    if (++misses >= 4) DIRECT = '';
+  }, true);
+}
+
 export function img(itemId, type, tag, width = 400, index) {
   if (!itemId || !tag) return null;
   width = fitW(width);
   const idx = index !== undefined ? `/${index}` : '';
+  if (DIRECT) return direct(itemId, type, idx, width, tag);
   return `${IMG_BASE}/${encodeURIComponent(itemId)}/${type}${idx}?tag=${encodeURIComponent(tag)}&w=${width}`;
 }
 
 // Ask for an image even when Emby didn't list one (e.g. auto-made library pictures).
 export function imgAny(itemId, type, width = 400) {
   width = fitW(width);
+  if (DIRECT) return direct(itemId, type, '', width, '');
   return `${IMG_BASE}/${encodeURIComponent(itemId)}/${type}?w=${width}`;
 }

@@ -1,4 +1,4 @@
-import { api, quiet } from './api.js';
+import { api, quiet, setImgServer } from './api.js';
 import './player.js';
 import './mplayer.js';
 import { musicView } from './music.js';
@@ -46,6 +46,7 @@ let enterTimer;
 async function refreshSession() {
   clearKept();
   session = await api.session();
+  setImgServer(session.loggedIn ? session.server : '');
   setSearchSession(session);
   const sv = session.servers || {};
   const rows = [['emby', 'Emby'], ['navidrome', 'Navidrome'], ['audiobookshelf', 'Audiobookshelf']]
@@ -121,10 +122,14 @@ function fillKept(e) { if (e?.src) { e.frag.append(...e.src.childNodes); e.src =
 function holdOldPage(entry) {
   dropGhost();
   if (!viewEl.firstElementChild || viewEl.querySelector(':scope > .loading') || (!entry && viewEl.getElementsByTagName('*').length > 5000)) { if (entry) entry.frag.append(...viewEl.childNodes); return; }
-  const r = viewEl.getBoundingClientRect();
+  const r0 = viewEl.getBoundingClientRect();
+  // The TV draws the page scaled down, and measurements come back in scaled sizes: turn them back
+  // into the page's own units, or the held picture shows up shrunken and in the wrong place.
+  const k = r0.width > 0 ? viewEl.offsetWidth / r0.width : 1;
+  const r = { left: r0.left * k, top: r0.top * k, width: r0.width * k };
   const g = document.createElement('div');
   g.className = 'view-ghost'; g.setAttribute('aria-hidden', 'true');
-  g.style.cssText = `left:${r.left}px;top:${Math.max(r.top, 0)}px;width:${r.width}px;height:${window.innerHeight - Math.max(r.top, 0)}px`;
+  g.style.cssText = `left:${r.left}px;top:${Math.max(r.top, 0)}px;width:${r.width}px;bottom:0`;
   const inner = document.createElement('div');
   inner.style.transform = `translateY(${Math.min(r.top, 0)}px)`;
   if (entry) { inner.append(...viewEl.childNodes); entry.src = inner; g._entry = entry; }

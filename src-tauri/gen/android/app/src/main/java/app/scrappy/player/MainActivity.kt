@@ -1,6 +1,7 @@
 package app.scrappy.player
 
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
@@ -19,7 +20,29 @@ class MainActivity : TauriActivity() {
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
   }
 
+  private var web: WebView? = null
+  private var holdSent = false
+
+  // Holding OK on the remote: tell the page once per press, so the quick menu opens on every remote
+  // (some TVs don't pass the "still held" presses on to the page).
+  override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    val ok = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+    if (ok) {
+      if (event.action == KeyEvent.ACTION_DOWN) {
+        if (event.repeatCount == 0) holdSent = false
+        else if (!holdSent && event.eventTime - event.downTime >= 500) {
+          holdSent = true
+          web?.evaluateJavascript("window.__tvHold && window.__tvHold()", null)
+        }
+      }
+    }
+    return super.dispatchKeyEvent(event)
+  }
+
   override fun onWebViewCreate(webView: WebView) {
+    web = webView
+    // The page draws its own menus; the built-in press-and-hold menu stays out of the way.
+    webView.setOnLongClickListener { true }
     // Back: first ask the page (close a menu, leave the player, go back a screen).
     // If the page has nothing to go back to, leave the app.
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

@@ -40,8 +40,37 @@ function scopeFor(el) {
 // Row titles ("Latest Movies") are links on the PC; on the TV the highlight skips them,
 // so Down goes straight from one row of posters to the next.
 const SKIP = '.section-head h2 a, .hero-dot, .hero-arrow';
-function candidates(scope) {
-  return [...scope.querySelectorAll(FOCUSABLE)].filter((el) => !el.matches(SKIP) && shown(el));
+// `near`: only what is on or close to the screen (enough for one step, and far cheaper on a long page).
+function candidates(scope, near) {
+  const all = [...scope.querySelectorAll(FOCUSABLE)];
+  if (!near) return all.filter((el) => !el.matches(SKIP) && shown(el));
+  const H = innerHeight;
+  return all.filter((el) => { const r = el.getBoundingClientRect(); return r.bottom > -1.5 * H && r.top < 2.5 * H && !el.matches(SKIP) && shown(el); });
+}
+// One step inside a grid of posters or along a row, worked out from the neighbours alone.
+let lastArrow = 0, fastT = 0;
+function quick(cur, k) {
+  const par = cur.parentElement; if (!par || !cur.classList.contains('card')) return null;
+  if (par.classList.contains('row') || par.classList.contains('mrow')) {
+    if (k !== 'ArrowLeft' && k !== 'ArrowRight') return null;
+    const sib = k === 'ArrowRight' ? cur.nextElementSibling : cur.previousElementSibling;
+    return sib && sib.classList.contains('card') && sib.offsetWidth > 2 ? sib : null;
+  }
+  if (!par.classList.contains('grid')) return null;
+  const kids = par.children, n = kids.length;
+  // How many posters per line (remembered until the grid changes width).
+  if (par._tvw !== par.clientWidth || !par._tvc) { let c = 1; const t = kids[0].offsetTop; while (c < n && kids[c].offsetTop === t) c++; par._tvc = c; par._tvw = par.clientWidth; }
+  const cols = par._tvc;
+  let i = cur._tvi; if (kids[i] !== cur) i = Array.prototype.indexOf.call(kids, cur);
+  let j = -1;
+  if (k === 'ArrowRight') { if ((i + 1) % cols && i + 1 < n) j = i + 1; }
+  else if (k === 'ArrowLeft') { if (i % cols) j = i - 1; }
+  else if (k === 'ArrowDown') { if (i + cols < n) j = i + cols; else if (Math.floor(i / cols) < Math.floor((n - 1) / cols)) j = n - 1; }
+  else if (i - cols >= 0) j = i - cols;
+  const to = j >= 0 ? kids[j] : null;
+  if (!to || !to.classList.contains('card')) return null;
+  to._tvi = j;
+  return to;
 }
 
 // Pick the closest element in the direction pressed. Straight-line neighbours win
@@ -194,11 +223,21 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (!k.startsWith('Arrow') || e.defaultPrevented) return;
+  // Holding or tapping fast: pictures drop straight in (no fades) so the page can keep up, and the
+  // class comes off once you rest.
+  { const now = performance.now(); if (e.repeat || now - lastArrow < 220) { if (!fastT) root.classList.add('tv-fast'); clearTimeout(fastT); fastT = setTimeout(() => { fastT = 0; root.classList.remove('tv-fast'); }, 420); } lastArrow = now; }
   // In a text box, Left/Right move the text cursor until it reaches the end.
   if (isText(cur) && k === 'ArrowLeft' && (cur.selectionStart ?? 0) > 0) return;
   if (isText(cur) && k === 'ArrowRight' && (cur.selectionEnd ?? 0) < cur.value.length) return;
   if (cur?.type === 'range' && (k === 'ArrowLeft' || k === 'ArrowRight')) return;
   e.preventDefault();
+  // Fast lanes (no measuring of the whole page): inside a poster grid, and along a row of posters.
+  // These keep holding a direction smooth however long the list has grown.
+  if (cur && cur.classList.contains('card') && !cur.closest(LAYERS) && document.getElementById('view')?.contains(cur)) {
+    const q = quick(cur, k); if (q) { go(q); return; }
+    // The bottom of a grid that is still loading more: wait there instead of wandering off to the A to Z strip.
+    if ((k === 'ArrowDown' || k === 'ArrowUp') && cur.parentElement?.classList.contains('grid') && cur.parentElement.dataset.more === '1') return;
+  }
   const scope = scopeFor(cur);
   if (!cur || !scope.contains(cur)) { const f = first(scope); if (f) go(f); return; }
   // The side rail: Up/Down move inside it, Right goes back to where you were on the page.
@@ -212,7 +251,8 @@ addEventListener('keydown', (e) => {
   // Settings: Right from the list of sections goes into the section, Left comes back to it.
   if (k === 'ArrowRight' && cur.closest('.set-side')) { const f = candidates(scope).find((el) => el.closest('.set-body')); if (f) go(f); return; }
   if (k === 'ArrowLeft' && cur.closest('.set-body')) { const f = nearest(cur, k, candidates(scope).filter((el) => el.closest('.set-body')), true) || document.querySelector('.set-side a.on'); if (f) { go(f); return; } }
-  const next = nearest(cur, k, candidates(scope).filter((el) => !inRail(el)), scope === pageScope());
+  let next = nearest(cur, k, candidates(scope, true).filter((el) => !inRail(el)), scope === pageScope());
+  if (!next) next = nearest(cur, k, candidates(scope).filter((el) => !inRail(el)), scope === pageScope());
   if (next) {
     // Down from a text box (Search) lands on the first thing in the line below, not the one under the middle of the box.
     if (isText(cur) && k === 'ArrowDown') {
@@ -269,9 +309,15 @@ addEventListener('scrappy:ready', () => { if (warmedLibs) return; warmedLibs = t
 // refreshes), the highlight stays in the same spot instead of jumping to the top.
 const BOX = '[data-row], section, .maside, header, .menu, [role=dialog]';
 let last = null;
+let lastT = 0;
 addEventListener('focusin', (e) => {
-  const el = e.target; const box = el.closest?.(BOX);
-  last = box ? { box, sel: box.matches('[data-row]') ? `[data-row="${box.dataset.row}"]` : null, idx: candidates(box).indexOf(el) } : null;
+  // (Worked out once the highlight rests, so holding a direction doesn't pay for it on every step.)
+  const el = e.target; clearTimeout(lastT);
+  lastT = setTimeout(() => {
+    if (!el.isConnected || document.activeElement !== el) return;
+    const box = el.closest?.(BOX);
+    last = box ? { box, sel: box.matches('[data-row]') ? `[data-row="${box.dataset.row}"]` : null, idx: candidates(box).indexOf(el) } : null;
+  }, 160);
 });
 let settle = 0;
 new MutationObserver(() => {
@@ -293,17 +339,9 @@ new MutationObserver(() => {
 // A short press opens the poster or episode; holding OK brings up its quick menu
 // (play, start over, watched, favorite), the same one a right-click gives on the PC.
 const HOLDABLE = '.card[data-id], .season-tab[data-season]';
-let held = null;
-addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
-  // Still holding after the menu opened: nothing in the menu gets pressed by accident.
-  if (held?.done) { e.preventDefault(); e.stopImmediatePropagation(); return; }
-  const el = document.activeElement?.closest?.(HOLDABLE);
-  if (!el || el !== document.activeElement) return;
-  e.preventDefault();
-  if (!e.repeat) { held = { el, at: performance.now(), done: false }; return; }
-  if (!held || held.el !== el || held.done || performance.now() - held.at < 550) return;
-  held.done = true;
+let held = null, holdT = 0, lastOk = 0;
+function openHold(el) {
+  if (!el || !el.isConnected || root.classList.contains('playing') || document.querySelector('.ctx-menu:not([hidden])')) return;
   const r = el.getBoundingClientRect();
   el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
   let n = 0, seen = false;
@@ -313,9 +351,34 @@ addEventListener('keydown', (e) => {
     seen = true;
     if (!held && !menu.contains(document.activeElement)) candidates(menu)[0]?.focus({ preventScroll: true });
   }, 100);
+}
+// The hold is timed here (and also reported by the TV itself), so it works whether or not the
+// remote passes on "still held" presses.
+function fireHold() {
+  clearTimeout(holdT);
+  const el = held?.el || document.activeElement?.closest?.(HOLDABLE);
+  if (!el || el !== document.activeElement || held?.done) return;
+  if (!held) held = { el, at: performance.now(), done: false, late: true };
+  held.done = true;
+  openHold(el);
+}
+window.__tvHold = fireHold;
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  // A fresh press after a pause always starts over (in case the TV never reported the release).
+  const now = performance.now(), gap = now - lastOk; lastOk = now;
+  if (held?.done && !e.repeat && gap > 700) held = null;
+  // Still holding after the menu opened: nothing in the menu gets pressed by accident.
+  if (held?.done) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+  const el = document.activeElement?.closest?.(HOLDABLE);
+  if (!el || el !== document.activeElement) return;
+  e.preventDefault();
+  if (!e.repeat || !held) { held = { el, at: performance.now(), done: false }; clearTimeout(holdT); holdT = setTimeout(fireHold, 600); return; }
+  if (held.el === el && performance.now() - held.at >= 550) fireHold();
 }, true);
 addEventListener('keyup', (e) => {
   if (e.key !== 'Enter' || !held) return;
+  clearTimeout(holdT);
   const h = held; held = null;
   if (h.done) { e.preventDefault(); e.stopImmediatePropagation(); return; }
   if (h.el === document.activeElement) h.el.click();

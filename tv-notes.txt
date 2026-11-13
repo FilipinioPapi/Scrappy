@@ -1,5 +1,5 @@
-Your picks from the guide are in.
-Back from a library, Genres, Favorites, Search or Settings goes Home, at the spot you left.
-Fixed: Back doing nothing on an empty Favorites screen.
-Libraries open on the first poster, and A to Z jumps without cutting the list.
-Settings follows the highlight, and OK pauses a playing video.
+Artwork loads much faster: pictures come straight from Emby, many at once, and stay on the TV.
+Fixed: screens tearing and resizing when you open a movie, leave the player or change page.
+Holding or spamming a direction stays smooth however far you have scrolled.
+Fixed: holding OK now opens the quick menu on every remote.
+Still included: Back goes Home, A to Z jump, Settings follows the highlight.

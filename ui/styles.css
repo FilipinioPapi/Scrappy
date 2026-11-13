@@ -3666,3 +3666,8 @@ html.tv .hedit-wrap { padding-bottom: 96px; }
 html.tv .tvs-bar .season-tabs { padding: 5px 6px; scroll-padding: 0 56px; }
 html.tv #tvrail { overflow-y: auto; }
 html.tv #tvrail .tr-i { height: clamp(34px, calc((100vh / var(--tvzoom, 1) - 170px) / var(--trn, 10) - 6px), 52px); }
+
+/* Google TV: while a direction is held, pictures appear at once and the highlight doesn't animate,
+   so a slow TV spends its time moving the page instead of fading things. */
+html.tv.tv-fast img { transition: none !important; }
+html.tv.tv-fast .card .art { transition: none !important; }

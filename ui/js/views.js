@@ -970,6 +970,8 @@ export async function libraryView(root, ctx, id, genreId = '') {
       ctx.fail(e, true);
     } finally {
       if (myGen === gen) busy = false;
+      // (The TV remote waits at the bottom while there is more to come.)
+      grid.dataset.more = start < total ? '1' : '';
     }
     // Keep filling if the screen isn't full yet.
     if (myGen === gen && start < total && sentinel.getBoundingClientRect().top < innerHeight + 800) more();
