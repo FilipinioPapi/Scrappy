@@ -98,6 +98,8 @@ function glideTo(box, prop, to) {
   };
   requestAnimationFrame(step);
 }
+// A page that adds content above what you see says by how much it moved, so a slide in progress keeps its aim.
+addEventListener('tv:shifted', (e) => { const g = glides.get(window); if (g) { g.pos += e.detail; g.to += e.detail; } });
 // The highlight never ends up off the screen. Rows that fill in late change the page's height
 // while it is still sliding, so once things settle the page lines up on the highlight again.
 const probe = document.createElement('div');
@@ -278,7 +280,8 @@ new MutationObserver(() => {
     // The video player looks after its own highlight (none at all while you just watch).
     if (root.classList.contains('playing')) return;
     const cur = document.activeElement;
-    if (cur && cur !== document.body && cur.isConnected && shown(cur)) return;
+    // (A poster that is still fading in counts as there.)
+    if (cur && cur !== document.body && cur.isConnected && (shown(cur) || (cur.getBoundingClientRect().width > 2 && !cur.closest('[hidden], [inert]') && getComputedStyle(cur).visibility !== 'hidden'))) return;
     const box = last && (last.box.isConnected ? last.box : last.sel && document.querySelector(last.sel));
     const same = box && shown(box) ? candidates(box) : [];
     const f = same.length ? same[Math.min(Math.max(last.idx, 0), same.length - 1)] : first(scopeFor(null));
@@ -334,6 +337,10 @@ window.__tvBack = () => {
   // While a video is up, Back belongs to the player (it closes panels, hides the bar, then leaves).
   if (changed || root.classList.contains('playing')) return true;
   // 2. Otherwise go back a screen, until you're on a tab's home screen.
-  if (!TOP.has(location.hash)) { history.back(); return true; }
-  return false;
+  const h = location.hash;
+  if (TOP.has(h)) return false;
+  // Screens opened from the side rail (a library, Genres, Favorites, Search, Settings) go straight Home,
+  // and Home comes back as you left it. Anything deeper steps back one screen.
+  if (/^#\/(genres|favorites|search|settings)\b/.test(h) || /^#\/library\/[^/]+$/.test(h)) { window.__tvHomeBack = 1; location.hash = '#/home'; return true; }
+  history.back(); return true;
 };

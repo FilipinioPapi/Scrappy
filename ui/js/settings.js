@@ -212,6 +212,22 @@ export async function settingsPage(root, ctx, secId) {
     if (secId === 'account') invoke('autostart_get').then((v) => { const el = box.querySelector('#setAutostart'); if (el) el.checked = !!v; }).catch(() => {});
   };
   draw();
+  // Google TV: the right side follows the highlight as you move down the list; OK or Right steps into it.
+  if (TV) {
+    const navEl = root.querySelector('#setNav'); let t = 0;
+    navEl.addEventListener('focusin', (e) => {
+      const a = e.target.closest('a'); clearTimeout(t);
+      if (!a || a.classList.contains('on')) return;
+      t = setTimeout(() => { if (ctx.alive() && document.activeElement === a) location.replace(a.getAttribute('href')); }, 160);
+    });
+    navEl.addEventListener('click', (e) => {
+      const a = e.target.closest('a'); if (!a || !a.classList.contains('on')) return;
+      e.preventDefault();
+      box.querySelector('button:not([disabled]), input:not([disabled]), select, a[href]')?.focus({ preventScroll: true });
+    });
+    ctx.onLeave(() => clearTimeout(t));
+    if (document.activeElement === document.body) navEl.querySelector('a.on')?.focus({ preventScroll: true });
+  }
   // The admin list can change (or be unknown on first run): check, then show or hide the Admin sections.
   refreshAdmin().then((a) => { if (!ctx.alive() || a === admin) return; admin = a; if (sec.admin && !a) { location.replace('#/settings/account'); return; } root.querySelector('#setNav').innerHTML = nav(); if (secId === 'look') draw(); }).catch(() => {});
 

@@ -16,7 +16,11 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
   let shared = null;             // { user, pass, from } from the latest sign-in on this screen
   const results = {};            // kind -> { ok, error, n } for the phone page
   let busy = false, err = '', alive = true;
-  const cur = () => (st[sel.kind] ||= { step: 'addr', address: srv()[sel.kind]?.address || '', user: '' });
+  // A server address typed on the remote is kept if the app closes part-way (never a username or password).
+  const SAVED = 'tvSigninAddr';
+  const saved = () => { try { return JSON.parse(localStorage.getItem(SAVED) || '{}'); } catch { return {}; } };
+  const remember = (kind, v) => { const s = saved(); if (v) s[kind] = v; else delete s[kind]; try { localStorage.setItem(SAVED, JSON.stringify(s)); } catch {} };
+  const cur = () => (st[sel.kind] ||= (() => { const m = !srv()[sel.kind]?.signedIn && saved()[sel.kind]; return { step: m?.ok ? 'user' : 'addr', address: m?.address || srv()[sel.kind]?.address || '', user: '' }; })());
   const anyIn = () => Object.values(srv()).some((v) => v?.signedIn);
 
   root.innerHTML = `
@@ -100,17 +104,17 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
     };
     if (what === 'next' && c.step === 'addr') {
       if (!val.trim()) return;
-      await run('Checking…', async () => { const r = await api.serverCheck(sel.kind, val.trim()); c.address = r.address; c.step = shared ? 'who' : 'user'; });
+      await run('Checking…', async () => { const k = sel.kind; const r = await api.serverCheck(k, val.trim()); c.address = r.address; c.step = shared ? 'who' : 'user'; remember(k, { address: r.address, ok: true }); });
     } else if (what === 'next' && c.step === 'user') {
       if (!val.trim()) return;
       c.user = val.trim(); c.step = 'pass'; err = ''; draw();
     } else if (what === 'next' && c.step === 'pass') {
       const k = sel.kind;
-      await run('Signing in…', async () => { await signIn(k, c.address, c.user, val); delete st[k]; });
+      await run('Signing in…', async () => { await signIn(k, c.address, c.user, val); delete st[k]; remember(k, null); });
       if (alive && srv()[k]?.signedIn) next();
     } else if (what === 'same') {
       const k = sel.kind;
-      await run('Signing in…', async () => { await signIn(k, c.address, shared.user, shared.pass); delete st[k]; });
+      await run('Signing in…', async () => { await signIn(k, c.address, shared.user, shared.pass); delete st[k]; remember(k, null); });
       if (alive && srv()[k]?.signedIn) next(); else if (alive && err) { c.step = 'user'; draw(); }
     } else if (what === 'back') {
       c.step = c.step === 'pass' ? 'user' : c.step === 'user' && shared ? 'who' : 'addr'; err = ''; draw();
@@ -148,7 +152,7 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
     if (e.key === 'ArrowDown' && inp) { e.preventDefault(); e.stopPropagation(); typing(inp, false); q.querySelector('#siNext')?.focus({ preventScroll: true }); }
     if (e.key === 'Escape' && !srv()[sel.kind]?.signedIn && cur().step !== 'addr') { e.preventDefault(); e.stopImmediatePropagation(); act('back'); }
   }, true);
-  q.addEventListener('input', (e) => { if (e.target.id === 'siIn' && cur().step === 'addr') cur().address = e.target.value; });
+  q.addEventListener('input', (e) => { if (e.target.id === 'siIn' && cur().step === 'addr') { cur().address = e.target.value; remember(sel.kind, e.target.value.trim() ? { address: e.target.value } : null); } });
   q.addEventListener('click', async (e) => {
     const id = e.target.closest('button')?.id;
     if (id === 'siNext') act('next');
@@ -168,7 +172,7 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
   let unlisten = null;
   listen('pair-login', async ({ payload: p }) => {
     const x = SERVERS.find((y) => y.kind === p?.kind); if (!x || !alive) return;
-    try { await signIn(x.kind, String(p.address || ''), String(p.user || ''), String(p.pass || '')); delete st[x.kind]; results[x.kind] = { ok: true, n: p.n }; }
+    try { await signIn(x.kind, String(p.address || ''), String(p.user || ''), String(p.pass || '')); delete st[x.kind]; remember(x.kind, null); results[x.kind] = { ok: true, n: p.n }; }
     catch (e) { results[x.kind] = { ok: false, error: String(e), n: p.n }; }
     if (!alive) return;
     if (sel === x && srv()[x.kind]?.signedIn && SERVERS.some((y) => !srv()[y.kind]?.signedIn)) next(); else draw(!q.contains(document.activeElement) || !q.querySelector('#siIn'));

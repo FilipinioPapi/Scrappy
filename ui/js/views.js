@@ -913,7 +913,10 @@ export async function libraryView(root, ctx, id, genreId = '') {
   const grid = root.querySelector('#grid');
   const count = root.querySelector('#count');
   const sentinel = root.querySelector('#sentinel');
-  let start = 0, total = Infinity, busy = false, gen = 0;
+  // The grid shows one stretch of the library: titles `first` to `start`. It grows downward as you scroll,
+  // and (after an A to Z jump on the TV) upward too.
+  const PAGE = TV ? 60 : 120;
+  let first = 0, start = 0, total = Infinity, busy = false, busyUp = false, gen = 0;
   // TV: the highlight starts on the first poster once it is there (not on the Sort button), unless you already moved.
   let touched = false;
   if (TV) { const t = () => { touched = true; }; addEventListener('keydown', t, true); ctx.onLeave(() => removeEventListener('keydown', t, true)); }
@@ -921,7 +924,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
   const base = () => {
     const [by, order] = TVSORTS[sortIdx];
     const gid = genreId || tvGenre?.Id || '';
-    const tv = TV ? `${SHOWS[showIdx][1]}${letter && by === 'SortName' ? `&NameStartsWithOrGreater=${letter}` : ''}` : '';
+    const tv = TV ? SHOWS[showIdx][1] : '';
     return libPath(id, view, by, order, gid, tv, TV);
   };
 
@@ -937,18 +940,24 @@ export async function libraryView(root, ctx, id, genreId = '') {
         if (!total) grid.innerHTML = '<div class="empty">This library is empty.</div>';
         return data.Items || [];
       };
-      if (start === 0) {
+      if (start === 0 && first === 0) {
         // First page: show the saved copy instantly, then refresh.
         let rendered = 0;
         await load(path, (data) => {
           if (myGen !== gen) return;
+          // TV: a refresh redraws the posters; the highlight stays on the poster it was on.
+          const was = TV ? [...grid.querySelectorAll('.card')].indexOf(document.activeElement) : -1;
           grid.innerHTML = '';
           const items = apply(data);
           grid.insertAdjacentHTML('beforeend', items.map((it) => card(it)).join(''));
           rendered = items.length;
-          if (TV && !touched && (document.activeElement === document.body || root.contains(document.activeElement))) grid.querySelector('.card')?.focus({ preventScroll: true });
+          if (TV && !document.documentElement.classList.contains('playing')) {
+            const cs = grid.querySelectorAll('.card');
+            if (was >= 0) cs[Math.min(was, cs.length - 1)]?.focus({ preventScroll: true });
+            else if (!touched) cs[0]?.focus({ preventScroll: true });
+          }
         }, () => ctx.alive() && myGen === gen);
-        start = rendered;
+        if (myGen === gen) start = rendered;
       } else {
         const data = await api.get(path);
         if (myGen !== gen || !ctx.alive()) return;
@@ -960,7 +969,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
     } catch (e) {
       ctx.fail(e, true);
     } finally {
-      busy = false;
+      if (myGen === gen) busy = false;
     }
     // Keep filling if the screen isn't full yet.
     if (myGen === gen && start < total && sentinel.getBoundingClientRect().top < innerHeight + 800) more();
@@ -971,7 +980,48 @@ export async function libraryView(root, ctx, id, genreId = '') {
   ctx.onLeave(() => io.disconnect());
   ctx.onReturn?.(() => io.observe(sentinel));
 
-  const reload = () => { gen++; start = 0; total = Infinity; busy = false; grid.innerHTML = ''; more(); };
+  const reload = () => { gen++; first = 0; start = 0; total = Infinity; busy = false; grid.innerHTML = ''; more(); };
+
+  // TV, A to Z: the titles before the stretch on screen are added above it as you move up,
+  // and the page is nudged by exactly what was added so nothing appears to move.
+  const topS = document.createElement('div'); topS.className = 'sentinel'; grid.before(topS);
+  async function prev() {
+    if (busyUp || first <= 0 || !ctx.alive()) return;
+    busyUp = true;
+    const myGen = gen, s = Math.max(0, first - PAGE);
+    try {
+      const data = await api.get(`${base()}&StartIndex=${s}`);
+      if (myGen !== gen || !ctx.alive()) return;
+      const items = (data.Items || []).slice(0, first - s);
+      const anchor = grid.contains(document.activeElement) ? document.activeElement : grid.firstElementChild;
+      const top0 = anchor?.getBoundingClientRect().top ?? 0, y0 = scrollY;
+      grid.insertAdjacentHTML('afterbegin', items.map((it) => card(it)).join(''));
+      first = s;
+      if (anchor) {
+        let d = anchor.getBoundingClientRect().top - top0;
+        if (Math.abs(d) > 1) { scrollBy(0, d); const r = anchor.getBoundingClientRect().top - top0; if (Math.abs(r) > 1 && Math.abs(d - r) > 1) scrollBy(0, r * (d / (d - r))); }
+      }
+      if (scrollY !== y0) window.dispatchEvent(new CustomEvent('tv:shifted', { detail: scrollY - y0 }));
+    } catch {} finally { if (myGen === gen) busyUp = false; }
+    if (myGen === gen && first > 0) { ioUp.unobserve(topS); ioUp.observe(topS); }
+  }
+  const ioUp = new IntersectionObserver((entries) => entries[0].isIntersecting && prev(), { rootMargin: '700px' });
+  if (TV) { ioUp.observe(topS); ctx.onLeave(() => ioUp.disconnect()); ctx.onReturn?.(() => ioUp.observe(topS)); }
+  // Jump to a letter: the whole library stays, the grid just opens at that letter with its first title highlighted.
+  async function jump(l) {
+    const my = ++gen;
+    let idx = 0;
+    if (l) { try { idx = (await api.get(`${base().replace(/&Limit=\d+/, '&Limit=0')}&NameLessThan=${l}`))?.TotalRecordCount || 0; } catch {} }
+    if (my !== gen || !ctx.alive()) return;
+    if (Number.isFinite(total) && total > 0) idx = Math.min(idx, total - 1);
+    first = start = Math.floor(idx / PAGE) * PAGE; busy = false; busyUp = false;
+    grid.innerHTML = '';
+    await more();
+    if (my !== gen || !ctx.alive()) return;
+    const el = grid.children[idx - first] || grid.firstElementChild;
+    if (el) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'center' }); }
+    if (first > 0) { ioUp.unobserve(topS); ioUp.observe(topS); }
+  }
   root.querySelector('#sort')?.addEventListener('change', (e) => {
     sortIdx = Number(e.target.value);
     localStorage.setItem(sortKey, String(sortIdx));
@@ -995,7 +1045,15 @@ export async function libraryView(root, ctx, id, genreId = '') {
       if (!ctx.alive()) return;
       redraw(k); reload();
     });
-    az.addEventListener('click', (e) => { const l = e.target.closest('[data-l]')?.dataset.l; if (!l) return; letter = l === '#' ? '' : l; redraw(''); reload(); scrollTo(0, 0); });
+    az.addEventListener('click', (e) => { const l = e.target.closest('[data-l]')?.dataset.l; if (!l) return; touched = true; jump(l === '#' ? '' : l); });
+    // Coming onto the strip from the posters lands on the letter you are in.
+    az.addEventListener('focusin', (e) => { if (grid.contains(e.relatedTarget)) az.querySelector('button.on')?.focus({ preventScroll: true }); });
+    // The strip lights up the letter you are in as you move through the posters.
+    const lit = (l) => az.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.l === l));
+    grid.addEventListener('focusin', (e) => {
+      const name = (e.target.closest('.card')?.querySelector('.title, .name, b')?.textContent || e.target.closest('.card')?.getAttribute('title') || '').trim().replace(/^(the|a|an)\s+/i, '');
+      const c = name.charAt(0).toUpperCase(); if (name) lit(/[A-Z]/.test(c) ? c : '#');
+    });
     redraw('');
   }
   more();

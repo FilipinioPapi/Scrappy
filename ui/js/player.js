@@ -1312,6 +1312,8 @@ function tvKey(e) {
   // A card on screen (Up next, Still watching): the remote lands on its first button.
   if (card && !card.contains(a)) { tvFocus(card.querySelector('button')); wake(); return true; }
   if ((k === 'ArrowLeft' || k === 'ArrowRight') && (!inCtl || onSeek)) { seekBy(k === 'ArrowLeft' ? -skipBack() : skipFwd()); wake(); return true; }
+  // With nothing on screen, OK always pauses (or skips an intro) and brings the bar up on Play.
+  if (k === 'Enter' && el.classList.contains('idle') && !card) { if (skipMode) doSkip(); else togglePause(); wake(); tvFocus('.p-play'); return true; }
   if (!inCtl) {
     if (k === 'Enter') { if (skipMode) doSkip(); else togglePause(); }
     else if (k !== 'ArrowUp' && k !== 'ArrowDown') return false;

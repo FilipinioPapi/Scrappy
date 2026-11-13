@@ -32,7 +32,8 @@ function hideIntro() {
   setTimeout(() => {
     el.classList.add('out');
     setTimeout(() => el.remove(), 500);
-  }, Math.max(0, 1200 - (performance.now() - introStart)));
+  // (On the TV it leaves the moment the first page is ready: Jayden's pick, the app is slower to start there.)
+  }, document.documentElement.classList.contains('tv') ? 0 : Math.max(0, 1200 - (performance.now() - introStart)));
 }
 window.addEventListener('scrappy:ready', hideIntro, { once: true });
 setTimeout(hideIntro, 2000);
@@ -197,6 +198,8 @@ function keepPage() {
 function takeKept(nk, hash) {
   const fresh = (e) => e && e.hash === hash && Date.now() - e.at < 600000;
   let k = nk.seen && fresh(KEEP.get(nk.k)) ? nk.k : null, back = !!k;
+  // Back from a side-rail screen lands on Home as you left it.
+  if (window.__tvHomeBack) { window.__tvHomeBack = 0; back = true; }
   // Not a Back, but a screen that is still on the shelf (Home from the side bar): show it from the top.
   if (!k && !hash.startsWith('#/item') && !hash.startsWith('#/person')) for (const [kk, e] of KEEP) if (fresh(e)) k = kk;
   if (!k) return null;

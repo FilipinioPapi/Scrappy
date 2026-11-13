@@ -1,5 +1,5 @@
-Fixed: the remote getting lost in "Browse by genre" on Home (the highlight now always stays on screen)
-Fixed: Settings at the bottom of the side bar being cut off when you have many libraries
-Fixed: the Settings page jumping as you move down its list
-Speed: pages are kept as you left them, so Back and the side bar bring them up at once
-Still included: smooth scrolling and the speed pass
+Your picks from the guide are in.
+Back from a library, Genres, Favorites, Search or Settings goes Home.
+Libraries open on the first poster, and A to Z jumps without cutting the list.
+Settings follows the highlight, and OK pauses a playing video.
+The intro goes away as soon as Home is ready.
