@@ -20,7 +20,7 @@ addEventListener('resize', () => { root.style.zoom = ''; fit(); });
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type=hidden]):not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 // Things that sit on top of the page; while one is open the highlight stays inside it.
-const LAYERS = '.tvu, .tvm, .ctx-menu:not([hidden]), #player:not([hidden]), .menu:not([hidden]), .tdrop:not([hidden]), [role=dialog], .modal, .sheet, .ovl';
+const LAYERS = '.tvu, .tvm, .who, .ctx-menu:not([hidden]), #player:not([hidden]), .menu:not([hidden]), .tdrop:not([hidden]), [role=dialog], .modal, .sheet, .ovl';
 
 function shown(el) {
   const r = el.getBoundingClientRect();
@@ -309,7 +309,7 @@ addEventListener('keydown', (e) => {
   if (pend) { flushPend(); return; }
   const scope = scopeFor(cur);
   // Nothing (or only the page itself, e.g. after a native screen) holds the highlight: start on the page's first thing.
-  if (!cur || !scope.contains(cur) || cur.id === 'view' || cur === document.documentElement) { const f = first(scope); if (f) go(f); return; }
+  if (!cur || !scope.contains(cur) || cur.id === 'view' || cur === document.documentElement || cur.matches(LAYERS + ', .who, .tvm, .ctx-menu')) { const f = first(scope); if (f) go(f); return; }
   // The side rail: Up/Down move inside it, Right goes back to where you were on the page.
   if (inRail(cur)) {
     if (k === 'ArrowLeft') return;

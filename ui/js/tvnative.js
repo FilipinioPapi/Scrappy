@@ -116,7 +116,7 @@ function refocus() {
     if (root.classList.contains('native') && !document.querySelector(LAYERS)) return;
     const a = document.activeElement;
     const layer = [...document.querySelectorAll(LAYERS)].pop();
-    if (layer) { if (!layer.contains(a)) layer.querySelector('button, [tabindex], a, input')?.focus({ preventScroll: true }); return; }
+    if (layer) { if (!layer.contains(a) || a === layer || !a.matches('button, [tabindex], a, input')) (layer.querySelector('.tvm-opt.sel, .who-p.cur') || layer.querySelector('button, a, input, [tabindex]:not([tabindex="-1"])'))?.focus({ preventScroll: true }); return; }
     const view = document.getElementById('view');
     if (!a || a === document.body || a === view || !view?.contains(a)) window.__tvFocusFirst?.();
   };
