@@ -81,7 +81,10 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     Img.init(ctx)
     Img.onLoaded = { invalidate() }
     setBackgroundColor(Ui.BG)
-    isFocusable = false
+    // Holds the remote's focus while a native screen has it (keys reach onKey from the activity).
+    isFocusable = true
+    isFocusableInTouchMode = true
+    if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
   }
 
   private val screens = HashMap<String, Screen>()

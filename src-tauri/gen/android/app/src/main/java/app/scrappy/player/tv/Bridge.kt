@@ -57,14 +57,18 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   fun takesKeys() = active && !webKeys && !playing
 
   private fun apply() {
+    val nativeKeys = active && !webKeys && !playing
     view.visibility = if (active && !playing) View.VISIBLE else View.GONE
+    // The remote's focus moves for real between the two views. The web view only takes keys again
+    // after a real focus change (being hidden quietly blurs the page, and the remote then did nothing
+    // on the next web screen). Native first, so the web view never hides while holding the focus.
+    if (nativeKeys && !view.isFocused) view.requestFocus()
     // With nothing on top, the web view is put away entirely, so it costs nothing while you browse.
     val webShown = !active || webVis || playing
     web.visibility = if (webShown) View.VISIBLE else View.INVISIBLE
-    // Only when it has lost it: asking a focused WebView for focus again makes it jump the page's
-    // highlight to the first thing on the page (that put a stray white ring across the top).
-    if ((webKeys || !active) && !web.hasFocus()) {
+    if (!nativeKeys && !web.hasFocus()) {
       web.requestFocus()
+      // Taking the focus moves the page's highlight to its first element; put it back.
       eval("window.__tvNative && window.__tvNative.refocus()")
     }
     view.invalidate()
