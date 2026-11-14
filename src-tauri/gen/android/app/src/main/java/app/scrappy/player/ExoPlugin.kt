@@ -192,6 +192,10 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     val renderers = DefaultRenderersFactory(activity)
       .setEnableDecoderFallback(true)
       .forceDisableMediaCodecAsynchronousQueueing()
+      // Dolby, DTS and TrueHD sound is decoded inside the app (FFmpeg) and sent to the TV as plain
+      // sound. The TV's log showed its own sound decoder and sound output jammed for hours after
+      // skipping in a film with that kind of sound, and only a TV restart cleared it.
+      .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
       // Sound is decoded by Android's own decoders first. The TV chip's sound decoder was found
       // stuck in the TV's log during the freezes ("outputThreadLoop: Maybe stuck"), jamming the
       // TV's sound output and holding the picture still with it. The chip's decoder stays as a
@@ -477,11 +481,16 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
       activity, androidx.media3.common.AudioAttributes.DEFAULT, null
     )
     fun can(mime: String, enc: Int) = types.contains(mime) || caps.supportsEncoding(enc)
-    if (can("audio/ac3", C.ENCODING_AC3)) audio.put("ac3")
-    if (can("audio/eac3", C.ENCODING_E_AC3)) audio.put("eac3")
-    if (can("audio/vnd.dts", C.ENCODING_DTS)) audio.put("dts")
-    if (caps.supportsEncoding(C.ENCODING_DTS_HD)) audio.put("dtshd")
-    if (can("audio/true-hd", C.ENCODING_DOLBY_TRUEHD)) audio.put("truehd")
+    if (androidx.media3.decoder.ffmpeg.FfmpegLibrary.isAvailable()) {
+      // Decoded inside the app, so they play on any TV without the server converting them.
+      listOf("ac3", "eac3", "dts", "dtshd", "truehd").forEach { audio.put(it) }
+    } else {
+      if (can("audio/ac3", C.ENCODING_AC3)) audio.put("ac3")
+      if (can("audio/eac3", C.ENCODING_E_AC3)) audio.put("eac3")
+      if (can("audio/vnd.dts", C.ENCODING_DTS)) audio.put("dts")
+      if (caps.supportsEncoding(C.ENCODING_DTS_HD)) audio.put("dtshd")
+      if (can("audio/true-hd", C.ENCODING_DOLBY_TRUEHD)) audio.put("truehd")
+    }
     o.put("video", video)
     o.put("audio", audio)
     invoke.resolve(o)

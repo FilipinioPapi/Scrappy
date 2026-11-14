@@ -92,6 +92,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
     implementation("androidx.media3:media3-ui:1.8.0")
+    // Software sound decoder (Dolby, DTS, TrueHD) so the TV chip's sound decoder is never needed.
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("com.google.android.material:material:1.12.0")
