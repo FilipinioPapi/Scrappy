@@ -34,14 +34,18 @@ export const api = {
 // instead of Resume (Emby keeps the old spot otherwise). A show, season or collection
 // clears every part-watched episode or movie inside it.
 export async function clearProgress(it) {
-  const wipe = (id) => api.post(`/Users/{userId}/Items/${id}/UserData`, { PlaybackPositionTicks: 0, Played: true }).catch(() => {});
+  // Send the item's whole saved state back with only these two changed, so favorites
+  // and ratings are never lost if Emby treats missing fields as cleared.
+  const wipe = (x) => api.post(`/Users/{userId}/Items/${x.Id}/UserData`, { ...(x.UserData || {}), PlaybackPositionTicks: 0, Played: true }).catch(() => {});
   if (!it.IsFolder && !['Series', 'Season', 'BoxSet'].includes(it.Type)) {
-    if (it.UserData?.PlaybackPositionTicks > 0 || !it.UserData) await wipe(it.Id);
+    let x = it;
+    if (!x.UserData) { try { x = await api.get(`/Users/{userId}/Items/${it.Id}`); } catch { return; } }
+    if (x.UserData?.PlaybackPositionTicks > 0) await wipe(x);
     return;
   }
   try {
     const d = await api.get(`/Users/{userId}/Items/Resume?ParentId=${it.Id}&Limit=100&Recursive=true`);
-    await Promise.all((d?.Items || []).map((x) => wipe(x.Id)));
+    await Promise.all((d?.Items || []).map((x) => wipe(x)));
   } catch {}
 }
 

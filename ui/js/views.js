@@ -1179,7 +1179,7 @@ function wireIconButtons(scope, it) {
         if (on) await clearProgress(it);
         it.UserData = { ...(it.UserData || {}), Played: on, ...(on ? { PlaybackPositionTicks: 0 } : {}) };
         redrawPlayButtons(scope, it);
-      }
+      } else it.UserData = { ...(it.UserData || {}), IsFavorite: on };
       toast(kind === 'played' ? (on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`) : (on ? `Added ${it.Name} to Favorites` : `Removed ${it.Name} from Favorites`));
       // Only the episode list updates (in place, no reload of the page).
       if (kind === 'played') document.getElementById('epList')?._soft?.();
