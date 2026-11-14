@@ -114,7 +114,8 @@ async function searchMusic(f, big) {
   return { songs: songs.slice(0, big ? 100 : 5), albums: albums.slice(0, big ? 40 : 4), artists: artists.slice(0, big ? 30 : 3), playlists: playlists.slice(0, big ? 20 : 3) };
 }
 
-const VFIELDS = { Fields: 'PrimaryImageAspectRatio,ProductionYear,Genres', ImageTypeLimit: '1', EnableImageTypes: 'Primary,Thumb' };
+// TV: episodes with no picture of their own borrow the show's artwork, so that is asked for too.
+const VFIELDS = { Fields: 'PrimaryImageAspectRatio,ProductionYear,Genres', ImageTypeLimit: '1', EnableImageTypes: /Android/i.test(navigator.userAgent) ? 'Primary,Thumb,Backdrop' : 'Primary,Thumb' };
 async function searchVideo(f, big) {
   if (!signed('emby')) return null;
   const types = { movie: 'Movie', show: 'Series', episode: 'Episode' };
@@ -374,9 +375,16 @@ function tvSearchPage(root, ctx, q) {
     const sec = (title, n, body) => n ? `<section class="sres"><div class="section-head"><h2>${title}</h2><span class="count">${n}</span></div>${body}</section>` : '';
     const person = (p) => `<a class="card portrait tvs-person" href="#/person/${encodeURIComponent(p.Id)}"><div class="art"><div class="ph">${esc(p.Name)}</div>${p.ImageTags?.Primary ? `<img loading="lazy" decoding="async" src="${esc(img(p.Id, 'Primary', p.ImageTags.Primary, 220))}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}</div><div class="title">${esc(p.Name)}</div></a>`;
     const other = ['music', 'audiobooks'].flatMap((k) => GROUPS[k](res[k]).filter((g) => g.rows.length)).map((g) => sec(g.title, g.rows.length, `<div class="sgrid">${g.rows.map(rowHtml).join('')}</div>`)).join('');
-    const html = sec('Movies &amp; Shows', tops.length, `<div class="grid">${tops.map((it) => card(it)).join('')}</div>`)
-      + sec('Episodes', eps.length, `<div class="grid wide">${eps.map((it) => card(it)).join('')}</div>`)
-      + sec('People', v.people.length, `<div class="grid">${v.people.map(person).join('')}</div>`) + other;
+    // Order (Jayden's pick): the best match on its own first, then films and shows, people, episodes.
+    let best = null, bestS = 0.84;
+    for (const it of tops) { const s = score(text, it.Name); if (s > bestS) { best = it; bestS = s; } }
+    for (const p of v.people) { const s = score(text, p.Name); if (s > bestS) { best = p; bestS = s; } }
+    const isP = best && v.people.includes(best);
+    const restTops = tops.filter((x) => x !== best), restPeople = v.people.filter((x) => x !== best);
+    const html = (best ? sec('Best match', 1, `<div class="grid tvs-best">${isP ? person(best) : card(best)}</div>`).replace('<span class="count">1</span>', '') : '')
+      + sec('Movies &amp; Shows', restTops.length, `<div class="grid">${restTops.map((it) => card(it)).join('')}</div>`)
+      + sec('People', restPeople.length, `<div class="grid">${restPeople.map(person).join('')}</div>`)
+      + sec('Episodes', eps.length, `<div class="grid wide">${eps.map((it) => card(it)).join('')}</div>`) + other;
     out.innerHTML = failedHtml(res) + (html || `<div class="empty">Nothing found for “${esc(text)}”.</div>`);
     if (html) tvRemember(text);
   };

@@ -191,6 +191,9 @@ function go(el) {
   // (A long pick list scrolls inside its own card to keep the highlighted choice in view.)
   if (el.closest(LAYERS)) { if (el.closest('.tvm-list')) el.scrollIntoView({ block: 'nearest', behavior: 'instant' }); return; }
   const row = el.closest('.row, .mrow');
+  // A long strip of season or library tabs slides along with the highlight, however fast you press.
+  const strip = el.closest('.season-tabs');
+  if (strip && strip.scrollWidth > strip.clientWidth + 1) { const left = el.offsetLeft - strip.offsetLeft - (strip.clientWidth - el.offsetWidth) / 2; glideTo(strip, 'scrollLeft', Math.max(0, Math.min(left, strip.scrollWidth - strip.clientWidth))); }
   const hero = el.closest('[data-row="hero"], .hero');
   if (hero || el.closest('.tvd .detail-main')) { glideTo(window, '', 0); return; }
   // Settings' left list stays put while you move through it (it all fits on the screen).
@@ -281,11 +284,12 @@ addEventListener('keydown', (e) => {
   { const now = performance.now(), vert = k === 'ArrowUp' || k === 'ArrowDown';
     const base = vert ? 125 : 85; // the same limit whether the button is held or pressed over and over
     const gap = Math.max(base, Math.min(moveCost * 1.1, 300));
-    if (now - lastMove < gap) return;
+    // A press of its own always counts (Jayden's pick); only a held button is paced.
+    if (e.repeat && now - lastMove < gap) return;
     // And never get ahead of the page: while the slide to the last row is still more than half a
     // screen from done, further presses wait. The highlight and the page stay together, and the
     // page stops within a row of where you let go instead of racing on.
-    if (vert) { const g = glides.get(window); if (g && Math.abs(g.to - scrollY) > innerHeight * 0.5) return; }
+    if (vert && e.repeat) { const g = glides.get(window); if (g && Math.abs(g.to - scrollY) > innerHeight * 0.5) return; }
     window.__tvPace = Math.round(gap);
     lastMove = now;
     requestAnimationFrame(() => requestAnimationFrame(() => { const c = performance.now() - now; moveCost = moveCost ? moveCost * 0.6 + c * 0.4 : c; }));

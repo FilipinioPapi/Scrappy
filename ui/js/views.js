@@ -1587,7 +1587,7 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
         <div class="section-head"><h2>${seasons.length > 1 ? 'Episodes' : esc(pick.Name || 'Episodes')}</h2><span class="count" id="epCount"></span><span class="spacer"></span>
           <div class="seg" role="group" aria-label="Episode layout">${EP_VIEWS.filter(([k]) => !TVS || k !== 'list').map(([k, n, ic]) => `<button class="${k === view ? 'on' : ''}" data-view="${k}">${ic}${n}</button>`).join('')}</div>
         </div>
-        ${TVS ? `<div class="tvs-bar">${tabs || `<b class="tvs-one">${esc(pick.Name || 'Episodes')}</b>`}<span class="spacer"></span><div class="seg tvs-seg" role="group" aria-label="Episode layout">${EP_VIEWS.filter(([k]) => k !== 'list').map(([k, n]) => `<button class="${k === view ? 'on' : ''}" data-view="${k}">${n}</button>`).join('')}</div></div>` : tabs}
+        ${TVS ? `<div class="tvs-bar">${seasons.length >= 8 ? '<button type="button" class="season-tab tvs-pick" id="tvSeasons">Seasons</button>' : ''}${tabs || `<b class="tvs-one">${esc(pick.Name || 'Episodes')}</b>`}<span class="spacer"></span><div class="seg tvs-seg" role="group" aria-label="Episode layout">${EP_VIEWS.filter(([k]) => k !== 'list').map(([k, n]) => `<button class="${k === view ? 'on' : ''}" data-view="${k}">${n}</button>`).join('')}</div></div>` : tabs}
         <div class="episodes view-${view}" id="epList"></div>
       </section>`;
     const list = el.querySelector('#epList');
@@ -1608,10 +1608,18 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       if (animate) { crumbEl.style.animation = 'none'; void crumbEl.offsetWidth; crumbEl.style.animation = ''; }
     };
     setCrumb(seasonName(selected), false);
-    el.querySelectorAll('.season-tab').forEach((b) => b.addEventListener('click', () => {
+    // Long shows (TV): a Seasons button opens the whole list, so season 30 is a few presses away.
+    el.querySelector('#tvSeasons')?.addEventListener('click', async () => {
+      const { tvPick } = await import('./tvmenu.js');
+      const i = await tvPick('Seasons', seasons.map((s) => s.Name), seasons.findIndex((s) => s.Id === selected));
+      if (i == null) return;
+      const t = el.querySelector(`.season-tab[data-season="${CSS.escape(seasons[i].Id)}"]`);
+      if (t) { t.click(); t.focus({ preventScroll: true }); t.scrollIntoView({ block: 'nearest', inline: 'center' }); }
+    });
+    el.querySelectorAll('.season-tab[data-season]').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.season === selected) return;
       selected = b.dataset.season;
-      el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t === b));
+      el.querySelectorAll('.season-tab[data-season]').forEach((t) => t.classList.toggle('active', t === b));
       b.classList.add('live');
       setCrumb(seasonName(selected), true);
       // Keep the address in step so Back and refresh land on this season.
@@ -1627,7 +1635,7 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       // Picking Grid opens on All.
       if (view === 'grid' && many && selected !== 'all' && !TVS) {
         selected = 'all';
-        el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t.dataset.season === 'all'));
+        el.querySelectorAll('.season-tab[data-season]').forEach((t) => t.classList.toggle('active', t.dataset.season === 'all'));
         setCrumb(seasonName(selected), true);
       }
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
@@ -1902,7 +1910,7 @@ export async function personView(root, ctx, id) {
     if (document.documentElement.classList.contains('tv')) {
       const seen = new Set(); const uniq = all.filter((it) => !seen.has(it.Id) && seen.add(it.Id));
       const rows = [['Movies', uniq.filter((it) => it.Type === 'Movie')], ['Shows', uniq.filter((it) => it.Type === 'Series')]].filter(([, l]) => l.length);
-      box.innerHTML = rows.map(([name, l], k) => `<div data-row="person-${k}" class="tvp-row"><div class="section-head"><h2>${name}</h2><span class="count">${l.length}</span></div><div class="row">${l.map((it) => card(it, { shape: 'portrait', subtitle: roleOf(it) })).join('')}</div></div>`).join('');
+      box.innerHTML = rows.map(([name, l], k) => `<div data-row="person-${k}" class="tvp-row"><div class="section-head"><h2>${name}</h2><span class="count">${l.length} · Newest first</span></div><div class="row">${l.map((it) => card(it, { shape: 'portrait', subtitle: roleOf(it) })).join('')}</div></div>`).join('');
       return;
     }
     const items = tab === 'all' ? all : groups.find((g) => g.v.Id === tab)?.items || [];

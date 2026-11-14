@@ -47,6 +47,7 @@ function pickImage(it, shape) {
     if (t.Primary) return img(it.Id, 'Primary', t.Primary, WW);
     if (it.ParentThumbItemId) return img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, WW);
     if (it.ParentBackdropItemId) return img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags?.[0], WW, 0);
+    if (it.Type === 'Episode' && it.SeriesPrimaryImageTag && it.SeriesId) return img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, WW);
     return null;
   }
   if (t.Primary) return img(it.Id, 'Primary', t.Primary, PW);

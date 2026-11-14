@@ -3589,7 +3589,8 @@ html.tv .person-page .detail-poster { width: 150px; }
 html.tv .person-page .detail-poster .art { aspect-ratio: 1; border-radius: 50%; animation: none; }
 html.tv .person-page h1 { font-size: 50px; margin: 0 0 4px; }
 html.tv .person-page .meta { font-size: 18px; margin: 0; }
-html.tv .person-page .bio { display: none; }
+html.tv .person-page .bio { display: -webkit-box; -webkit-line-clamp: 3; font-size: 17px; line-height: 1.45; max-width: 860px; margin-top: 10px; }
+html.tv .person-page .bio:empty { display: none; }
 html.tv .person-page #credits { padding-top: 8px; }
 html.tv .tvp-row { margin-bottom: 26px; }
 html.tv .tvp-row .section-head h2 { font-size: 26px; }
@@ -3804,14 +3805,14 @@ html.tv #player .p-set-fix { flex-wrap: wrap; }
 html.tv .genre-title { font-family: inherit; font-weight: 800; font-size: 20px; color: var(--text); letter-spacing: -.2px; text-shadow: none; }
 /* B2: Continue Watching episodes carry their show's artwork and title. The title always sits
    inside the tile: a logo is fitted into its corner box, a plain name wraps to two lines at most. */
-.card .art .art-over { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top, rgba(10,6,6,.82) 0%, rgba(10,6,6,.35) 38%, rgba(10,6,6,0) 62%); }
-.card .art .art-over img.art-logo { position: absolute; left: 6%; bottom: 11%; width: auto; height: auto; max-width: 62%; max-height: 44%; object-fit: contain; object-position: left bottom; transform: none !important; filter: drop-shadow(0 2px 5px rgba(0,0,0,.75)); }
+.card .art .art-over { position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(to top, rgba(10,6,6,.82) 0%, rgba(10,6,6,.35) 38%, rgba(10,6,6,0) 62%); }
+.card .art .art-over img.art-logo { position: absolute; inset: auto auto 11% 6%; width: auto; height: auto; max-width: 62%; max-height: 44%; object-fit: contain; object-position: left bottom; transform: none !important; filter: drop-shadow(0 2px 5px rgba(0,0,0,.75)); }
 .card .art .art-over b { position: absolute; left: 6%; right: 6%; bottom: 10%; font-family: var(--display); font-weight: 400; font-size: 27px; line-height: 1.02; letter-spacing: .4px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .card .art .art-over.has-logo b { display: none; }
 /* D2: on a strip of tabs the remote's spot is filled white; the picked tab keeps a red outline
    (the same rule as the A to Z strip), so only one thing ever looks "selected". */
 html.tv .season-tabs .season-tab:focus { background: #fff !important; color: #120C0C !important; outline: none; box-shadow: none; }
-html.tv .season-tabs:focus-within .season-tab.active:not(:focus) { background: none !important; color: #fff; box-shadow: inset 0 0 0 2px var(--red); }
+html.tv .season-tabs:focus-within .season-tab.active:not(:focus) { background: none !important; color: #fff; box-shadow: inset 0 0 0 2px var(--red) !important; }
 /* E2: a short thing to read on the TV (What's new, Remote tips). */
 html.tv .tvm-card.tvm-info { width: 860px; max-width: 860px; }
 .tvm-info ul { margin: 0 14px 18px; padding: 0 0 0 22px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
@@ -3824,3 +3825,7 @@ html.tv .card.person .person-ph { font: 400 54px/1 var(--display); color: #fff; 
 html.tv .person-ph.pc1 { background: linear-gradient(135deg, #f08a3c, #b13a1e); } html.tv .person-ph.pc2 { background: linear-gradient(135deg, #4d9de0, #2b4a8a); }
 html.tv .person-ph.pc3 { background: linear-gradient(135deg, #59c27a, #1f6b4a); } html.tv .person-ph.pc4 { background: linear-gradient(135deg, #b06fd8, #5a2b86); }
 html.tv .person-ph.pc5 { background: linear-gradient(135deg, #e0607e, #8a2b48); } html.tv .person-ph.pc6 { background: linear-gradient(135deg, #d8b84a, #86601f); }
+
+/* Seasons button on long shows (TV). */
+html.tv .tvs-bar .tvs-pick { flex: none; box-shadow: inset 0 0 0 2px rgba(255,255,255,.22); }
+html.tv .tvs-bar .tvs-pick::after { content: '▾'; margin-left: 8px; opacity: .7; }
