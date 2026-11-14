@@ -326,6 +326,7 @@ function smartRows(root, ctx, q) {
 
 const GENRE_LIBS = new Set(['movies', 'tvshows', 'mixed', undefined, null, '']);
 const GENRE_MIN = 6;
+const GENRE_TILE_MIN = 5; // Genres screen: fewer titles than this and the genre gets no tile
 const GENRE_BROAD = 0.8; // genres on 80%+ of a library's titles are hidden there
 
 function genreTypes(v) {
@@ -910,6 +911,32 @@ export async function warmLibraries() {
       const p = libPath(v.Id, v, SORTS[i][0], SORTS[i][1], '', '', true) + '&StartIndex=0';
       const one = `/Users/{userId}/Items/${v.Id}`;
       await Promise.all([memHas(one) ? null : api.get(one), memHas(p) ? null : api.get(p)]);
+    }
+  } catch {}
+}
+
+// TV: some time after Home is up, the Genres screen's tiles are prepared quietly (which genres
+// each library has, and the two posters for each tile), one small request at a time. They are
+// remembered on the TV, so Genres opens complete, even the first time you go there.
+export async function warmGenres() {
+  try {
+    const vs = ((await api.cached('/Users/{userId}/Views')) || (await api.get('/Users/{userId}/Views')))?.Items || [];
+    const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (const lib of vs.filter((v) => GENRE_LIBS.has(v.CollectionType) && v.CollectionType !== 'boxsets')) {
+      const gp = `/Genres?ParentId=${lib.Id}&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&Fields=ItemCounts`;
+      const d = (await api.cached(gp)) || (await api.get(gp));
+      for (const g of d?.Items || []) {
+        const n = g.MovieCount || g.SeriesCount || g.ChildCount || 0; if (n && n < GENRE_TILE_MIN) continue;
+        const key = lib.Id + '/' + g.Id;
+        while (document.documentElement.classList.contains('tv-fast') || document.documentElement.classList.contains('playing')) await nap(1500);
+        if (!FAN_ART.has(key)) {
+          const r = await api.get(`/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${g.Id}&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&SortBy=Random&Limit=2&ImageTypes=Primary`);
+          FAN_ART.set(key, (r?.Items || []).map((i) => i.ImageTags?.Primary && img(i.Id, 'Primary', i.ImageTags.Primary, 200)).filter(Boolean));
+          saveFanArt();
+          await nap(200);
+        }
+        for (const u of FAN_ART.get(key) || []) preload(u);
+      }
     }
   } catch {}
 }
@@ -1682,26 +1709,29 @@ export async function genresView(root, ctx) {
   const TVG = document.documentElement.classList.contains('tv');
   grid.classList.toggle('tvgen-tv', TVG);
   let fanIo = null; ctx.onLeave(() => fanIo?.disconnect());
-  const ready = []; let readyT = 0;
+  const ready = []; let readyT = 0, busyFans = 0;
   const fanPosters = async (lib) => {
     // Only tiles whose posters aren't known yet: all asked for together, each fading in once its
     // pictures have arrived (never a half-drawn poster).
     const fans = [...grid.querySelectorAll('.tvfan.w')];
     const paint = (f, urls) => { f.querySelectorAll('i').forEach((el, k) => { if (urls[k]) el.style.backgroundImage = `url("${urls[k]}")`; else if (urls.length) el.style.display = 'none'; }); f.classList.remove('w'); };
     const one = async (f) => {
+      busyFans++;
       const key = lib.Id + '/' + f.dataset.g;
       if (!FAN_ART.has(key)) {
         try {
           const d = await api.get(`/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${f.dataset.g}&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&SortBy=Random&Limit=2&ImageTypes=Primary`);
           FAN_ART.set(key, (d?.Items || []).map((i) => i.ImageTags?.Primary && img(i.Id, 'Primary', i.ImageTags.Primary, 200)).filter(Boolean));
           saveFanArt();
-        } catch { return; }
+        } catch { busyFans--; return; }
       }
       const urls = FAN_ART.get(key);
       await Promise.all(urls.map(preloadImg));
-      // Tiles that become ready around the same time are shown together, in one go.
-      ready.push([f, urls]); clearTimeout(readyT);
-      readyT = setTimeout(() => { const batch = ready.splice(0); requestAnimationFrame(() => batch.forEach(([x, u]) => x.isConnected && paint(x, u))); }, 220);
+      // Every tile on the screen gets its posters in the same moment: nothing is shown until the
+      // last of them is ready (or a second and a half has gone by).
+      ready.push([f, urls]); busyFans--;
+      const show = () => { clearTimeout(readyT); readyT = 0; const batch = ready.splice(0); requestAnimationFrame(() => batch.forEach(([x, u]) => x.isConnected && paint(x, u))); };
+      if (busyFans <= 0) show(); else if (!readyT) readyT = setTimeout(show, 1500);
     };
     // Tiles on (or near) the screen first; the rest as you get near them.
     fanIo?.disconnect();
@@ -1716,7 +1746,9 @@ export async function genresView(root, ctx) {
   const draw = async () => {
     const lib = libs.find((l) => l.Id === cur);
     await load(`/Genres?ParentId=${lib.Id}&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&Fields=ItemCounts`, (d) => {
-      const gs = d?.Items || [];
+      // Genres with only a handful of titles aren't worth a tile (when the server says how many there are).
+      const cnt = (g) => g.MovieCount || g.SeriesCount || g.ChildCount || 0;
+      const gs = (d?.Items || []).filter((g) => !cnt(g) || cnt(g) >= GENRE_TILE_MIN);
       // The saved copy and the fresh answer are usually the same: then nothing is redrawn.
       const sig = lib.Id + ':' + gs.map((g) => g.Id + '.' + (g.MovieCount || g.SeriesCount || g.ChildCount || 0)).join(',');
       if (grid.dataset.sig === sig) return;

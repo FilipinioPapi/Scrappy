@@ -43,6 +43,10 @@ class MainActivity : TauriActivity() {
     web = webView
     // The page draws its own menus; the built-in press-and-hold menu stays out of the way.
     webView.setOnLongClickListener { true }
+    // No scroll bar on a TV: the page moves with the highlight, and the bar only got in the way.
+    webView.isVerticalScrollBarEnabled = false
+    webView.isHorizontalScrollBarEnabled = false
+    webView.overScrollMode = android.view.View.OVER_SCROLL_NEVER
     // Back: first ask the page (close a menu, leave the player, go back a screen).
     // If the page has nothing to go back to, leave the app.
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

@@ -1,5 +1,4 @@
-Home no longer freezes when you hold a direction: rows off the screen are left alone until you reach them.
-Held presses that pile up are dropped, so the screen never trails your finger.
-Genres draws complete on return visits, and tile posters fade in together.
-Settings switches sections on the spot and stays in its list.
-Posters ahead of you load while you rest, and the old screen dims the moment you press OK.
+The scroll bar on the right edge is gone.
+Genres: tiles and their artwork now arrive together instead of popping in.
+Genres: genres with fewer than 5 titles are hidden.
+Genres artwork is prepared quietly in the background after Home loads.

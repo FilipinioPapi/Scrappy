@@ -332,7 +332,7 @@ addEventListener('focusin', (e) => {
 });
 // And once Home has settled, the libraries behind the side bar are fetched quietly.
 let warmedLibs = false;
-addEventListener('scrappy:ready', () => { if (warmedLibs) return; warmedLibs = true; setTimeout(() => import('./views.js').then((v) => v.warmLibraries()).catch(() => {}), 2500); });
+addEventListener('scrappy:ready', () => { if (warmedLibs) return; warmedLibs = true; setTimeout(() => import('./views.js').then((v) => v.warmLibraries().then(() => new Promise((r) => setTimeout(r, 3000))).then(() => v.warmGenres())).catch(() => {}), 2500); });
 
 // If the highlighted thing gets redrawn (the home banner changes picture, a row
 // refreshes), the highlight stays in the same spot instead of jumping to the top.
