@@ -95,6 +95,19 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
       CaptionStyleCompat(Color.WHITE, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, null)
     )
     v.player = p
+    // Some fan releases (One Pace) carry a line in their styled subtitles that only shows on
+    // players without full styling support: "Your media player does not support the subtitle
+    // format...". The TV's player shows the dialogue fine, so that notice is dropped. Added after
+    // the view's own listener, so this one has the last word on what is shown.
+    p.addListener(object : Player.Listener {
+      override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+        val keep = cueGroup.cues.filter { c ->
+          val t = c.text?.toString() ?: ""
+          !(t.contains("media player does not support", true) || t.contains("recommended video players", true))
+        }
+        if (keep.size != cueGroup.cues.size) v.subtitleView?.setCues(keep)
+      }
+    })
     // Put the video behind the web page.
     val wv = webView
     val parent = (wv?.parent as? ViewGroup) ?: activity.findViewById<ViewGroup>(android.R.id.content)
