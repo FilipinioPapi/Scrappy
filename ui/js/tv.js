@@ -264,6 +264,7 @@ addEventListener('keydown', (e) => {
     const base = vert ? 125 : 85; // the same limit whether the button is held or pressed over and over
     const gap = Math.max(base, Math.min(moveCost * 1.1, 300));
     if (now - lastMove < gap) return;
+    window.__tvPace = Math.round(gap);
     lastMove = now;
     requestAnimationFrame(() => requestAnimationFrame(() => { const c = performance.now() - now; moveCost = moveCost ? moveCost * 0.6 + c * 0.4 : c; }));
     clearTimeout(costT); costT = setTimeout(() => { moveCost = 0; }, 900); }
@@ -460,7 +461,7 @@ window.__tvBack = () => {
 };
 
 // ---------- Speed readout (for testing) ----------
-// A keyboard's F9 (never sent by a TV remote) shows a small readout in the corner: how long the
+// A button code (below) shows a small readout in the corner: how long the
 // last screen took, and how smooth the last few seconds were. Used to time the app on real TVs.
 {
   let box = null, raf = 0, last = 0, gaps = [];
@@ -473,13 +474,21 @@ window.__tvBack = () => {
     if (!box) return;
     const p = window.__perf || {}; const g = gaps.map((x) => x[1]); const worst = Math.round(Math.max(0, ...g));
     const slow = g.filter((x) => x > 50).length, fps = g.length ? Math.round(1000 / (g.reduce((a, b) => a + b, 0) / g.length)) : 0;
-    box.textContent = `${p.h || ''}  code ${p.code ?? '-'}  drawn ${p.drawn ?? '-'}  shown ${p.shown ?? '-'} ms | 4s: ${fps} fps, worst ${worst} ms, slow ${slow} | imgs waiting ${[...document.images].filter((i) => i.getAttribute('src') && !i.complete).length} | nodes ${document.getElementsByTagName('*').length}`;
+    box.textContent = `${p.h || ''}  code ${p.code ?? '-'}  drawn ${p.drawn ?? '-'}  shown ${p.shown ?? '-'} ms | 4s: ${fps} fps, worst ${worst} ms, slow ${slow} | imgs waiting ${[...document.images].filter((i) => i.getAttribute('src') && !i.complete).length} | nodes ${document.getElementsByTagName('*').length} | pace ${window.__tvPace || '-'} ms`;
   };
   const set = (on) => {
-    try { localStorage.setItem('tvPerf', on ? '1' : ''); } catch {}
+    try { localStorage.setItem('tvPerf', on ? String(Date.now()) : ''); } catch {}
     if (on && !box) { box = document.createElement('div'); box.style.cssText = 'position:fixed;left:0;bottom:0;z-index:99999;background:#000;color:#0f0;font:600 22px monospace;padding:6px 12px;pointer-events:none;white-space:nowrap'; document.body.appendChild(box); raf = requestAnimationFrame(tick); box._t = setInterval(paint, 250); }
     else if (!on && box) { clearInterval(box._t); cancelAnimationFrame(raf); box.remove(); box = null; last = 0; gaps = []; }
   };
-  addEventListener('keydown', (e) => { if (e.key === 'F9') set(!box); });
-  try { if (localStorage.getItem('tvPerf')) set(true); } catch {}
+  // Toggle: Up Up Down Down Left Right Left Right (F9 is a system shortcut on some TVs). It also
+  // switches itself off two hours after it was turned on, so it can never be left stuck on a TV.
+  const CODE = 'UUDDLRLR'; let seq = '', seqT = 0;
+  addEventListener('keydown', (e) => {
+    const c = { ArrowUp: 'U', ArrowDown: 'D', ArrowLeft: 'L', ArrowRight: 'R' }[e.key]; const now = performance.now();
+    if (!c || e.repeat) { if (!e.repeat) seq = ''; return; }
+    if (now - seqT > 1500) seq = ''; seqT = now; seq = (seq + c).slice(-CODE.length);
+    if (seq === CODE) { seq = ''; set(!box); }
+  }, true);
+  try { const t = +localStorage.getItem('tvPerf'); if (t && Date.now() - t < 7200000) set(true); else if (localStorage.getItem('tvPerf')) localStorage.setItem('tvPerf', ''); } catch {}
 }
