@@ -72,6 +72,8 @@ class Home(tv: TvView) : Screen(tv) {
     hero.resume()
   }
   override fun hide() { hero.pause() }
+  /** At app start, while the web page is still loading: fetch Home's rows (and their pictures) early. */
+  fun preload() { val key = Net.session.key; if (Net.session.ok && loadedFor != key) { loadedFor = key; load() } }
 
   fun setPrefs(p: JSONObject) {
     val rowsChanged = p.optString("homeRows") != prefs.optString("homeRows")

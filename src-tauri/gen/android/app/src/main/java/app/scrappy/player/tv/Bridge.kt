@@ -40,6 +40,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     if (android.os.Build.VERSION.SDK_INT >= 26) { view.defaultFocusHighlightEnabled = false; web.defaultFocusHighlightEnabled = false }
     web.setBackgroundColor(android.graphics.Color.TRANSPARENT)
     web.addJavascriptInterface(this, "ScrappyNative")
+    try { view.home().preload() } catch (e: Throwable) { Log.e("ScrappyNative", "preload", e) }
     view.home().onGenreLib = { id -> eval("window.__tvNative && window.__tvNative.genreLib(${js(id)})") }
   }
 

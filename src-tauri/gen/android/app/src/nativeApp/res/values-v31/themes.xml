@@ -1,0 +1,9 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Android 12+: the system's own start-up screen is just the background colour, so it runs straight into the opening picture. -->
+    <style name="Theme.scrappy" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@drawable/intro_splash</item>
+        <item name="android:windowSplashScreenBackground">#120C0C</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+    </style>
+</resources>

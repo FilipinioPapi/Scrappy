@@ -1,0 +1,6 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Scrappy Native: the opening picture shows from the very first frame (no dark gap while the app starts). -->
+    <style name="Theme.scrappy" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@drawable/intro_splash</item>
+    </style>
+</resources>
