@@ -76,7 +76,12 @@ class PreviewTest {
       p.contains("/Shows/NextUp") -> list(12, "Episode").toString()
       p.contains("/Similar") -> list(24).toString()
       p.contains("/Items/Latest") -> JSONArray().apply { for (i in 0 until 20) put(item(i + 3, if (p.contains("v2")) "Series" else "Movie")) }.toString()
-      p.contains("/Genres?") -> JSONObject().put("Items", JSONArray().apply { listOf("Action", "Adventure", "Comedy", "Drama", "Western").forEachIndexed { i, g -> put(JSONObject().put("Id", "g$i").put("Name", g)) } }).toString()
+      p.contains("/Genres?") -> JSONObject().put("Items", JSONArray().apply { listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Mystery", "Romance", "Science Fiction", "Thriller", "Western").forEachIndexed { i, g -> put(JSONObject().put("Id", "g$i").put("Name", g).put("MovieCount", if (i == 9) 3 else 8 + i * 5)) } }).toString()
+      p.contains("Filters=IsFavorite") -> JSONObject().put("Items", JSONArray().apply { for (i in 0 until 17) put(item(i, "Movie")); for (i in 0 until 6) put(item(i + 30, "Series")); for (i in 0 until 5) put(item(i + 40, "Episode")); put(item(50, "BoxSet")) }).toString()
+      p.contains("PersonIds=") -> JSONObject().put("Items", JSONArray().apply { for (i in 0 until 14) put(item(i, if (i % 3 == 2) "Series" else "Movie").put("People", JSONArray().put(JSONObject().put("Id", "p0").put("Role", "Character $i").put("Type", "Actor")))) }).toString()
+      Regex("/Users/[^/]+/Items/p\\d(\\?|$)").containsMatchIn(p) -> JSONObject().put("Id", "p0").put("Name", "Pedro Pascal").put("Type", "Person").put("PremiereDate", "1975-04-02T00:00:00Z")
+        .put("ProductionLocations", JSONArray().put("Santiago, Chile")).put("ImageTags", JSONObject().put("Primary", "x"))
+        .put("Overview", "José Pedro Balmaceda Pascal is a Chilean and American actor. He is known for his roles in several television series and films, playing a wide range of characters across drama, action and science fiction, and has received many awards and nominations over a long career.").toString()
       p.contains("Limit=0") -> JSONObject().put("Items", JSONArray()).put("TotalRecordCount", if (p.contains("GenreIds")) 12 else 390).toString()
       p.contains("Filters=IsPlayed&SortBy=DatePlayed") && p.contains("Limit=1&") -> JSONObject().put("Items", JSONArray().put(item(4, "Episode"))).toString()
       Regex("/Users/[^/]+/Items/v\\d").containsMatchIn(p) -> JSONObject().put("Id", "v1").put("Name", "Movies").put("CollectionType", "movies").toString()
@@ -225,6 +230,18 @@ class PreviewTest {
       for (i in 1..4) { press(KeyEvent.KEYCODE_DPAD_DOWN); pump(500); if (i == 1 || i % 2 == 0) shot("item-$n-d$i", 1600) }
     }
     File(out, "detail-calls.txt").writeText(host.calls.joinToString("\n") + "\n---\n" + synchronized(log) { log.joinToString("\n") })
+  }
+
+  @Test fun pages() {
+    start()
+    tv.route("#/genres"); pump(3000); shot("genres")
+    press(KeyEvent.KEYCODE_DPAD_DOWN, 2); shot("genres-d2")
+    tv.route("#/favorites"); pump(3000); shot("favs")
+    press(KeyEvent.KEYCODE_DPAD_UP); press(KeyEvent.KEYCODE_DPAD_RIGHT); shot("favs-chip")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); pump(800); shot("favs-shows")
+    tv.route("#/person/p0"); pump(3000); shot("person")
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("person-d1", 1200)
+    File(out, "pages-calls.txt").writeText(host.calls.joinToString("\n") + "\n---\n" + synchronized(log) { log.joinToString("\n") })
   }
 
   @Test fun grid() {

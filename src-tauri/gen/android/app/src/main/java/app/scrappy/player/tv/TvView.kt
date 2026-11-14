@@ -110,6 +110,14 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   private val screens = LinkedHashMap<String, Screen>(16, 0.75f, true)
   fun home(): Home = screens.getOrPut("home") { Home(this) } as Home
   fun grid(id: String, genre: String): Grid = screens.getOrPut("lib/$id/$genre") { Grid(this, id, genre) } as Grid
+  fun genres(): Genres = screens.getOrPut("genres") { Genres(this) } as Genres
+  fun favs(): Favs = screens.getOrPut("favorites") { Favs(this) } as Favs
+  fun person(id: String): Person {
+    val d = screens.getOrPut("person/$id") { Person(this, id) } as Person
+    val ps = screens.keys.filter { it.startsWith("person/") }
+    if (ps.size > 3) for (k in ps.take(ps.size - 3)) if (screens[k] !== screen && screens[k] !== d) screens.remove(k)
+    return d
+  }
   fun detail(id: String): Detail {
     val d = screens.getOrPut("item/$id") { Detail(this, id) } as Detail
     // Keep the last few title pages for Back; older ones are let go (memory is short on a TV).
@@ -132,7 +140,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     screen = target
     rail.open = false
     target.show(fresh)
-    rail.mark(target.railKey)
+    if (target.railKey.isNotEmpty()) rail.mark(target.railKey)
     invalidate()
     return true
   }
@@ -143,6 +151,9 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     val p = h.split('/')
     if (p.size >= 3 && p[1] == "library" && p[2].isNotEmpty()) return grid(java.net.URLDecoder.decode(p[2], "UTF-8"), if (p.size > 3) java.net.URLDecoder.decode(p[3], "UTF-8") else "")
     if (isItem(p)) return detail(java.net.URLDecoder.decode(p[2], "UTF-8"))
+    if (h == "#/genres") return genres()
+    if (h == "#/favorites") return favs()
+    if (p.size == 3 && p[1] == "person" && p[2].isNotEmpty()) return person(java.net.URLDecoder.decode(p[2], "UTF-8"))
     return null
   }
 
@@ -150,7 +161,8 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     val h = hash.substringBefore('?')
     if (h == "" || h == "#" || h == "#/" || h == "#/home") return true
     val p = h.split('/')
-    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p)
+    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" ||
+      (p.size == 3 && p[1] == "person" && p[2].isNotEmpty())
   }
 
   private fun isItem(p: List<String>): Boolean {

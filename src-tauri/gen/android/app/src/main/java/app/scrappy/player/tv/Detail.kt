@@ -19,7 +19,7 @@ import kotlin.math.abs
 /** A film's or a show's page, drawn natively. Same buttons, pickers, seasons, episodes, cast and
  *  "More like this" as renderItem() / renderSeasonBrowser() in views.js on the TV (approved mock). */
 class Detail(tv: TvView, val itemId: String) : Screen(tv) {
-  override val railKey = "home"
+  override val railKey = ""
 
   private val FIELDS = "PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo"
   private val IMG_OPTS = "ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb"
