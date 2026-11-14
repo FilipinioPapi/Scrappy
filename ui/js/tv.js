@@ -270,6 +270,10 @@ addEventListener('keydown', (e) => {
     const base = vert ? 125 : 85; // the same limit whether the button is held or pressed over and over
     const gap = Math.max(base, Math.min(moveCost * 1.1, 300));
     if (now - lastMove < gap) return;
+    // And never get ahead of the page: while the slide to the last row is still more than half a
+    // screen from done, further presses wait. The highlight and the page stay together, and the
+    // page stops within a row of where you let go instead of racing on.
+    if (vert) { const g = glides.get(window); if (g && Math.abs(g.to - scrollY) > innerHeight * 0.5) return; }
     window.__tvPace = Math.round(gap);
     lastMove = now;
     requestAnimationFrame(() => requestAnimationFrame(() => { const c = performance.now() - now; moveCost = moveCost ? moveCost * 0.6 + c * 0.4 : c; }));

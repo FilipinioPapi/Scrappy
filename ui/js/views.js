@@ -326,6 +326,7 @@ function smartRows(root, ctx, q) {
 
 const GENRE_LIBS = new Set(['movies', 'tvshows', 'mixed', undefined, null, '']);
 const GENRE_MIN = 6;
+let lastRowFill = 0;
 const GENRE_TILE_MIN = 5; // Genres screen: fewer titles than this and the genre gets no tile
 const GENRE_BROAD = 0.8; // genres on 80%+ of a library's titles are hidden there
 
@@ -377,17 +378,21 @@ function genreSection(root, ctx, views) {
       if (near.has(row)) return;
       const tick = () => {
         if (!near.has(row) || my !== gen || !ctx.alive()) { near.delete(row); return; }
-        if (document.documentElement.classList.contains('tv-fast')) { near.set(row, setTimeout(tick, 160)); return; }
+        // While you are moving, rows are still built ahead of you, but one at a time with a breath
+        // between them (scrolling has a top speed now, so there is time for that).
+        const now = performance.now();
+        if (document.documentElement.classList.contains('tv-fast') && now - lastRowFill < 240) { near.set(row, setTimeout(tick, 110)); return; }
+        lastRowFill = now;
         near.delete(row); io.unobserve(row); fillGenreRow(row, lib, types, ctx, my, () => gen);
       };
-      near.set(row, setTimeout(tick, 180));
+      near.set(row, setTimeout(tick, 70));
     };
     io = new IntersectionObserver((entries) => {
       for (const en of entries) {
         if (en.isIntersecting) fillSoon(en.target);
         else if (near.has(en.target)) { clearTimeout(near.get(en.target)); near.delete(en.target); }
       }
-    }, { rootMargin: '400px' });
+    }, { rootMargin: ON_TV ? '1000px' : '400px' });
     const rows = [...rowsEl.querySelectorAll('.genre-row:not(.filled)')];
     rows.forEach((r) => io.observe(r));
     if (ON_TV) {

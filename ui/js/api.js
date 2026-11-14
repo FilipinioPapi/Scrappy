@@ -119,6 +119,13 @@ if (TV) {
   }, true);
 }
 
+// TV: the colours of pictures this TV has already shown (see art.js), by item and picture type.
+const HUES = (() => { try { return JSON.parse(localStorage.getItem('tvHue') || '{}') || {}; } catch { return {}; } })();
+const hueKey = (src) => { const m = DIRECT && src && src.startsWith(DIRECT + '/Items/') && src.slice(DIRECT.length).match(/^\/Items\/([^/]+)\/Images\/([^/?]+)/); return m ? m[1] + '/' + m[2] : ''; };
+/** '' or a CSS background in the picture's own colours. */
+export const hueOf = (src) => { const h = HUES[hueKey(src)]; return h ? `linear-gradient(165deg,#${h.slice(0, 6)},#${h.slice(6, 12)} 55%,#${h.slice(12, 18)})` : ''; };
+export const setHue = (src, hex) => { const k = hueKey(src); if (k && /^[0-9a-f]{18}$/.test(hex)) HUES[k] = hex; };
+export const saveHues = () => { try { const ks = Object.keys(HUES); if (ks.length > 4000) for (const k of ks.slice(0, ks.length - 3000)) delete HUES[k]; localStorage.setItem('tvHue', JSON.stringify(HUES)); } catch {} };
 /** TV: a thumbnail-sized copy of a picture (a few hundred bytes). Stretched across the tile it reads
  *  as the picture's own blurred colours while the real one is on its way. '' when not available. */
 export const tiny = (src) => (DIRECT && src && src.startsWith(DIRECT + '/Items/') ? src.replace(/maxWidth=\d+&quality=\d+/, 'maxWidth=32&quality=50') : '');

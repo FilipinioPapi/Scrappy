@@ -1,3 +1,4 @@
+import { tiny, hueOf, setHue, saveHues } from './api.js';
 // Tiles and their artwork arrive together.
 //
 // 1. A picture this session has already shown is put straight in when it is drawn again
@@ -26,7 +27,7 @@ function hold(src) {
   // (Kept small: every one is a decoded picture in the TV's scarce memory, and the TV keeps its own copies on disk now.)
   if (held.size > 90) held.delete(held.keys().next().value);
 }
-document.addEventListener('load', (e) => { const t = e.target; if (t && t.tagName === 'IMG' && t.naturalWidth) { const src = t.currentSrc || t.src; seen.add(src); if (t.naturalWidth <= 800) hold(src); } }, true);
+document.addEventListener('load', (e) => { const t = e.target; if (t && t.tagName === 'IMG' && t.naturalWidth) { const src = t.currentSrc || t.src; seen.add(src); if (t.naturalWidth <= 800) hold(src); if (window.__learnHue && t.closest('.card')) window.__learnHue(t.getAttribute('src')); } }, true);
 /** Fetch a picture ahead of time (TV), so the page that uses it can show it at once. */
 export function preload(src) {
   if (!TV || !src || seen.has(src)) return;
@@ -55,25 +56,35 @@ if (TV) {
     else if (!fast && fastI) { clearInterval(fastI); fastI = 0; clearTimeout(cullT); cullT = setTimeout(cull, 60); }
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 }
-// TV loading look: a tile near the screen gets a thumbnail-sized copy of its picture first (its own
-// blurred colours), unless the real picture is already there. Nothing extra is fetched while a
-// direction is held or for tiles far away, so the look never costs scrolling speed.
-let loIo = null; const loWait = new Set();
+// TV loading look: a tile starts as its picture's own colours. Emby does not send those with a
+// title, so the TV learns them: after a poster has been shown once, a thumbnail-sized copy is
+// read for its colours (top, middle, bottom) and the result is remembered on this TV. From then
+// on the tile is drawn in those colours at once, with nothing to fetch, even before the picture.
 if (TV) {
-  const put = (el) => {
-    const u = el.dataset.lo; if (!u) return; delete el.dataset.lo;
-    const im = el.parentElement?.querySelector('img'); if (im && im.complete && im.naturalWidth) return;
-    el.style.backgroundImage = `url("${u}")`;
+  const queue = []; let busy = 0, fails = 0, saveT = 0;
+  const cv = document.createElement('canvas'); cv.width = 2; cv.height = 3;
+  const g2 = cv.getContext('2d', { willReadFrequently: true });
+  const next = () => {
+    if (busy >= 1 || fails >= 4 || !queue.length || document.documentElement.classList.contains('tv-fast')) return;
+    const src = queue.pop(); const lo = tiny(src); if (!lo || hueOf(src)) return next();
+    busy++;
+    const im = new Image(); im.crossOrigin = 'anonymous'; im.decoding = 'async';
+    const done = () => { busy--; setTimeout(next, 140); };
+    im.onload = () => {
+      try {
+        g2.drawImage(im, 0, 0, 2, 3);
+        const d = g2.getImageData(0, 0, 2, 3).data; let hex = '';
+        for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) hex += Math.round((d[r * 8 + c] + d[r * 8 + 4 + c]) / 2 * 0.82).toString(16).padStart(2, '0');
+        setHue(src, hex); fails = 0;
+        clearTimeout(saveT); saveT = setTimeout(saveHues, 2500);
+      } catch { fails++; }
+      done();
+    };
+    im.onerror = () => { fails++; done(); };
+    im.src = lo;
   };
-  loIo = new IntersectionObserver((es) => {
-    const fast = document.documentElement.classList.contains('tv-fast');
-    for (const en of es) { if (!en.isIntersecting) continue; loIo.unobserve(en.target); if (fast) loWait.add(en.target); else put(en.target); }
-  }, { rootMargin: '160px' });
-  new MutationObserver(() => {
-    if (document.documentElement.classList.contains('tv-fast') || !loWait.size) return;
-    for (const el of loWait) if (el.isConnected && el.dataset.lo) loIo.observe(el);
-    loWait.clear();
-  }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  window.__learnHue = (src) => { if (fails >= 4 || hueOf(src)) return; queue.push(src); if (queue.length > 60) queue.shift(); /* the ones flown past can be learnt another day */ setTimeout(next, 600); };
+  new MutationObserver(() => { if (!document.documentElement.classList.contains('tv-fast')) setTimeout(next, 200); }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 }
 // Clearing the picture cache (Settings) or signing out: those pictures have to load again.
 export const forgetArt = () => { seen.clear(); held.clear(); };
@@ -145,7 +156,6 @@ new MutationObserver((muts) => {
   const added = [];
   for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1 && n.isConnected) added.push(n);
   if (!added.length) return;
-  if (loIo) for (const n of added) { if (n.classList.contains('lo')) { if (n.dataset.lo) loIo.observe(n); } else for (const el of n.getElementsByClassName('lo')) if (el.dataset.lo) loIo.observe(el); }
   // 1. Pictures already shown this session go straight in.
   for (const n of added) {
     const ims = n.tagName === 'IMG' ? [n] : n.getElementsByTagName('img');
