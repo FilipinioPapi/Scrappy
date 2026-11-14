@@ -123,6 +123,8 @@ function nearest(from, dir, list, strict = false) {
 // One glide per scroller. Every press only moves the glide's destination, so pressing
 // fast (or holding) keeps one continuous motion instead of jumps or piled-up animations.
 const glides = new Map();
+// A slide still in flight when the screen changes must not carry on into the new screen.
+addEventListener('hashchange', () => glides.delete(window), true);
 function glideTo(box, prop, to) {
   const page = box === window;
   const read = () => (page ? scrollY : box[prop]);
@@ -133,6 +135,7 @@ function glideTo(box, prop, to) {
   g = { to, pos: read(), t: performance.now() };
   glides.set(box, g);
   const step = (now) => {
+    if (glides.get(box) !== g) return; // the page changed under it
     const dt = Math.min(64, now - g.t); g.t = now;
     // Ease out toward the destination, and ease in from a standstill, so a long move
     // (a whole screen) starts gently and reads as one clean slide.
