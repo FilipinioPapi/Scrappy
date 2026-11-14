@@ -422,6 +422,13 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
           val pad = (0.08 + (100.0 - (if (raw.isNaN()) 100.0 else raw)) / 100.0).coerceIn(0.08, 0.35).toFloat()
           PlayerLog.add("subtitles moved: asked $raw, padding $pad, view ${view?.subtitleView?.width}x${view?.subtitleView?.height}")
           view?.subtitleView?.setBottomPaddingFraction(pad)
+          // Styled subtitles are drawn on their own layer: that whole layer slides up by the same amount.
+          view?.subtitleView?.let { sv ->
+            for (i in 0 until sv.childCount) {
+              val c = sv.getChildAt(i)
+              if (c is io.github.peerless2012.ass.media.widget.AssSubtitleView) c.translationY = -(pad - 0.08f) * sv.height
+            }
+          }
         }
         "track" -> selectTrack(p, a.optString("type"), a.optString("id"))
         "stop" -> {
@@ -513,7 +520,10 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
         // Subtitles reach the player already unpacked ("x-media3-cues"); their real kind is in `codecs`.
         val kind = if (f.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES) (f.codecs ?: "") else (f.sampleMimeType ?: f.codecs ?: "")
         val codec = when (val c = kind.substringAfter('/').lowercase()) {
-          "x-subrip" -> "srt"; "x-ssa" -> "ass"; "vtt" -> "webvtt"; "x-media3-cues" -> ""; else -> c
+          "x-subrip" -> "srt"; "x-ssa" -> "ass"; "vtt" -> "webvtt"; "x-media3-cues" -> ""
+          // Sound: the names people know, not the container's.
+          "mp4a-latm" -> "aac"; "true-hd" -> "truehd"; "vnd.dts" -> "dts"; "vnd.dts.hd" -> "dts-hd"; "mpeg" -> "mp3"; "raw" -> "pcm"
+          else -> c
         }
         o.put("codec", codec)
         if (f.channelCount > 0) o.put("demux-channel-count", f.channelCount)
