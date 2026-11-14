@@ -131,6 +131,8 @@ function glideTo(box, prop, to) {
   const page = box === window;
   const read = () => (page ? scrollY : box[prop]);
   const write = (v) => (page ? scrollTo(scrollX, v) : (box[prop] = v));
+  // Right after Back the page is put straight where it belongs, never slid there.
+  if (page && performance.now() < (window.__tvStill || 0)) { glides.delete(box); write(to); return; }
   let g = glides.get(box);
   if (g) { g.to = to; return; }
   if (Math.abs(read() - to) < 1) return;

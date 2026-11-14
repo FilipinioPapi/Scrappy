@@ -201,7 +201,13 @@ function keepPage() {
   const from = shownPage; shownPage = null;
   if (!from || from.ctx !== curCtx || !viewEl.firstElementChild || viewEl.querySelector('.loading, .empty > .btn')) return null;
   const ae = document.activeElement;
+  // Rows the browser has been skipping (off screen) forget their height once the page is lifted
+  // out, and would come back a different size, which shoves the page around on the way back in.
+  // Pin every row to the height it has right now.
+  for (const r of viewEl.querySelectorAll('.tvmain > [data-row], .genre-row')) { const h = r.offsetHeight; if (h > 0) r.style.containIntrinsicSize = `auto ${h}px`; }
   const e = { hash: from.hash, y: window.scrollY, focus: ae && viewEl.contains(ae) ? ae : (lastInView && viewEl.contains(lastInView) ? lastInView : null), ctx: from.ctx, at: Date.now(), frag: document.createDocumentFragment() };
+  // Where the highlighted thing sits on the screen, so Back can put it in exactly the same spot.
+  e.top = e.focus ? e.focus.getBoundingClientRect().top : null;
   // It may finish what it was loading for a few seconds, then it rests.
   from.ctx._kept = Date.now() + 5000;
   dropKept(from.k); KEEP.set(from.k, e);
@@ -279,7 +285,12 @@ async function routeNow(opts = {}) {
     curCtx = kept.ctx; kept.ctx._kept = 0;
     kept.ctx._return.forEach((f) => { try { f(); } catch {} });
     scrollKey = nk.k; window.scrollTo(0, kept.back ? kept.y : 0); SCROLL.set(nk.k, kept.back ? kept.y : 0);
-    if (kept.back && kept.focus?.isConnected) kept.focus.focus({ preventScroll: true });
+    // Back drops you exactly where you were, in one step: no slide, no catching up.
+    window.__tvStill = performance.now() + 500;
+    if (kept.back && kept.focus?.isConnected) {
+      if (kept.top != null) { const d = kept.focus.getBoundingClientRect().top - kept.top; if (Math.abs(d) > 1) { window.scrollBy(0, d); SCROLL.set(nk.k, window.scrollY); } }
+      kept.focus.focus({ preventScroll: true });
+    }
     shownPage = { k: nk.k, hash, ctx: kept.ctx };
     hideIntro();
     return;

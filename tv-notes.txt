@@ -2,4 +2,4 @@ New: Who is watching. Several people can share this TV, with an optional PIN eac
 New loading look: posters start as their own blurred colours, then sharpen in.
 Opening a title: the poster you pressed glides into the page, and Back sends it home.
 Scrolling has a top speed matched to what the TV can draw, held or rapidly pressed.
-Genres: tiles arrive with their artwork, and genres with fewer than 5 titles are hidden.
+Back from a title drops you exactly where you were, with no scrolling.
