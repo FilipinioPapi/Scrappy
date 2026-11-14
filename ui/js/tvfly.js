@@ -15,7 +15,9 @@ let landed = null;  // where the page's poster really is
 // Sizes come back scaled on the TV (the whole page is drawn zoomed); fixed boxes use page units.
 const unit = (el) => { const r = el.getBoundingClientRect(); const k = r.width > 0 ? el.offsetWidth / r.width : 1; return { l: r.left * k, t: r.top * k, w: r.width * k, h: r.height * k }; };
 const guess = () => { try { const g = JSON.parse(localStorage.getItem(KEY) || 'null'); if (g && g.w > 20) return g; } catch {} return { l: 144, t: 327, w: 252, h: 381 }; };
-const drop = (fade = 140) => { const f = fly; fly = null; if (!f) return; f.style.transition = `opacity ${fade}ms linear`; f.style.opacity = '0'; setTimeout(() => f.remove(), fade + 30); };
+let veil = null;    // covers the screen you are leaving, from the first frame of the glide
+const unveil = (fade) => { const v = veil; veil = null; if (!v) return; v.style.transition = `opacity ${fade}ms linear`; v.style.opacity = '0'; setTimeout(() => v.remove(), fade + 30); };
+const drop = (fade = 140) => { const wait = veil ? 130 : 0; unveil(130); const f = fly; fly = null; if (!f) return; f.style.transition = `opacity ${fade}ms linear ${wait}ms`; f.style.opacity = '0'; setTimeout(() => f.remove(), fade + wait + 30); };
 function make(src, r) {
   drop(0);
   const d = document.createElement('div');
@@ -39,6 +41,10 @@ view.addEventListener('click', (e) => {
   e.preventDefault();
   home = { id: a.dataset.id, src, r: from }; landed = null;
   const d = make(src, from); const to = guess();
+  // The old screen fades out under the poster straight away (opacity only, so it keeps moving
+  // while the title page is still being built) and the title page appears when the poster lands.
+  veil = document.createElement('div'); veil.className = 'tv-veil'; document.body.insertBefore(veil, d);
+  veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, easing: 'ease-out', fill: 'forwards' });
   const anim = glide(d, from, to, 380);
   // One drawn frame first, so the glide is already running when the page starts to build.
   requestAnimationFrame(() => setTimeout(() => { location.hash = href; }, 0));

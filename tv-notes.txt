@@ -1,5 +1,5 @@
 New: Who is watching. Several people can share this TV, with an optional PIN each.
 New loading look: posters start as their own blurred colours, then sharpen in.
-Opening a title: the poster you pressed glides into the page, and Back sends it home.
+Opening a title: Home fades away the moment you press, and only the poster glides across.
 Mark watched from the Hold OK menu ticks the tile in place. The screen no longer reloads.
 Back from a title drops you exactly where you were, with no scrolling.
