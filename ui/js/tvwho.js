@@ -119,7 +119,7 @@ async function manage(data, startAt = -1) {
 
 let open = false;
 /** Show the list. `side`: the panel from the side bar; otherwise the full faces screen. */
-export async function who({ side = false, must = false } = {}) {
+export async function who({ side = false, must = false, onShow = null } = {}) {
   if (open) return; open = true;
   try {
     for (;;) {
@@ -137,6 +137,7 @@ export async function who({ side = false, must = false } = {}) {
           close(); done(b.dataset.do || data.people[Number(b.dataset.i)]);
         });
         (box.querySelector('.who-p.cur') || box.querySelector('.who-p')).focus({ preventScroll: true });
+        if (onShow) { const f = onShow; onShow = null; f(); }
       });
       if (picked == null) return;
       if (picked === 'add') { await addPerson(); return; }
@@ -148,14 +149,18 @@ export async function who({ side = false, must = false } = {}) {
 }
 
 /** When Scrappy opens: ask who is watching if more than one person is on this TV. */
-export async function whoAtStart(session) {
-  if (sget(ONCE)) return;
-  sset(ONCE, '1');
-  const data = await people();
-  const signed = !!session?.loggedIn;
-  if (!data.people.length) return;
-  // Nobody active (the last person was removed or signed out) but others are saved: always ask.
-  if (!signed) return who({ must: false });
-  if (data.people.length < 2 || get(ASK) === '0') return;
-  return who();
+export async function whoAtStart(session, shown = () => {}) {
+  // `shown` runs once the faces are on screen, or as soon as it is clear nobody will be asked:
+  // the opening screen waits for it, so the app never flashes up before "Who's watching?".
+  try {
+    if (sget(ONCE)) return;
+    sset(ONCE, '1');
+    const data = await people();
+    const signed = !!session?.loggedIn;
+    if (!data.people.length) return;
+    // Nobody active (the last person was removed or signed out) but others are saved: always ask.
+    if (!signed) return await who({ must: false, onShow: shown });
+    if (data.people.length < 2 || get(ASK) === '0') return;
+    return await who({ onShow: shown });
+  } finally { shown(); }
 }

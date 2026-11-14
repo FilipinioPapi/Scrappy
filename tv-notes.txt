@@ -1,5 +1,5 @@
-Player freeze: the TV chip's own Dolby/DTS sound decoder was jamming after skipping and holding the picture still.
-Scrappy no longer uses that decoder. A soundbar still gets Dolby and DTS untouched, surround and Atmos included.
-Without a soundbar that takes it, Scrappy decodes Dolby, DTS and TrueHD itself.
+Opening Scrappy now goes straight to "Who's watching?" instead of flashing the app first.
+Player freeze: the TV chip's own Dolby/DTS sound decoder was jamming after skipping. Scrappy no longer uses it.
+A soundbar still gets Dolby and DTS untouched, surround and Atmos included.
 If the sound still jams, the film moves to a fresh player after about 5 seconds and decodes the sound itself.
 If a film ever stays stuck in every app, a full TV restart (Settings, System, Restart) clears it.

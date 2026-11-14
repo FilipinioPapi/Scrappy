@@ -29,7 +29,9 @@ function hideIntro() {
   introGone = true;
   const el = document.getElementById('intro');
   if (!el) return;
-  setTimeout(() => {
+  setTimeout(async () => {
+    // TV: "Who's watching?" goes up underneath first, so the opening screen fades straight to it.
+    if (window.__whoReady) await window.__whoReady;
     el.classList.add('out');
     setTimeout(() => el.remove(), 500);
   // (On the TV it leaves the moment the first page is ready: Jayden's pick, the app is slower to start there.)
@@ -517,7 +519,15 @@ if (!location.hash) {
   const st = pref('startTab'), want = st === 'last' ? pref('lastTab') : st;
   if (['#/home', '#/music', '#/audiobooks'].includes(want) && want !== '#/home') history.replaceState(history.state, '', want);
 }
-route();
+if (ON_TV) {
+  // "Who's watching?" goes up before the first page is built (only when more than one person is
+  // on this TV), and the opening screen waits for it, so the app never flashes up underneath first.
+  window.__whoReady = new Promise((ok) => {
+    setTimeout(ok, 4000);
+    Promise.all([api.session(), import('./tvwho.js')]).then(([s, m]) => m.whoAtStart(s, ok)).catch(ok);
+  });
+  window.__whoReady.then(() => route());
+} else route();
 
 // The Scrappy logo goes to the home screen of whichever tab you're on.
 document.querySelector('#topbar .brand')?.addEventListener('click', (e) => {
