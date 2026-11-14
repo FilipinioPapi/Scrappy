@@ -2,7 +2,7 @@
 // this page; this file draws the controls on top and talks to mpv.
 import { api, listen, img, load, IMG_BASE } from './api.js';
 import { esc, toast, epCode, runtime } from './components.js';
-import { pref, on, onPref, SUB_STYLES, NIGHT_FILTER } from './prefs.js';
+import { pref, on, onPref, SUB_STYLES, NIGHT_FILTER, langOf } from './prefs.js';
 
 const { invoke } = window.__TAURI__.core;
 
@@ -238,11 +238,6 @@ function wanted() {
 // Languages come as 'en', 'eng', 'English' or with a region like 'en-US' depending on
 // where they're from. Emby says 'eng'; mpv says 'en-US' for newer files (Dark), so the
 // region is dropped before comparing.
-const LANGS = { eng: 'en', english: 'en', ger: 'de', deu: 'de', german: 'de', fre: 'fr', fra: 'fr', french: 'fr', spa: 'es', spanish: 'es', ita: 'it', italian: 'it', jpn: 'ja', japanese: 'ja', por: 'pt', portuguese: 'pt', dut: 'nl', nld: 'nl', dutch: 'nl', swe: 'sv', swedish: 'sv', nor: 'no', nob: 'no', norwegian: 'no', dan: 'da', danish: 'da', fin: 'fi', finnish: 'fi', pol: 'pl', polish: 'pl', rus: 'ru', russian: 'ru', kor: 'ko', korean: 'ko', chi: 'zh', zho: 'zh', chinese: 'zh', ara: 'ar', arabic: 'ar', hin: 'hi', hindi: 'hi', tur: 'tr', turkish: 'tr' };
-const langOf = (l) => {
-  const k = String(l || '').toLowerCase().trim().split(/[-_]/)[0];
-  return LANGS[k] || k;
-};
 const subLangPref = () => langOf(pref('subLang')) || 'en'; // your subtitle language (Settings)
 const sameLang = (a, b) => !a || !b || langOf(a) === langOf(b);
 function matchTrack(type, ref) {
@@ -281,7 +276,7 @@ function pickTracks() {
   if (!S.pick.sub) return;
   // The chosen subtitles are held (see holdSubs): mpv can switch by itself afterwards,
   // e.g. to forced subtitles that match the audio language.
-  const use = (t) => { S.subTarget = t.id; S.lastSid = t.id; holdSubs(); };
+  const use = (t) => { S.subTarget = t.id; S.lastSid = t.id; holdSubs(); if (TVP) window.__TAURI__?.core.invoke('tv_update', { what: `note:subtitles start from ${S.subWhy || 'Settings'}: ${t.lang || '?'} #${t.id}` }).catch(() => {}); };
   const off = () => { S.subTarget = 'no'; holdSubs(); };
   if (tp.sub) {
     // Your own pick for this show wins. "Off" is held off for the whole lookout.

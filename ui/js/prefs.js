@@ -48,3 +48,10 @@ export const SUB_STYLES = {
 };
 // Night mode: evens out loud and quiet parts.
 export const NIGHT_FILTER = 'lavfi=[dynaudnorm=f=250:g=15:p=0.6:m=8]';
+
+// Languages come as 'en', 'eng', 'English' or with a region like 'en-US' depending on where they're from; this makes them comparable.
+const LANGS = { eng: 'en', english: 'en', ger: 'de', deu: 'de', german: 'de', fre: 'fr', fra: 'fr', french: 'fr', spa: 'es', spanish: 'es', ita: 'it', italian: 'it', jpn: 'ja', japanese: 'ja', por: 'pt', portuguese: 'pt', dut: 'nl', nld: 'nl', dutch: 'nl', swe: 'sv', swedish: 'sv', nor: 'no', nob: 'no', norwegian: 'no', dan: 'da', danish: 'da', fin: 'fi', finnish: 'fi', pol: 'pl', polish: 'pl', rus: 'ru', russian: 'ru', kor: 'ko', korean: 'ko', chi: 'zh', zho: 'zh', chinese: 'zh', ara: 'ar', arabic: 'ar', hin: 'hi', hindi: 'hi', tur: 'tr', turkish: 'tr' };
+export const langOf = (l) => {
+  const k = String(l || '').toLowerCase().trim().split(/[-_]/)[0];
+  return LANGS[k] || k;
+};

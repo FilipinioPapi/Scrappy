@@ -1,6 +1,6 @@
 import { api, load, quiet, img, imgAny, memHas, kindOf } from './api.js';
 import { esc, card, initials, syncPlayButtons, clearResume, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
-import { pref } from './prefs.js';
+import { pref, langOf } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { genreLook } from './gtiles.js';
 import { noteCollection } from './tvside.js';
@@ -1287,11 +1287,12 @@ function titleHtml(it) {
 
 // Audio / Subtitles pickers. What you pick is what the player starts with,
 // and it's remembered for the whole show (or this film).
-const prefKey = (it) => 'show:' + (it.SeriesId || it.Id);
+// (Kept under the same name the player reads its picks from, so a choice made here is the one that plays.)
+const prefKey = (it) => 'tracks:' + (it.SeriesId || it.Id);
 const readPrefs = (it) => { try { return JSON.parse(localStorage.getItem(prefKey(it)) || '{}'); } catch { return {}; } };
 const writePrefs = (it, patch) => localStorage.setItem(prefKey(it), JSON.stringify({ ...readPrefs(it), ...patch }));
-const streamRef = (s) => ({ lang: s.Language || '', title: s.Title || '', forced: !!s.IsForced });
-const sameRef = (s, r) => r && (s.Language || '') === r.lang && !!s.IsForced === !!r.forced && (!r.title || (s.Title || '') === r.title);
+const streamRef = (s) => ({ lang: s.Language || '', title: s.Title || '', forced: !!s.IsForced, index: s.Index, external: !!s.IsExternal, displayTitle: s.DisplayTitle || '' });
+const sameRef = (s, r) => r && langOf(s.Language) === langOf(r.lang) && !!s.IsForced === !!r.forced && (!r.title || (s.Title || '') === r.title);
 
 function streamLabel(s) {
   if (s.DisplayTitle) return s.DisplayTitle;

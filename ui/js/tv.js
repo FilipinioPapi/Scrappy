@@ -73,6 +73,8 @@ function quick(cur, k) {
     const cards = row.children; if (!cards.length || !cards[0].classList.contains('card')) return null;
     for (const f of sib.querySelectorAll(FOCUSABLE)) if (f.parentElement !== row && !f.matches(SKIP)) return null;
     if (row.scrollLeft < 4) return cards[0];
+    // Coming back to a row you had scrolled along: the poster you left it on, so the row does not slide again.
+    if (row._tvLast && row._tvLast.parentElement === row) return row._tvLast;
     const x = cur.getBoundingClientRect(); const cx = x.left + x.width / 2; let best = null, bd = Infinity;
     for (const c of cards) { const r = c.getBoundingClientRect(); const d = Math.abs(r.left + r.width / 2 - cx); if (d < bd) { bd = d; best = c; } }
     return best;
@@ -205,11 +207,12 @@ function go(el) {
   if (eps) {
     const bottom = eps.getBoundingClientRect().bottom + scrollY;
     if (bottom <= viewH() - 4) {
-      if (row) { warm(row); const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2; glideTo(row, 'scrollLeft', Math.max(0, Math.min(left, row.scrollWidth - row.clientWidth))); }
+      if (row) { row._tvLast = el; warm(row); const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2; glideTo(row, 'scrollLeft', Math.max(0, Math.min(left, row.scrollWidth - row.clientWidth))); }
       glideTo(window, '', 0); return;
     }
   }
   if (!row) { glideTo(window, '', pageTarget(el, 'center')); return; }
+  row._tvLast = el; // a row scrolled along is picked up again where you left it
   warm(row);
   const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2;
   glideTo(row, 'scrollLeft', Math.max(0, Math.min(left, row.scrollWidth - row.clientWidth)));
@@ -336,7 +339,8 @@ addEventListener('keydown', (e) => {
       if (!cards.length && row?.querySelector('.genre-ph')) { const now = performance.now(); if (waitRow !== row) { waitRow = row; waitAt = now; } if (now - waitAt < 3000) return; }
       if (cards.length) {
         let best = cards[0];
-        if (row.scrollLeft >= 4) { const x = cur.getBoundingClientRect(), cx = x.left + x.width / 2; let bd = Infinity; for (const c of cards) { const r = c.getBoundingClientRect(); const d = Math.abs(r.left + r.width / 2 - cx); if (d < bd) { bd = d; best = c; } } }
+        if (row.scrollLeft >= 4 && row._tvLast && row._tvLast.parentElement === row) best = row._tvLast;
+        else if (row.scrollLeft >= 4) { const x = cur.getBoundingClientRect(), cx = x.left + x.width / 2; let bd = Infinity; for (const c of cards) { const r = c.getBoundingClientRect(); const d = Math.abs(r.left + r.width / 2 - cx); if (d < bd) { bd = d; best = c; } } }
         go(best); return;
       }
     }
@@ -358,6 +362,7 @@ addEventListener('keydown', (e) => {
     const tabs = (k === 'ArrowDown' || k === 'ArrowUp') ? next.closest('.season-tabs') : null;
     if (tabs && !cur.closest('.season-tabs')) { go(tabs.querySelector('.season-tab.active') || next); return; }
     const r = next.closest('.row, .mrow');
+    if (r && (k === 'ArrowDown' || k === 'ArrowUp') && r !== cur.closest('.row, .mrow') && r.scrollLeft >= 4 && r._tvLast && r._tvLast.parentElement === r) { go(r._tvLast); return; }
     if (r && (k === 'ArrowDown' || k === 'ArrowUp') && !cur.closest('.row, .mrow') && r.scrollLeft < 4) { go(candidates(r)[0] || next); return; }
     go(next); return;
   }
