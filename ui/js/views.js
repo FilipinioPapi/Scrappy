@@ -1305,7 +1305,11 @@ const EP_VIEWS = [
 
 async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId, crumbEl) {
   if (!seriesId) return;
-  let selected = '';
+  // On a show's page the address remembers the picked tab (a season, or All), so a
+  // refresh after an edit lands back on the same tab instead of jumping elsewhere.
+  const keepTab = !!crumbEl;
+  let selected = keepTab && wantSeasonId === 'all' ? 'all' : '';
+  const remember = () => { if (keepTab) history.replaceState(history.state, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`); };
   const viewKey = 'epView:' + seriesId;
   let view = localStorage.getItem(viewKey) || 'list';
   await load(`/Shows/${seriesId}/Seasons?UserId={userId}&Fields=${FIELDS},ChildCount`, (data) => {
@@ -1320,7 +1324,8 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       seasons[0];
     // Shows with more than one season get an "All" tab at the end: every episode in one
     // long list. The Grid layout opens on it.
-    selected = many && (selected === 'all' || (!selected && view === 'grid')) ? 'all' : pick.Id;
+    // A season named in the address wins over Grid's habit of opening on All.
+    selected = many && (selected === 'all' || (!selected && view === 'grid' && !(keepTab && wantSeasonId))) ? 'all' : pick.Id;
     const total = seasons.reduce((n, s) => n + (s.ChildCount || 0), 0);
     const tabs = many
       ? `<div class="season-tabs" role="tablist">${[...seasons, { Id: 'all', Name: 'All', ChildCount: total }].map((s) => `
@@ -1354,7 +1359,7 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       b.classList.add('live');
       setCrumb(seasonName(selected), true);
       // Keep the address in step so Back and refresh land on this season.
-      if (crumbEl && selected !== 'all') history.replaceState(history.state, '', `#/item/${encodeURIComponent(seriesId)}/${encodeURIComponent(selected)}`);
+      remember();
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
     }));
     el.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => {
@@ -1368,6 +1373,7 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
         selected = 'all';
         el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t.dataset.season === 'all'));
         setCrumb(seasonName(selected), true);
+        remember();
       }
       renderEpisodeList(list, count, ctx, seriesId, selected, currentEpId, true, view);
     }));
