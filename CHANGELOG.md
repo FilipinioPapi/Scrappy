@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 36 · Nov 14, 8:05 AM
+**Movies & TV**
+- Fixed: editing an episode's info or picture keeps you on the season you were looking at, instead of jumping to another one
+
+<sub>Built from af14826 · includes: Movies & TV</sub>
+
 ### Preview 35 · Nov 12, 8:52 AM
 **Security**
 - Typing a server name without http:// or https:// (like movies.jjsnas.xyz) now uses https, so your password is never sent unencrypted. Home-network addresses (an IP like 192.168.x.x, or a name like tower.local) still use plain http
