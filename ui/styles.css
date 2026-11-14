@@ -905,6 +905,9 @@ html.tv .intro-bar b { display: block; height: 100%; background: var(--red); tra
 @keyframes introTv { from { opacity: 0; transform: scale(.97); } }
 /* Scrappy Native: the app's own opening picture is already showing this, so the page carries on from it without fading in again. */
 html.native-app .intro-mid { animation: none; }
+html.native-app:not(.intro-ready), html.native-app:not(.intro-ready) body { background: transparent !important; }
+html.native-app:not(.intro-ready) #intro { visibility: hidden; }
+html.native-app:not(.intro-ready) .intro-bar b { animation-play-state: paused; }
 @keyframes introTvBar { to { transform: scaleX(1); } }
 
 /* ---------- Banner: keep its space while it loads ---------- */

@@ -7,7 +7,7 @@
   <link rel="icon" href="logo.png" />
   <link rel="stylesheet" href="styles.css" />
   <!-- Settings that change how the app looks from the very first frame. -->
-  <script>try { var h = document.documentElement; if (/Android/.test(navigator.userAgent)) h.classList.add('tv', 'tv-rail'); if (localStorage.getItem('introSplash') === 'off') h.classList.add('no-intro'); if (localStorage.getItem('reduceMotion') === 'on') h.classList.add('calm'); } catch (e) {}</script>
+  <script>try { var h = document.documentElement; if (/Android/.test(navigator.userAgent)) { h.classList.add('tv', 'tv-rail'); var z = innerWidth < 1440 ? innerWidth / 1440 : 1; if (z < 1) h.style.zoom = String(z); h.style.setProperty('--tvzoom', String(z)); } if (localStorage.getItem('introSplash') === 'off') h.classList.add('no-intro'); if (localStorage.getItem('reduceMotion') === 'on') h.classList.add('calm'); } catch (e) {}</script>
 </head>
 <body>
   <div id="intro" aria-hidden="true">
@@ -18,7 +18,11 @@
       <div class="intro-dots"><i></i><i></i><i></i></div>
       <div class="intro-bar"><b></b></div>
     </div>
-    <script>if (window.ScrappyNative) { document.documentElement.classList.add('native-app'); document.querySelector('.intro-dog').src = 'logo-native.png'; }</script>
+    <script>if (window.ScrappyNative) { (function () { var h = document.documentElement, img = document.querySelector('.intro-dog'); h.classList.add('native-app'); img.src = 'logo-native.png';
+      // The app's own opening picture shows underneath until the page's copy is complete (fonts and logo in), so nothing flashes.
+      var done = false, show = function () { if (!done) { done = true; h.classList.add('intro-ready'); } };
+      Promise.all([document.fonts ? document.fonts.ready : 0, img.decode ? img.decode().catch(function () {}) : 0]).then(function () { requestAnimationFrame(show); });
+      setTimeout(show, 1500); })(); }</script>
     <div class="intro-foot">
       <img src="jaydenater.gif" alt="">
       <div><div class="k">POWERED BY</div><div class="n">JAYDENATER<span class="bt">BOT</span></div></div>
