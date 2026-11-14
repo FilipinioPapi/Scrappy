@@ -87,7 +87,8 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     kicks++
     when {
       st == Player.STATE_IDLE -> p.prepare()
-      kicks == 1 -> p.seekTo(pos)
+      // (A film that never got going at all is loaded again straight away.)
+      kicks == 1 && readySeq == loadSeq -> p.seekTo(pos)
       kicks <= 3 -> { p.stop(); p.prepare() }
       // Nothing helped: say so and leave the player, so it is never a dead end. Resume picks it up.
       else -> error = "Playback stopped responding. Choose Resume to carry on from the same spot."
