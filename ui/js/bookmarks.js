@@ -93,11 +93,11 @@ export function listHtml(id, chapters, { playBtn = false, editing = null, fresh 
     const ci = chapterNo(chapters, b.time);
     const sub = [ci >= 0 ? `Chapter ${ci + 1}` : '', b.time === fresh ? 'just now' : ''].filter(Boolean).join(' · ');
     const ed = b.time === editing;
-    return `<div class="bm-row${ed ? ' edit' : ''}" data-t="${b.time}" role="button" tabindex="0" title="${ed ? '' : 'Jump to ' + clock(b.time)}">
-      <span class="bm-ic">${MARK_FILL}</span>
+    return `<div class="bm-row${ed ? ' edit' : ''}${playBtn ? ' pg' : ''}" data-t="${b.time}" role="button" tabindex="0" title="${ed ? '' : 'Jump to ' + clock(b.time)}">
+      ${playBtn ? `<button type="button" class="bm-play" data-act="play" title="Play from here" aria-label="Play from here">${PLAY}</button>` : `<span class="bm-ic">${MARK_FILL}</span>`}
       <span class="bm-tx">${ed ? `<input class="bm-in" value="${esc(b.title)}" maxlength="120" aria-label="Bookmark name"><small>Enter to save · Esc to cancel</small>` : `<b>${esc(b.title)}</b>${sub ? `<small>${sub}</small>` : ''}`}</span>
       <span class="bm-tm">${clock(b.time)}</span>
-      ${ed ? '' : `<span class="bm-acts">${playBtn ? `<button type="button" class="gb" data-act="play" title="Play from here" aria-label="Play from here">${PLAY}</button>` : ''}<button type="button" class="gb" data-act="rename" title="Rename" aria-label="Rename">${PEN}</button><button type="button" class="gb" data-act="del" title="Delete" aria-label="Delete">${BIN}</button></span>`}
+      ${ed ? '' : `<span class="bm-acts"><button type="button" class="gb" data-act="rename" title="Rename" aria-label="Rename">${PEN}</button><button type="button" class="gb" data-act="del" title="Delete" aria-label="Delete">${BIN}</button></span>`}
     </div>`;
   }).join('');
 }

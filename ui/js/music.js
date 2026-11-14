@@ -1003,9 +1003,9 @@ async function albumsPage(v) {
   const countText = () => `${plural(albums.length, 'album')} · ${plural(new Set(albums.map((a) => a.artistId)).size, 'artist')}`;
   main.innerHTML = `
     <div class="mpage-h"><h1 class="disp">Albums</h1><span class="t2 cnt" id="aCnt">${countText()}</span>
-      <label class="msearch">${MI.search}<input type="search" id="aFind" placeholder="Search albums, artists, songs" spellcheck="false"></label>
+      <label class="msearch wide">${MI.search}<input type="search" id="aFind" placeholder="Search albums, artists, songs" spellcheck="false"></label>
       <div class="seg"><a href="#/music/albums" class="${sort === 'artist' ? 'on' : ''}">By artist</a><a href="#/music/albums?sort=newest" class="${sort === 'newest' ? 'on' : ''}">Newest</a></div>
-      <a class="btn secondary" href="#/music/artists">${MI.artist}<span>Artists</span></a></div>
+    </div>
     <div id="aList"></div>`;
   const list = main.querySelector('#aList');
   // The song list's space is kept from the start (two columns of 36px rows), so nothing below

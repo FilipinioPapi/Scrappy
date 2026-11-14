@@ -39,7 +39,7 @@ const ls = {
 const S = {
   open: false, embedded: true, item: null, pos: 0, duration: 0, paused: false,
   buffering: true, cache: 0, volume: Number(ls.get('volume', 100)), muted: false,
-  next: null, fullscreen: false, dragging: false, upNextTimer: null, starting: false,
+  next: null, queue: null, fullscreen: false, dragging: false, upNextTimer: null, starting: false,
   tracks: [], aid: null, sid: null, lastSid: null, speed: 1, subScale: ls.get('subScale', '1'),
   aspect: 'auto', quality: ls.get('quality', ''), intro: null, credits: null,
   creditsHandled: false, introDismissed: false, prefsApplied: false, settingsOpen: false,
@@ -757,6 +757,8 @@ export async function startPlayback(id, opts = {}) {
   hideUpNext();
   showSkip(null);
   if (!opts.keepItem) {
+    // A list of movies to play in turn (a collection's Play all / Shuffle).
+    if (opts.queue) S.queue = opts.queue; else if (!opts.fromQueue) S.queue = null;
     S.item = null; S.next = null; S.intro = null; S.credits = null;
     S.aspect = 'auto';
   }
@@ -799,6 +801,15 @@ export async function exitPlayer() {
 
 // Find the episode after this one, for Next / auto-play.
 async function findNext(it) {
+  if (S.queue) {
+    const nextId = S.queue[S.queue.indexOf(it.Id) + 1];
+    if (!nextId) return;
+    try {
+      const next = await api.get(`/Users/{userId}/Items/${nextId}`);
+      if (S.item?.Id === it.Id) { S.next = next || null; drawButtons(); }
+    } catch {}
+    return;
+  }
   if (it.Type !== 'Episode' || !it.SeriesId) return;
   try {
     const data = await api.get(`/Shows/${it.SeriesId}/Episodes?UserId={userId}&StartItemId=${it.Id}&Limit=2&Fields=PrimaryImageAspectRatio`);
@@ -861,7 +872,7 @@ function playNext(auto = false) {
   } else {
     S.autoChain = 0;
   }
-  startPlayback(n.Id, { fromStart: true });
+  startPlayback(n.Id, { fromStart: true, fromQueue: !!S.queue });
 }
 
 // The page is only see-through while mpv is drawing video, otherwise the
@@ -1074,7 +1085,7 @@ el.addEventListener('click', (e) => {
       const n = S.stillNext;
       S.autoChain = 0;
       hideStill();
-      if (n) startPlayback(n.Id, { fromStart: true });
+      if (n) startPlayback(n.Id, { fromStart: true, fromQueue: !!S.queue });
       break;
     }
     case 'still-no': hideStill(); exitPlayer(); break;

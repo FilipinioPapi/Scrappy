@@ -3337,7 +3337,18 @@ label.set-row { cursor: pointer; }
 .tvgen b { position: relative; color: #fff; font-size: 17px; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,.4); }
 .tvgen small { position: relative; color: rgba(255,255,255,.8); font-size: 12.5px; font-weight: 600; }
 /* Audiobooks bookmarks page */
-.bk-bmh { margin-bottom: 18px; }
+.bk-bmh { margin-bottom: 18px; justify-content: flex-start; align-items: center; gap: 14px; }
+.bk-bmg .bm-list { display: flex; flex-direction: column; gap: 6px; }
+/* On the Bookmarks page each row always shows its play button, time and actions. */
+.bm-row.pg { grid-template-columns: 36px minmax(0, 1fr) auto auto; gap: 14px; padding: 9px 12px; background: var(--bg-2); border-radius: 12px; }
+.bm-row.pg:hover, .bm-row.pg:focus-visible { background: #281b1c; }
+.bm-row.pg .bm-tm { grid-column: 3; visibility: visible !important; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bm-row.pg .bm-acts { grid-column: 4; display: flex; }
+.bm-row.pg .bm-acts .gb { background: none; color: var(--muted); }
+.bm-row.pg .bm-acts .gb:hover { color: var(--text); background: rgba(255,255,255,.08); }
+.bm-play { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--red); color: #fff; display: grid; place-items: center; cursor: pointer; transition: transform .15s var(--ease), background .15s; }
+.bm-play:hover { background: var(--red-hi); transform: scale(1.06); }
+.bm-play svg { width: 14px; height: 14px; }
 .bk-bmg { margin-bottom: 26px; max-width: 900px; }
 .bk-bmb { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .bk-bmb .mcv { width: 48px; height: 48px; padding: 0; }
@@ -3351,3 +3362,7 @@ label.set-row { cursor: pointer; }
 [data-hold], [data-hold] *, [data-hold] *::before, [data-hold] *::after { animation-play-state: paused !important; }
 [data-hold] img, img.pre { transition: none !important; }
 .lib-crumbs { margin: 4px 0 18px; }
+/* Movies & TV page titles use the display font, like Music and Audiobooks. */
+.section-head.pg-head { align-items: center; margin-bottom: 20px; }
+.pg-t { margin: 0; font-size: 40px; padding-top: 4px; }
+.msearch.wide { min-width: 360px; }

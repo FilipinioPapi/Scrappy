@@ -155,6 +155,12 @@ export async function playItem(id, fromStart = false) {
   const player = await import('./player.js');
   player.startPlayback(id, { fromStart });
 }
+/** Play several titles one after another (a collection's Play all / Shuffle). */
+export async function playQueue(ids, fromStart = false) {
+  if (!ids.length) return;
+  const player = await import('./player.js');
+  player.startPlayback(ids[0], { fromStart, queue: ids });
+}
 
 document.addEventListener('click', (e) => {
   const art = e.target.closest('.card.click-play .art');

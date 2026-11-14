@@ -1,9 +1,11 @@
 import { api, load, quiet, img, imgAny, IMG_BASE, clearProgress } from './api.js';
-import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem, boxSetArt } from './components.js';
+import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem, playQueue, boxSetArt } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { genreLook } from './gtiles.js';
 import { noteCollection } from './tvside.js';
+const plural = (n, w) => `${Number(n).toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
+const NOUN = { movies: 'movie', tvshows: 'show', boxsets: 'collection', homevideos: 'video', musicvideos: 'video' };
 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
 const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
@@ -912,8 +914,8 @@ export async function libraryView(root, ctx, id, genreId = '') {
       <button class="back-btn" type="button" onclick="history.back()" title="Back" aria-label="Back">${BACK_ICON}</button>
       <div class="crumb-trail"><a href="#/genres">Genres</a><span class="sep">›</span><span class="here">${esc(genre.Name)}</span></div>
     </div>` : ''}
-      <div class="section-head">
-        <h2>${genre ? `${esc(genre.Name)} <span class="h-dim">· ${esc(view.Name)}</span>` : esc(view.Name)}</h2><span class="count" id="count"></span>
+      <div class="section-head pg-head">
+        <h1 class="disp pg-t">${esc(genre ? genre.Name : view.Name)}</h1><span class="count" id="count"></span>
         <span class="spacer"></span>
         <select id="sort">${SORTS.map((s, i) => `<option value="${i}" ${i === sortIdx ? 'selected' : ''}>${s[2]}</option>`).join('')}</select>
       </div>
@@ -939,7 +941,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
     try {
       const apply = (data) => {
         total = data.TotalRecordCount ?? 0;
-        count.textContent = total ? `${total.toLocaleString()} items` : '';
+        count.textContent = total ? `${plural(total, NOUN[view.CollectionType] || 'title')}${genre ? ` in ${view.Name}` : ''}` : '';
         if (!total) grid.innerHTML = '<div class="empty">This library is empty.</div>';
         return data.Items || [];
       };
@@ -1015,6 +1017,7 @@ export async function itemView(root, ctx, id, seasonId = '') {
 }
 
 const BACK_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const SHUFFLE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>';
 
 // "Movies & TV › Dark › Season 1" with a round back button.
 function crumbsHtml(it) {
@@ -1256,6 +1259,10 @@ function renderItem(root, ctx, it, seasonId = '') {
   } else if (isSeries) {
     buttons = `<button class="btn" data-play-series="${esc(it.Id)}">${PLAY_ICON} <span class="lbl">Play</span></button>
       <button class="btn secondary" data-play-series="${esc(it.Id)}" data-from-start="1" hidden>Play from start</button>`;
+  } else if (it.Type === 'BoxSet') {
+    // Filled in once the collection's movies load (renderChildren).
+    buttons = `<button class="btn" data-play-all hidden>${PLAY_ICON} Play all</button>
+      <button class="btn secondary" data-shuffle-all hidden>${SHUFFLE_ICON} Shuffle</button>`;
   }
   const canToggle = isPlayable(it) || isSeries || it.Type === 'BoxSet';
 
@@ -1278,10 +1285,11 @@ function renderItem(root, ctx, it, seasonId = '') {
           ${crumbsHtml(it)}
           ${kicker ? `<div class="kicker">${kicker}</div>` : ''}
           ${titleHtml(it)}
-          <div class="meta">${detailMeta(it)}</div>
+          <div class="meta">${it.Type === 'BoxSet' ? '' : detailMeta(it)}</div>
           ${resumable && it.RunTimeTicks ? `<div class="resume-bar"><i style="width:${(100 * ud.PlaybackPositionTicks / it.RunTimeTicks).toFixed(1)}%"></i></div>` : ''}
           <div class="detail-buttons">${buttons}${canToggle ? iconButtonsHtml(it) : ''}</div>
           ${isSeries ? '<div class="play-sub" id="playSub"></div>' : ''}
+          ${it.Type === 'BoxSet' ? '<div class="play-sub" id="boxSub" hidden>Play all starts at the first movie you haven\'t watched, in release order.</div>' : ''}
           <div id="streams">${isPlayable(it) ? streamPickersHtml(it, it) : ''}</div>
           ${it.Taglines?.[0] ? `<p><i>${esc(it.Taglines[0])}</i></p>` : ''}
           <div class="overview">${esc(it.Overview || '')}</div>
@@ -1311,7 +1319,8 @@ function renderItem(root, ctx, it, seasonId = '') {
   const kids = root.querySelector('#children');
   if (isSeries) renderSeasonBrowser(kids, ctx, it.Id, seasonId, '', root.querySelector('#crumbSeason'));
   else if (isEp) renderSeasonBrowser(kids, ctx, it.SeriesId, it.SeasonId, it.Id, null);
-  else if (it.IsFolder) renderChildren(kids, ctx, it);
+  else if (it.IsFolder) renderChildren(kids, ctx, it, root);
+  if (it.Type === 'BoxSet') collectionsCrumb(root);
   similarSection(root.querySelector('#similar'), ctx, it);
 }
 
@@ -1515,16 +1524,58 @@ document.addEventListener('click', (e) => {
   else location.hash = `#/item/${encodeURIComponent(row.dataset.ep)}`;
 }, true);
 
-async function renderChildren(el, ctx, folder) {
-  await load(`/Users/{userId}/Items?ParentId=${folder.Id}&SortBy=SortName&Fields=${FIELDS}&${IMG_OPTS}&Limit=500`, (data) => {
+async function renderChildren(el, ctx, folder, page = null) {
+  const box = folder.Type === 'BoxSet';
+  const sort = box ? 'ProductionYear,PremiereDate,SortName' : 'SortName';
+  await load(`/Users/{userId}/Items?ParentId=${folder.Id}&SortBy=${sort}&Fields=${FIELDS}&${IMG_OPTS}&Limit=500`, (data) => {
     const items = data?.Items || [];
     const kinds = new Set(items.map((i) => i.Type));
     const head = kinds.size === 1 ? ({ Movie: 'Movies', Series: 'Shows', Episode: 'Episodes', Video: 'Videos' }[[...kinds][0]] || 'In this collection') : 'In this collection';
     el.innerHTML = items.length
-      ? `<section class="section"><div class="section-head"><h2>${head}</h2><span class="count">${items.length}</span></div>
+      ? `<section class="section"><div class="section-head"><h2>${head}</h2><span class="count">${box ? 'in release order' : items.length}</span></div>
           <div class="grid">${items.map((i) => card(i)).join('')}</div></section>`
       : '';
+    if (box && page) fillCollection(page, items, head);
   }, ctx.alive).catch(() => {});
+}
+
+// Collection page: "4 movies · 1979–1997 · 7h 52m · 2 watched", Play all (from the
+// first one you haven't watched, in release order) and Shuffle.
+function fillCollection(page, items, head) {
+  const meta = page.querySelector('.detail-info .meta');
+  const noun = head === 'In this collection' ? 'title' : head.toLowerCase().replace(/s$/, '');
+  const years = items.map((i) => i.ProductionYear).filter(Boolean);
+  const lo = Math.min(...years), hi = Math.max(...years);
+  const ticks = items.reduce((t, i) => t + (i.RunTimeTicks || 0), 0);
+  const seen = items.filter((i) => i.UserData?.Played).length;
+  if (meta) {
+    meta.innerHTML = [`<b>${plural(items.length, noun)}</b>`, years.length ? (lo === hi ? String(lo) : `${lo}–${hi}`) : '',
+      ticks ? runtime(ticks) : '', seen ? `${seen} watched` : ''].filter(Boolean).map((x) => `<span>${x}</span>`).join('');
+  }
+  const play = items.filter(isPlayable);
+  const all = page.querySelector('[data-play-all]'), mix = page.querySelector('[data-shuffle-all]');
+  if (!all || !mix || !play.length) return;
+  all.hidden = false; mix.hidden = play.length < 2;
+  const sub = page.querySelector('#boxSub'); if (sub) sub.hidden = play.length < 2;
+  all.onclick = () => {
+    const at = Math.max(0, play.findIndex((i) => !i.UserData?.Played));
+    const rest = play.slice(at).map((i) => i.Id);
+    playQueue(rest, !(play[at].UserData?.PlaybackPositionTicks > 0));
+  };
+  mix.onclick = () => {
+    const ids = play.map((i) => i.Id);
+    for (let k = ids.length - 1; k > 0; k--) { const r = Math.floor(Math.random() * (k + 1)); [ids[k], ids[r]] = [ids[r], ids[k]]; }
+    playQueue(ids, true);
+  };
+}
+
+// "Movies & TV › Collections › Alien Collection": link the Collections library when there is one.
+async function collectionsCrumb(page) {
+  const views = (await api.cached('/Users/{userId}/Views').catch(() => null)) || (await api.get('/Users/{userId}/Views').catch(() => null));
+  const lib = (views?.Items || []).find((v) => v.CollectionType === 'boxsets');
+  const here = page.querySelector('.crumb-trail .here');
+  if (!lib || !here?.isConnected || page.querySelector('[data-collcrumb]')) return;
+  here.insertAdjacentHTML('beforebegin', `<a data-collcrumb href="#/library/${encodeURIComponent(lib.Id)}">${esc(lib.Name)}</a><span class="sep">›</span>`);
 }
 
 
@@ -1541,7 +1592,7 @@ export async function genresView(root, ctx) {
   let cur = localStorage.getItem('tvGenLib');
   if (!libs.some((l) => l.Id === cur)) cur = libs[0].Id;
   root.innerHTML = `<section class="section">
-      <div class="section-head"><h2>Genres</h2><span class="count" id="gcount"></span></div>
+      <div class="section-head pg-head"><h1 class="disp pg-t">Genres</h1><span class="count" id="gcount"></span></div>
       ${libs.length > 1 ? `<div class="season-tabs">${libs.map((l) => `<button class="season-tab ${l.Id === cur ? 'active' : ''}" data-lib="${esc(l.Id)}">${esc(l.Name)}</button>`).join('')}</div>` : ''}
       <div class="tvgen-grid" id="ggrid"></div></section>`;
   const grid = root.querySelector('#ggrid'), count = root.querySelector('#gcount');
@@ -1576,9 +1627,10 @@ export async function favoritesView(root, ctx) {
     const groups = [['Movie', 'Movies'], ['Series', 'Shows'], ['Episode', 'Episodes'], ['BoxSet', 'Collections']]
       .map(([t, name]) => [name, items.filter((i) => i.Type === t)]).filter(([, l]) => l.length);
     root.innerHTML = groups.length
-      ? groups.map(([name, l], k) => `<section class="section"><div class="section-head">${k === 0 ? `<h2>Favorites <span class="h-dim">· ${esc(name)}</span></h2>` : `<h2>${esc(name)}</h2>`}<span class="count">${l.length}</span></div>
+      ? `<section class="section"><div class="section-head pg-head"><h1 class="disp pg-t">Favorites</h1><span class="count">${plural(items.length, 'favorite')}</span></div></section>`
+        + groups.map(([name, l]) => `<section class="section"><div class="section-head"><h2>${esc(name)}</h2><span class="count">${l.length}</span></div>
           <div class="grid">${l.map((i) => card(i, i.Type === 'Episode' ? { shape: 'wide' } : {})).join('')}</div></section>`).join('')
-      : `<section class="section"><div class="section-head"><h2>Favorites</h2></div><div class="empty">Nothing here yet. Press the heart on any movie or show to add it.</div></section>`;
+      : `<section class="section"><div class="section-head pg-head"><h1 class="disp pg-t">Favorites</h1></div><div class="empty">Nothing here yet. Press the heart on any movie or show to add it.</div></section>`;
   }, ctx.alive).catch((e) => ctx.fail(e));
 }
 

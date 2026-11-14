@@ -217,10 +217,11 @@ async function bookmarksPage(v) {
     if (!alive()) { off(); return; }
     const groups = [];
     for (const b of allBookmarks()) { let g = groups.find((x) => x.id === b.libraryItemId); if (!g) groups.push(g = { id: b.libraryItemId }); }
-    main.innerHTML = `<div class="msec-h bk-bmh"><h1 class="disp mtitle">Bookmarks</h1></div>`
+    const n = allBookmarks().length;
+    main.innerHTML = `<div class="msec-h bk-bmh"><h1 class="disp mtitle">Bookmarks</h1>${n ? `<span class="t2 cnt">${plural(n, 'bookmark')}${groups.length > 1 ? ` in ${groups.length} books` : ''}</span>` : ''}</div>`
       + (groups.length ? groups.map((g) => {
         const it = byId.get(g.id), m = md(it);
-        return `<section class="bk-bmg"><a class="bk-bmb" href="${bookHref(g.id)}">${it ? coverBox(it, 120, 'sm') : ''}<span><b>${esc(m.title || 'A book that is no longer in this library')}</b><small class="t2">${esc(m.authorName || '')}</small></span></a>
+        return `<section class="bk-bmg"><a class="bk-bmb" href="${bookHref(g.id)}">${it ? coverBox(it, 120, 'sm') : ''}<span><b>${esc(m.title || 'A book that is no longer in this library')}</b><small class="t2">${esc([m.authorName, plural(bookmarksFor(g.id).length, 'bookmark')].filter(Boolean).join(' · '))}</small></span></a>
           <div class="bm-list" data-id="${esc(g.id)}">${listHtml(g.id, [], { playBtn: true, editing: edit[g.id] ?? null })}</div></section>`;
       }).join('') : `<div class="empty">No bookmarks yet. Press <kbd>B</kbd> or the bookmark button while listening to save your spot.</div>`);
     main.querySelectorAll('.bm-list').forEach((box) => {
@@ -653,11 +654,19 @@ async function authorsPage(v) {
   all.forEach((it) => authorsOf(it).forEach((n) => { const k = n.toLowerCase(); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(it); }));
   const known = new Map((ar.authors || []).map((a) => [String(a.name).toLowerCase(), a]));
   const authors = [...byName.entries()].map(([k, list]) => { const a = known.get(k) || { name: authorsOf(list[0]).find((n) => n.toLowerCase() === k) || k }; return { a, list: list.slice().sort((x, y) => seqNum(seriesList(x)[0]?.seq) - seqNum(seriesList(y)[0]?.seq) || titleKey(x).localeCompare(titleKey(y), undefined, { numeric: true, sensitivity: 'base' })) }; })
-    .sort((x, y) => nameKey(x.a.name).localeCompare(nameKey(y.a.name), undefined, { numeric: true, sensitivity: 'base' }));
-  main.innerHTML = `${pageHead('AUTHORS', 'Find an author')}<div id="bkShelves"></div>`;
+  // Name A–Z goes by the name as written (first name first), like everywhere else.
+  const az = (x, y) => x.a.name.localeCompare(y.a.name, undefined, { numeric: true, sensitivity: 'base' });
+  const heard = (x) => Math.max(0, ...x.list.map((it) => progOf(it.id)?.lastUpdate || 0));
+  const SORTS = { az, books: (x, y) => y.list.length - x.list.length || az(x, y), recent: (x, y) => heard(y) - heard(x) || az(x, y) };
+  const saved = localStorage.getItem('bkAuthSort');
+  const st = { q: '', sort: SORTS[saved] ? saved : 'az' };
+  main.innerHTML = `${pageHead('AUTHORS', 'Find an author')}
+    <div class="bk-sortrow"><span class="bk-lab">SORT BY</span>${segHtml('bkSortSeg', ASORTS, st.sort)}</div>
+    <div id="bkShelves"></div>`;
   const box = main.querySelector('#bkShelves');
-  const draw = (q = '') => {
-    const l = authors.filter((x) => !q || x.a.name.toLowerCase().includes(q));
+  const draw = (q = st.q) => {
+    st.q = q;
+    const l = authors.filter((x) => !q || x.a.name.toLowerCase().includes(q)).sort(SORTS[st.sort]);
     main.querySelector('#bkCount').textContent = plural(l.length, 'author');
     drawChunks(box, l.map(({ a, list }) => {
       const img = a.id ? absAuthorImg(a, 120) : '';
@@ -667,8 +676,10 @@ async function authorsPage(v) {
     }));
     if (!l.length) box.innerHTML = '<div class="t2 bk-none">No authors match.</div>';
   };
+  wireSeg(main, 'bkSortSeg', (k) => { st.sort = k; save('bkAuthSort', k); draw(); });
   wireFind(main, draw); wirePlay(main); draw();
 }
+const ASORTS = [['az', 'Name A–Z'], ['books', 'Most books'], ['recent', 'Recently listened']];
 
 
 function seriesGroups(all) {
