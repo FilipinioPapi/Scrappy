@@ -1,7 +1,7 @@
 // The side menu the three tabs share (approved mock: one menu, three tabs).
 // Size and collapse are shared, so switching tabs never moves the page. Each tab
 // fills in its own pages and its own "Your Library" (pinned + recents).
-import { esc } from './components.js';
+import { esc, queueBoxArt } from './components.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 export const SI = {
@@ -53,7 +53,7 @@ export function libStore(key) {
 const hueOf = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
 function libItem(e, pinned) {
   return `<a class="mli${pinned ? ' pinned' : ''}" href="${esc(e.href)}" data-k="${esc(e.k)}" title="${esc(e.t)}">
-    <div class="mcv ${e.shape || ''}" style="--h:${hueOf(e.t)}"><span>${esc(e.t)}</span>${e.img ? `<img loading="lazy" src="${esc(e.img)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
+    <div class="mcv ${e.shape || ''}" style="--h:${hueOf(e.t)}"${!e.img && e.boxart ? ` data-boxart="${esc(e.boxart)}"` : ''}><span>${esc(e.t)}</span>${e.img ? `<img loading="lazy" src="${esc(e.img)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
     <div class="mli-txt"><div class="t1">${esc(e.t)}</div><div class="t2">${pinned ? `<span class="pinmark">${SI.pinOn}</span>` : ''}${esc(e.sub || '')}</div>${e.prog ? `<div class="mli-prog"><i style="width:${Math.round(Math.min(1, e.prog) * 100)}%"></i></div>` : ''}</div>
     <button type="button" class="mli-pin" data-pin="${esc(e.k)}" title="${pinned ? 'Unpin' : 'Pin to side menu'}" aria-label="${pinned ? 'Unpin' : 'Pin to side menu'}">${pinned ? SI.pinOn : SI.pin}</button>
   </a>`;
@@ -77,6 +77,7 @@ export function drawLib(shell, st, recents) {
   shell.querySelectorAll('.mchip').forEach((c) => c.classList.toggle('on', c.dataset.f === st.fil));
   const h = decodeURIComponent(location.hash.split('?')[0]);
   box.querySelectorAll('.mli').forEach((a) => a.classList.toggle('on', decodeURIComponent(a.getAttribute('href')) === h));
+  if (box.querySelector('[data-boxart]')) queueBoxArt();
 }
 /** Chips filter, pin buttons. redraw() draws again with fresh recents. */
 export function wireLib(shell, st, redraw, find) {

@@ -203,7 +203,7 @@ function drawLib(animate) {
   // The Playlists chip lists every playlist you have: recently played first, then the rest A-Z.
   if (lib.fil === 'playlist') {
     const have = new Set([...lib.pins, ...rest.map((e) => e.k)]);
-    rest = rest.concat(playlistsCache.map(plEntry).filter((e) => !have.has(e.k)).sort((a, b) => a.t.localeCompare(b.t)));
+    rest = rest.concat(playlistsCache.map(plEntry).filter((e) => !have.has(e.k)).sort((a, b) => a.t.localeCompare(b.t, undefined, { numeric: true, sensitivity: 'base' })));
   }
   // Made-for-you playlists keep to their own heading under the Playlists chip.
   const madeK = (e) => e.made || e.k.startsWith('pl:auto:');
@@ -413,7 +413,7 @@ function playlistFlyout(getSongs) {
     const songsP = getSongs();
     const draw = async () => {
       const q = inp.value.trim().toLowerCase();
-      const pls = q ? editable().filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8) : editable().sort((a, b) => plDate(b).localeCompare(plDate(a))).slice(0, 6);
+      const pls = q ? editable().filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8) : editable().sort((a, b) => plDate(b).localeCompare(plDate(a), undefined, { numeric: true, sensitivity: 'base' })).slice(0, 6);
       lbl.textContent = q ? 'MATCHES' : 'RECENT';
       list.innerHTML = pls.length ? pls.map((p) => `<div class="fit" data-id="${esc(p.id)}">${coverHtml(p.coverArt, p.name, 80, 'pc')}<span class="fn">${esc(p.name)}</span><span class="ok" hidden>${MI.check}</span></div>`).join('') : `<div class="fit dim">${q ? 'No playlists match' : 'No playlists yet'}</div>`;
       const songs = await songsP;
@@ -533,7 +533,7 @@ export async function addToPlaylist(songs) {
   const inp = wrap.querySelector('input'), box = wrap.querySelector('.pkl');
   setTimeout(() => inp.focus(), 60);
   await refreshPlaylists();
-  const lists = editable().sort((a, b) => plDate(b).localeCompare(plDate(a)));
+  const lists = editable().sort((a, b) => plDate(b).localeCompare(plDate(a), undefined, { numeric: true, sensitivity: 'base' }));
   const was = {}, now = {};
   const draw = () => {
     const q = inp.value.trim().toLowerCase();
@@ -853,13 +853,15 @@ function smartMusicRows(main, alive) {
     const list = (info.artistInfo2?.similarArtist || []).map((x) => { const m = lib.get(x.id); return m?.albumCount > 0 ? m : byName.get(norm(x.name)); })
       .filter((x) => x && !seen.has(x.id) && seen.add(x.id)).slice(0, 16);
     return { name: a.artist, list };
-  }, (d) => put('#hBecause', d.list?.length ? srow(`Because you played ${d.name}`, 'Similar artists in your library', d.list.map(artistCard).join('')) : ''), 'because2');
+  }, (d) => put('#hBecause', d.list?.length >= 4 ? srow(`Because you played ${d.name}`, 'Similar artists in your library', d.list.map(artistCard).join('')) : ''), 'because2');
   // New from artists you love: recently added albums by the artists you play most.
   row_('newfrom', async () => {
     const [f, n] = await Promise.all([nd('getAlbumList2', { type: 'frequent', size: 60 }), nd('getAlbumList2', { type: 'newest', size: 200 })]);
     const fav = new Set((f.albumList2?.album || []).map((a) => a.artistId).filter(Boolean).slice(0, 30));
-    return (n.albumList2?.album || []).filter((a) => fav.has(a.artistId)).slice(0, 14);
-  }, (list) => put('#hNewFrom', list.length ? srow('New from artists you love', 'Recently added albums by artists you play a lot', list.map((a) => albumCard(a)).join('')) : ''));
+    // Albums already in Recently added (the 20 newest) are not repeated here.
+    const skip = off('recent') ? 0 : 20;
+    return (n.albumList2?.album || []).slice(skip).filter((a) => fav.has(a.artistId)).slice(0, 14);
+  }, (list) => put('#hNewFrom', list.length >= 4 ? srow('New from artists you love', 'Recently added albums by artists you play a lot', list.map((a) => albumCard(a)).join('')) : ''));
   // Forgotten favorites: favorite albums (or albums of favorite songs) not played in 3+ months.
   row_('forgotten', async () => {
     const r = await nd('getStarred2');
@@ -871,11 +873,11 @@ function smartMusicRows(main, alive) {
         .forEach((x) => list.push({ id: x.albumId, name: x.album, artist: x.artist, coverArt: x.coverArt }));
     }
     return list.sort(() => Math.random() - 0.5).slice(0, 14);
-  }, (list) => put('#hForgot', list.length ? srow('Forgotten favorites', "Favorites you haven't played in 3+ months", list.map((a) => albumCard(a)).join('')) : ''));
+  }, (list) => put('#hForgot', list.length >= 4 ? srow('Forgotten favorites', "Favorites you haven't played in 3+ months", list.map((a) => albumCard(a)).join('')) : ''));
   row_('unplayed', async () => {
     const r = await nd('getAlbumList2', { type: 'random', size: 200 });
     return (r.albumList2?.album || []).filter((a) => !a.playCount).slice(0, 14);
-  }, (list) => put('#hUnplayed', list.length ? srow("Albums you haven't played", 'Still waiting for their first spin', list.map((a) => albumCard(a)).join('')) : ''));
+  }, (list) => put('#hUnplayed', list.length >= 4 ? srow("Albums you haven't played", 'Still waiting for their first spin', list.map((a) => albumCard(a)).join('')) : ''));
 }
 // History cards: a little badge says what kind of thing it is, plus when you played it.
 const HB = { song: MI.note, album: MI.album, artist: MI.artist, playlist: MI.playlist, mix: IC.shuffle, genre: MI.genres };
@@ -1158,7 +1160,7 @@ async function artistsPage(v) {
       if (!alive()) return;
       const score = new Map();
       albums.forEach((a, i) => { if (!a.artistId) return; const v = sort === 'recent' ? -i : (a.playCount || 0); score.set(a.artistId, sort === 'recent' ? Math.max(score.get(a.artistId) ?? -Infinity, v) : (score.get(a.artistId) || 0) + v); });
-      list = [...list].sort((a, b) => (score.get(b.id) ?? -Infinity) - (score.get(a.id) ?? -Infinity) || a.name.localeCompare(b.name));
+      list = [...list].sort((a, b) => (score.get(b.id) ?? -Infinity) - (score.get(a.id) ?? -Infinity) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     }
     const chip = (k, t) => `<a href="#/music/artists${k === 'az' ? '' : '?sort=' + k}" class="${sort === k ? 'on' : ''}">${t}</a>`;
     main.innerHTML = `<div class="mpage-h"><h1 class="disp">Artists</h1><span class="t2 cnt">${plural(list.length, 'artist')}</span>
@@ -1249,7 +1251,7 @@ async function artistPage(v, id) {
     const i = info.artistInfo2 || {}; if (!alive()) return;
     const bio = (i.biography || '').replace(/<a [^>]*>.*?<\/a>\.?/g, '').trim();
     main.querySelector('#arBio').innerHTML = bio ? `<section class="msec"><h2>About</h2><p class="bio">${esc(bio)}</p></section>` : '';
-    const sim = (i.similarArtist || []).filter((s) => s.id);
+    const sim = (i.similarArtist || []).filter((s) => s.id && s.id !== id && (!ar || s.name !== ar.name));
     const simBox = main.querySelector('#arSimilar');
     simBox.innerHTML = sim.length ? row('Fans also like', sim.map(artistCard).join('')) : '';
   });

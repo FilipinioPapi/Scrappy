@@ -75,7 +75,11 @@ function makeCtx() {
         return;
       }
       if (soft) toast(msg, true);
-      else if (my === routeId) viewEl.innerHTML = `<div class="empty">${escapeText(msg)}<br><br><button class="btn secondary" onclick="location.reload()">Try again</button></div>`;
+      else if (my === routeId) {
+        // Inside the page area when there is one, so the side menu stays put.
+        const box = viewEl.querySelector(':scope > * > #tvmain, :scope > * > #mmain') || viewEl;
+        box.innerHTML = `<div class="empty">${escapeText(msg)}<br><br><button class="btn secondary" onclick="location.reload()">Try again</button></div>`;
+      }
     },
   };
 }

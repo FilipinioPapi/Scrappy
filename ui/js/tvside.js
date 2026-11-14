@@ -48,8 +48,9 @@ async function loadViews(shell) {
   try { draw(await api.get('/Users/{userId}/Views')); } catch {}
 }
 function lightNav(shell) {
-  const [, name, arg] = (location.hash.split('?')[0] || '#/home').split('/');
-  markNav(shell, name === 'library' ? decodeURIComponent(arg || '') : ['genres', 'favorites'].includes(name) ? name : name === 'home' || !name ? 'home' : null);
+  const [, name, arg, arg2] = (location.hash.split('?')[0] || '#/home').split('/');
+  // A genre inside a library (#/library/<lib>/<genre>) lights Genres.
+  markNav(shell, name === 'library' && arg2 ? 'genres' : name === 'library' ? decodeURIComponent(arg || '') : ['genres', 'favorites'].includes(name) ? name : name === 'home' || !name ? 'home' : null);
 }
 
 // ---------- Recently watched ----------
@@ -72,7 +73,7 @@ function build(items) {
       out.push({ k: 'mv:' + it.Id, kind: 'movie', t: it.Name, sub: ['Movie', l || (it.UserData?.Played ? 'Watched' : it.ProductionYear || '')].filter(Boolean).join(' · '), img: it.ImageTags?.Primary ? img(it.Id, 'Primary', it.ImageTags.Primary, 120) : '', shape: 'poster', href: `#/item/${encodeURIComponent(it.Id)}`, prog: pct(it), at });
     }
   }
-  for (const c of openedColls()) out.push({ k: 'co:' + c.id, kind: 'collection', onlyFil: true, t: c.name, sub: c.n ? `Collection · ${c.n} titles` : 'Collection', img: c.tag ? img(c.id, 'Primary', c.tag, 120) : '', shape: 'stack', href: `#/item/${encodeURIComponent(c.id)}`, at: c.at });
+  for (const c of openedColls()) out.push({ k: 'co:' + c.id, kind: 'collection', onlyFil: true, t: c.name, sub: c.n ? `Collection · ${c.n} titles` : 'Collection', img: c.tag ? img(c.id, 'Primary', c.tag, 120) : '', boxart: c.id, shape: 'stack', href: `#/item/${encodeURIComponent(c.id)}`, at: c.at });
   return out.sort((a, b) => b.at - a.at);
 }
 const F = 'Fields=PrimaryImageAspectRatio,ProductionYear&EnableImageTypes=Primary&ImageTypeLimit=1';

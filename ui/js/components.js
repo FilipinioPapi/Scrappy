@@ -82,7 +82,7 @@ export function boxSetArt(id, width = 340) {
   return boxFly.get(id).then((k) => (k?.id ? url(k) : ''));
 }
 let boxQueued = false;
-function queueBoxArt() {
+export function queueBoxArt() {
   if (boxQueued) return;
   boxQueued = true;
   setTimeout(() => {
@@ -93,10 +93,11 @@ function queueBoxArt() {
         if (!src || !art.isConnected || art.querySelector('img')) return;
         const im = new Image();
         im.loading = 'lazy'; im.alt = '';
-        im.onload = () => im.classList.add('loaded');
+        im.onload = () => im.classList.add('loaded', 'in');
         im.onerror = () => im.remove();
         im.src = src;
-        art.querySelector('.ph')?.after(im);
+        const ph = art.querySelector('.ph');
+        if (ph) ph.after(im); else art.append(im);
       });
     });
   }, 0);
@@ -137,7 +138,7 @@ export function card(it, opts = {}) {
   // Episodes and Continue Watching: clicking anywhere on the picture plays it.
   const clickPlay = isPlayable(it) && (opts.clickPlay || it.Type === 'Episode');
   return `
-    <a class="card ${shape}${clickPlay ? ' click-play' : ''}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
+    <a class="card ${shape}${clickPlay ? ' click-play' : ''}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}"${it.SeriesId ? ` data-sid="${esc(it.SeriesId)}"` : ''}>
       <div class="art"${boxFill}>
         <div class="ph">${esc(it.Name)}</div>
         ${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}

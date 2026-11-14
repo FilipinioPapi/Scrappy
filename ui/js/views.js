@@ -323,19 +323,28 @@ function loadRows(root, ctx, views) {
 }
 
 // ---------------- Smart rows (approved mock) ----------------
-function smartRow(root, slot, title, sub, items, opts) {
+// Smart rows hide titles already shown in a row above them, and a row with fewer than
+// `min` titles left is hidden (Next Up keeps even one).
+const SMART_MIN = 4;
+function smartRow(root, slot, title, sub, items, opts, min = SMART_MIN) {
   const s = root.querySelector(`[data-row="${slot}"]`);
   if (!s) return;
-  s.innerHTML = items.length
+  const above = new Set();
+  for (const r of root.querySelectorAll('[data-row="resume"], [data-row="nextup"], [data-row="because"], [data-row="unseen"]')) {
+    if (r === s || (s.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+    r.querySelectorAll('.card[data-id]').forEach((c) => { above.add(c.dataset.id); if (c.dataset.sid) above.add(c.dataset.sid); });
+  }
+  const list = items.filter((i) => !above.has(i.Id));
+  s.innerHTML = list.length >= min
     ? `<section class="section"><div class="section-head"><h2>${title}${sub ? `<span class="smart-sub">${esc(sub)}</span>` : ''}</h2></div>
-        <div class="row">${items.map((i) => card(i, opts)).join('')}</div></section>`
+        <div class="row">${list.map((i) => card(i, opts)).join('')}</div></section>`
     : '';
 }
 function smartRows(root, ctx, q) {
   const off = (id) => rowOff('tv', id);
   const lp = lowPriority(ctx.alive);
   const types = 'IncludeItemTypes=Movie,Series&Recursive=true';
-  if (!off('nextup')) load(`/Shows/NextUp?UserId={userId}&Limit=20&${q}`, (d) => smartRow(root, 'nextup', 'Next Up', 'The next episode of every show you\'re watching', d?.Items || [], { shape: 'wide', clickPlay: true }), ctx.alive).catch(() => {});
+  if (!off('nextup')) load(`/Shows/NextUp?UserId={userId}&Limit=20&${q}`, (d) => smartRow(root, 'nextup', 'Next Up', 'The next episode of every show you\'re watching', d?.Items || [], { shape: 'wide', clickPlay: true }, 1), ctx.alive).catch(() => {});
   // Because you watched: the last thing you finished (a show, if it was an episode).
   if (!off('because')) cachedRow('tv', 'because', async () => {
     const d = await api.get(`/Users/{userId}/Items?Recursive=true&IncludeItemTypes=Movie,Episode&Filters=IsPlayed&SortBy=DatePlayed&SortOrder=Descending&Limit=1&Fields=SeriesId`).catch(() => null);
@@ -351,8 +360,11 @@ function smartRows(root, ctx, q) {
     const n = new Map();
     (d?.Items || []).forEach((i) => (i.Genres || []).forEach((g) => n.set(g, (n.get(g) || 0) + 1)));
     const top = [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]; if (!top) return null;
-    const r = await api.get(`/Users/{userId}/Items?${types}&Genres=${encodeURIComponent(top)}&Filters=IsUnplayed&SortBy=Random&Limit=20&${q}`).catch(() => null);
-    return { top, items: r?.Items || [] };
+    const r = await api.get(`/Users/{userId}/Items?${types}&Genres=${encodeURIComponent(top)}&Filters=IsUnplayed&SortBy=Random&Limit=40&${q}`).catch(() => null);
+    // Started titles belong in Continue Watching, not here.
+    const fresh = (i) => !(i.UserData?.PlaybackPositionTicks > 0) && !(i.UserData?.PlayedPercentage > 0)
+      && !(i.Type === 'Series' && i.UserData?.UnplayedItemCount != null && i.RecursiveItemCount && i.UserData.UnplayedItemCount < i.RecursiveItemCount);
+    return { top, items: (r?.Items || []).filter(fresh).slice(0, 20) };
   }, (d) => ctx.alive() && smartRow(root, 'unseen', `${esc(d.top)} you haven't seen`, 'Your most watched genre', d.items, {}), lp).catch(() => {});
   if (!off('again')) load(`/Users/{userId}/Items?${types}&Filters=IsFavorite,IsPlayed&SortBy=DatePlayed&SortOrder=Ascending&Limit=20&${q}`,
     (d) => smartRow(root, 'again', 'Watch again', "Favorites you haven't seen in a while", d?.Items || [], {}), ctx.alive).catch(() => {});
@@ -896,6 +908,10 @@ export async function libraryView(root, ctx, id, genreId = '') {
 
   root.innerHTML = `
     <section class="section">
+      ${genre ? `<div class="crumbs lib-crumbs">
+      <button class="back-btn" type="button" onclick="history.back()" title="Back" aria-label="Back">${BACK_ICON}</button>
+      <div class="crumb-trail"><a href="#/genres">Genres</a><span class="sep">›</span><span class="here">${esc(genre.Name)}</span></div>
+    </div>` : ''}
       <div class="section-head">
         <h2>${genre ? `${esc(genre.Name)} <span class="h-dim">· ${esc(view.Name)}</span>` : esc(view.Name)}</h2><span class="count" id="count"></span>
         <span class="spacer"></span>
@@ -1372,6 +1388,7 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       </section>`;
     const list = el.querySelector('#epList');
     const count = el.querySelector('#epCount');
+    if (many) count.hidden = true; // The season tabs already show each season's count.
     const setCrumb = (name, animate) => {
       if (!crumbEl) return;
       crumbEl.hidden = false;
@@ -1501,8 +1518,10 @@ document.addEventListener('click', (e) => {
 async function renderChildren(el, ctx, folder) {
   await load(`/Users/{userId}/Items?ParentId=${folder.Id}&SortBy=SortName&Fields=${FIELDS}&${IMG_OPTS}&Limit=500`, (data) => {
     const items = data?.Items || [];
+    const kinds = new Set(items.map((i) => i.Type));
+    const head = kinds.size === 1 ? ({ Movie: 'Movies', Series: 'Shows', Episode: 'Episodes', Video: 'Videos' }[[...kinds][0]] || 'In this collection') : 'In this collection';
     el.innerHTML = items.length
-      ? `<section class="section"><div class="section-head"><h2>Items</h2><span class="count">${items.length}</span></div>
+      ? `<section class="section"><div class="section-head"><h2>${head}</h2><span class="count">${items.length}</span></div>
           <div class="grid">${items.map((i) => card(i)).join('')}</div></section>`
       : '';
   }, ctx.alive).catch(() => {});

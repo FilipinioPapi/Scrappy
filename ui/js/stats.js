@@ -84,7 +84,7 @@ const SECS = [
   ['abs', '#/stats/audiobooks', 'Audiobooks', '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>'],
 ];
 const secBar = (kind) => `<nav class="stx-secs">${SECS.map(([k, href, t, d]) => `<a href="${href}" class="${k === kind ? 'on' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>${t}</a>`).join('')}</nav>`;
-const TITLES = { abs: 'Your listening', music: 'Your music', tv: 'Your watching' };
+const TITLES = { abs: 'Your listening', music: 'Your music', tv: 'What you watched' };
 const EVERYONE = { abs: "Everyone's listening", tv: "Everyone's watching" };
 
 // Tags like "Hip-Hop", "Hip Hop" and "hiphop" count as one genre. The most used spelling is shown.
@@ -198,7 +198,7 @@ function html(m) {
   const list = (t, meter) => `<ol class="stx-top">${t.items.map((x, i) => `<li>${x.href ? `<a href="${x.href}">` : '<span class="li">'}<span class="rk">${i + 1}</span><span class="cv ${x.shape || ''}" style="--h:${x.hue || 0}">${x.ini ? `<em>${esc(x.ini)}</em>` : ''}${x.img ? `<img loading="lazy" decoding="async" src="${x.img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span><span class="tx"><b>${esc(x.a)}</b><span>${esc(x.b || '')}</span></span>${meter ? `<span class="meter"><i style="width:${(x.w * 100).toFixed(1)}%"></i></span>` : ''}<span class="val">${esc(x.v)}</span>${x.href ? '</a>' : '</span>'}</li>`).join('')}</ol>`;
   const box = (title, sub, inner, cls = '') => `<section class="stx-box ${cls}"><div class="bh"><b>${esc(title)}</b>${sub ? `<span class="t2">${esc(sub)}</span>` : ''}</div>${inner}</section>`;
   const empty = (t) => `<div class="t2 stx-none">${esc(t)}</div>`;
-  const funBox = (wide) => box('Fun facts', '', `<div class="stx-fun${wide ? ' wide' : ''}">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Watch a bit more and these fill in.')}</div>`);
+  const funBox = (wide) => box('Fun facts', '', `<div class="stx-fun${wide ? ' wide' : ''}">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b>${f.href ? `<a class="stx-flink" href="${f.href}">${esc(f.s)}</a>` : `<span>${esc(f.s || '')}</span>`}</div>`).join('') || empty('Watch a bit more and these fill in.')}</div>`);
   if (m.layout === 'tv') {
     const S = m.shows, F = [['all', 'All'], ['on', 'Watching'], ['up', 'Up to date'], ['fin', 'Finished'], ['off', 'Stopped']].filter(([k]) => k === 'all' || S.counts[k]);
     const shows = S.items.length ? `<div class="stx-sf" role="group">${F.map(([k, l], i) => `<button type="button" data-sf="${k}" class="${i ? '' : 'on'}">${l} ${S.counts[k]}</button>`).join('')}</div>
@@ -209,7 +209,7 @@ function html(m) {
     return [
       `<div class="stx-cards">${m.cards.map(card).join('')}</div>`,
       `<div class="stx-g2">${box('Your shows', 'every show you\u2019ve started, most watched first', shows, 'stx-yshows')}${box(m.top2.title, 'most watched', m.top2.items.length ? list(m.top2, false) : empty(m.top2.none))}</div>`,
-      box(m.eps.title, m.eps.sub, m.eps.items.length ? list(m.eps, false) : empty(m.eps.none), 'stx-reps'),
+      m.eps.items.length ? box(m.eps.title, m.eps.sub, list(m.eps, false), 'stx-reps') : '',
       `<div class="stx-g3">${box('Top genres', m.genres.sub, gens)}${box('Decades you watch', 'by release year', decades, 'stx-dec')}${box(m.faces.title, m.faces.sub, m.faces.items.length ? list(m.faces, false) : empty('Nobody yet.'), 'stx-faces')}</div>`,
       funBox(true).replace('stx-fun wide', 'stx-fun wide five'),
     ].join('');
@@ -223,7 +223,7 @@ function html(m) {
     m.year ? box('Every day this year', 'Hover a square to see what you listened to', yearHtml(m.year), 'stx-yg') : '',
     m.wk ? box(m.wk.title || 'When you watch', m.wk.sub, `<div class="stx-wk"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hl">${h % 3 ? '' : (h % 12 || 12) + (h < 12 ? 'a' : 'p')}</span>`).join('')}${m.wk.rows.map((r) => `<span class="dl">${r.d}</span>${r.c.map((v) => `<i style="${v > 0.04 ? `background:rgba(236,40,46,${(0.15 + v * 0.85).toFixed(2)})` : ''}"></i>`).join('')}`).join('')}</div>`) : '',
     `<div class="stx-g2">${box(m.top.title, m.top.by, m.top.items.length ? list(m.top, true) : empty(m.top.none || 'Nothing yet.'))}${box(m.top2.title, '', m.top2.items.length ? list(m.top2, false) : empty(m.top2.none || 'Nothing yet.'))}</div>`,
-    m.genres === null ? `${box('Fun facts', '', `<div class="stx-fun wide">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Nothing yet.')}</div>`)}` : `<div class="stx-g2">${box('Top genres', m.genres.sub, m.genres.items.length ? `<div class="stx-gen">${m.genres.items.map((g) => `<div class="gr"><span class="nm">${esc(g.n)}</span><div class="tr"><i style="width:${Math.max(14, g.w * 100).toFixed(1)}%;${gStyle(g.n)}">${esc(g.v)}</i></div></div>`).join('')}</div>` : empty('No genres to show yet.'))}${box('Fun facts', '', `<div class="stx-fun">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b><span>${esc(f.s || '')}</span></div>`).join('') || empty('Play a bit more and these fill in.')}</div>`)}</div>`,
+    m.genres === null ? `${box('Fun facts', '', `<div class="stx-fun wide">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b>${f.href ? `<a class="stx-flink" href="${f.href}">${esc(f.s)}</a>` : `<span>${esc(f.s || '')}</span>`}</div>`).join('') || empty('Nothing yet.')}</div>`)}` : `<div class="stx-g2">${box('Top genres', m.genres.sub, m.genres.items.length ? `<div class="stx-gen">${m.genres.items.map((g) => `<div class="gr"><span class="nm">${esc(g.n)}</span><div class="tr"><i style="width:${Math.max(14, g.w * 100).toFixed(1)}%;${gStyle(g.n)}">${esc(g.v)}</i></div></div>`).join('')}</div>` : empty('No genres to show yet.'))}${box('Fun facts', '', `<div class="stx-fun">${m.facts.filter((f) => f.v).map((f) => `<div><span>${esc(f.k)}</span><b>${esc(f.v)}</b>${f.href ? `<a class="stx-flink" href="${f.href}">${esc(f.s)}</a>` : `<span>${esc(f.s || '')}</span>`}</div>`).join('') || empty('Play a bit more and these fill in.')}</div>`)}</div>`,
     m.shelf ? box(m.shelf.title, m.shelf.sub, m.shelf.items.length ? `<div class="row stx-shelf">${m.shelf.items.map((x) => `<a class="stx-mini${x.wide ? ' wide' : ''}" href="${x.href || '#'}"><span class="art" style="--h:${x.hue || 0}"><b>${esc(x.t)}</b>${x.img ? `<img loading="lazy" decoding="async" src="${x.img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</span><span class="m">${esc(x.m || '')}</span></a>`).join('')}</div>` : empty(m.shelf.none || 'Nothing yet.')) : '',
   ].join('');
 }
@@ -297,7 +297,7 @@ function absModel_build({ stats, me, sessions }, p) {
     top2: { title: 'Top authors', items: topA.map((a) => ({ a: a.n, b: plural(a.b.size, 'book'), shape: 'rd', hue: hue(a.n), v: hm(a.t) })) },
     genres: { sub: 'share of your listening', items: topG.map(([g, t]) => ({ n: g, w: t / (topG[0][1] || 1), v: Math.round((t / gTot) * 100) + '%' })) },
     facts: [
-      { k: 'Favourite time', v: favHour(pts), s: 'when you listen most' },
+      { k: 'Favorite time', v: favHour(pts), s: 'when you listen most' },
       { k: 'Busiest day', v: bz.any ? bz.day : '', s: bz.any ? `${hm(bz.avg)} on average` : '' },
       { k: 'Longest session', v: longest ? hm(longest.timeListening) : '', s: longest ? `${longest.displayTitle || ''}, ${new Date(longest.startedAt || longest.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : '' },
       { k: 'Listening sessions', v: ses.length ? n0(ses.length) : '', s: ses.length ? `about ${hm(ses.reduce((a, x) => a + (x.timeListening || 0), 0) / ses.length)} each` : '' },
@@ -486,8 +486,8 @@ function musicModel_build({ songs, log, histErr }, p) {
     facts: [
       { k: 'Most played album', v: albums[0]?.name || '', s: albums[0] ? plural(albums[0].n, 'play') : '' },
       { k: 'On repeat', v: repSong?.ti || '', s: rep ? `${plural(rep[1], 'play')} in one day, ${new Date(rep[0].split('|')[0] + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : '' },
-      { k: 'Favourites', v: fav ? plural(fav, 'song') : '', s: 'hearted songs' },
-      { k: 'Never played', v: never ? plural(never, 'song') : '', s: 'try "is:unplayed" in search' },
+      { k: 'Favorites', v: fav ? plural(fav, 'song') : '', s: 'hearted songs' },
+      { k: 'Never played', v: never ? plural(never, 'song') : '', s: 'Search for unplayed songs', href: '#/search?q=' + encodeURIComponent('in:music type:song is:unplayed') },
     ],
     shelf: { title: 'Top albums', sub: (all ? 'all time' : perWord(p)) + ', by plays', none: 'No albums played yet.', items: albums.slice(0, 20).map((a) => ({ t: a.name, img: ndImg(a.cv, 200), hue: hue(a.name), m: plural(a.n, 'play'), href: `#/music/album/${encodeURIComponent(a.k)}` })) },
   };
@@ -662,7 +662,7 @@ function tvModel_buildAll(pr, p) {
     genres: null,
     facts: [
       { k: 'Busiest day', v: bz.any ? bz.day : '', s: bz.any ? `${hm(bz.avg)} on average` : '' },
-      { k: 'Favourite time', v: favHour(inP.map((x) => [x.t, x.d])), s: 'when the server is busiest' },
+      { k: 'Favorite time', v: favHour(inP.map((x) => [x.t, x.d])), s: 'when the server is busiest' },
       { k: 'Biggest day', v: big ? hm(big[1]) : '', s: big ? new Date(big[0] + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '' },
       { k: 'Different shows', v: shows.length ? n0(shows.length) : '', s: `and ${plural(movies.length, 'movie')}` },
     ],

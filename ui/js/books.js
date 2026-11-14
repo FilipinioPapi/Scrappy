@@ -398,7 +398,7 @@ async function libraryPage(v) {
       return !q || (md(it).title || '').toLowerCase().includes(q) || (md(it).authorName || '').toLowerCase().includes(q);
     });
     const by = { title: (it) => (md(it).titleIgnorePrefix || md(it).title || '').toLowerCase(), author: (it) => (md(it).authorNameLF || md(it).authorName || '').toLowerCase() };
-    if (by[st.sort]) list = list.slice().sort((a, b) => by[st.sort](a).localeCompare(by[st.sort](b)));
+    if (by[st.sort]) list = list.slice().sort((a, b) => by[st.sort](a).localeCompare(by[st.sort](b), undefined, { numeric: true, sensitivity: 'base' }));
     else if (st.sort === 'progress') list = list.slice().sort((a, b) => pctOf(b.id) - pctOf(a.id));
     grid.innerHTML = list.length ? list.map((it) => bookCard(it)).join('') : '<div class="t2 bk-none">No books match.</div>';
     main.querySelector('#bkCount').textContent = plural(list.length, 'book');
@@ -415,7 +415,7 @@ async function authorPage(v, id) {
   const { main, alive } = v;
   await loadProgress(v);
   await absLoad(`/api/authors/${encodeURIComponent(id)}?include=items`, (a) => {
-    const list = (a.libraryItems || []).slice().sort((x, y) => seriesOf(x).localeCompare(seriesOf(y)) || (md(x).publishedYear || '').localeCompare(md(y).publishedYear || ''));
+    const list = (a.libraryItems || []).slice().sort((x, y) => seriesOf(x).localeCompare(seriesOf(y), undefined, { numeric: true, sensitivity: 'base' }) || (md(x).publishedYear || '').localeCompare(md(y).publishedYear || '', undefined, { numeric: true, sensitivity: 'base' }));
     const fin = list.filter((it) => progOf(it.id)?.isFinished).length;
     const img = absAuthorImg(a, 400), bio = plainText(a.description);
     if (noteAuthor.last !== a.id) { noteAuthor.last = a.id; noteAuthor(a); }
@@ -590,9 +590,9 @@ function drawChunks(box, parts, after) {
 
 function sortBooks(l, sort) {
   const r = (it) => (progOf(it.id)?.isFinished ? 2 : pctOf(it.id) > 0 ? 0 : 1);
-  if (sort === 'title') return l.slice().sort((a, b) => titleKey(a).localeCompare(titleKey(b)));
-  if (sort === 'author') return l.slice().sort((a, b) => authorKey(a).localeCompare(authorKey(b)) || seqNum(seriesList(a)[0]?.seq) - seqNum(seriesList(b)[0]?.seq) || titleKey(a).localeCompare(titleKey(b)));
-  if (sort === 'progress') return l.slice().sort((a, b) => r(a) - r(b) || pctOf(b.id) - pctOf(a.id) || titleKey(a).localeCompare(titleKey(b)));
+  if (sort === 'title') return l.slice().sort((a, b) => titleKey(a).localeCompare(titleKey(b), undefined, { numeric: true, sensitivity: 'base' }));
+  if (sort === 'author') return l.slice().sort((a, b) => authorKey(a).localeCompare(authorKey(b), undefined, { numeric: true, sensitivity: 'base' }) || seqNum(seriesList(a)[0]?.seq) - seqNum(seriesList(b)[0]?.seq) || titleKey(a).localeCompare(titleKey(b), undefined, { numeric: true, sensitivity: 'base' }));
+  if (sort === 'progress') return l.slice().sort((a, b) => r(a) - r(b) || pctOf(b.id) - pctOf(a.id) || titleKey(a).localeCompare(titleKey(b), undefined, { numeric: true, sensitivity: 'base' }));
   return l.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
 }
 /** A tall bookshelf: as many covers per shelf as fit, shelves stacked top to bottom. */
@@ -652,8 +652,8 @@ async function authorsPage(v) {
   const byName = new Map();
   all.forEach((it) => authorsOf(it).forEach((n) => { const k = n.toLowerCase(); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(it); }));
   const known = new Map((ar.authors || []).map((a) => [String(a.name).toLowerCase(), a]));
-  const authors = [...byName.entries()].map(([k, list]) => { const a = known.get(k) || { name: authorsOf(list[0]).find((n) => n.toLowerCase() === k) || k }; return { a, list: list.slice().sort((x, y) => seqNum(seriesList(x)[0]?.seq) - seqNum(seriesList(y)[0]?.seq) || titleKey(x).localeCompare(titleKey(y))) }; })
-    .sort((x, y) => nameKey(x.a.name).localeCompare(nameKey(y.a.name)));
+  const authors = [...byName.entries()].map(([k, list]) => { const a = known.get(k) || { name: authorsOf(list[0]).find((n) => n.toLowerCase() === k) || k }; return { a, list: list.slice().sort((x, y) => seqNum(seriesList(x)[0]?.seq) - seqNum(seriesList(y)[0]?.seq) || titleKey(x).localeCompare(titleKey(y), undefined, { numeric: true, sensitivity: 'base' })) }; })
+    .sort((x, y) => nameKey(x.a.name).localeCompare(nameKey(y.a.name), undefined, { numeric: true, sensitivity: 'base' }));
   main.innerHTML = `${pageHead('AUTHORS', 'Find an author')}<div id="bkShelves"></div>`;
   const box = main.querySelector('#bkShelves');
   const draw = (q = '') => {
@@ -675,7 +675,7 @@ function seriesGroups(all) {
   const map = new Map();
   all.forEach((it) => seriesList(it).forEach(({ name, seq }) => { const k = name.toLowerCase(); if (!map.has(k)) map.set(k, { name, books: [] }); map.get(k).books.push({ it, seq }); }));
   return [...map.values()].map((x) => {
-    const list = x.books.sort((a, b) => seqNum(a.seq) - seqNum(b.seq) || titleKey(a.it).localeCompare(titleKey(b.it))).map((b) => b.it);
+    const list = x.books.sort((a, b) => seqNum(a.seq) - seqNum(b.seq) || titleKey(a.it).localeCompare(titleKey(b.it), undefined, { numeric: true, sensitivity: 'base' })).map((b) => b.it);
     return { name: x.name, list, by: md(list[0]).authorName || '', akey: authorKey(list[0]), added: Math.max(...list.map((it) => it.addedAt || 0)) };
   });
 }
@@ -703,8 +703,8 @@ async function seriesPage(v) {
   let shown = [];
   const draw = () => {
     shown = series.filter((x) => !st.q || x.name.toLowerCase().includes(st.q) || x.by.toLowerCase().includes(st.q));
-    if (st.sort === 'author') shown.sort((a, b) => a.akey.localeCompare(b.akey) || a.name.localeCompare(b.name));
-    else if (st.sort === 'name') shown.sort((a, b) => a.name.replace(/^the /i, '').localeCompare(b.name.replace(/^the /i, '')));
+    if (st.sort === 'author') shown.sort((a, b) => a.akey.localeCompare(b.akey, undefined, { numeric: true, sensitivity: 'base' }) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    else if (st.sort === 'name') shown.sort((a, b) => a.name.replace(/^the /i, '').localeCompare(b.name.replace(/^the /i, ''), undefined, { numeric: true, sensitivity: 'base' }));
     else shown.sort((a, b) => b.added - a.added);
     main.querySelector('#bkCount').textContent = plural(shown.length, 'series').replace(/seriess$/, 'series');
     if (st.view === 'grid') { box.className = 'bs-tiles'; drawChunks(box, shown.map(seriesTile)); }
@@ -725,7 +725,7 @@ async function genresPage(v) {
   if (!alive()) return;
   const gmap = new Map();
   all.forEach((it) => (md(it).genres || []).forEach((g) => { if (!gmap.has(g)) gmap.set(g, []); gmap.get(g).push(it); }));
-  const genres = [...gmap.entries()].sort((a, b) => b[1].length - a[1].length).map(([g, l]) => [g, l.slice().sort((a, b) => titleKey(a).localeCompare(titleKey(b)))]);
+  const genres = [...gmap.entries()].sort((a, b) => b[1].length - a[1].length).map(([g, l]) => [g, l.slice().sort((a, b) => titleKey(a).localeCompare(titleKey(b), undefined, { numeric: true, sensitivity: 'base' }))]);
   main.innerHTML = `${pageHead('GENRES', 'Find a genre')}<div id="bkShelves"></div>`;
   const box = main.querySelector('#bkShelves');
   const draw = (q = '') => {

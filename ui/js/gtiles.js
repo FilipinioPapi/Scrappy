@@ -72,7 +72,7 @@ export function fanTile(g, list, href, cover, title) {
   return `<a class="gfan" href="${href}" style="${vars(look.c)}" data-genre="${esc(g)}"${look.fromCovers ? ' data-learn="1"' : ''}>
     <span class="gf-sym" aria-hidden="true">${look.sym}</span>
     ${pics.map((it, i) => `<span class="gf-cv" style="--i:${i};--n:${pics.length}"><b>${esc(title(it) || '')}</b><img src="${cover(it, 240)}" alt="" crossorigin="anonymous" onload="this.classList.add('in')" onerror="this.remove()"></span>`).join('')}
-    <span class="gf-nm">${esc(g)}</span><span class="gf-ct">${list.length} ${list.length === 1 ? 'book' : 'books'}</span></a>`;
+    <span class="gf-tx"><span class="gf-nm">${esc(g)}</span><span class="gf-ct">${list.length} ${list.length === 1 ? 'book' : 'books'}</span></span></a>`;
 }
 
 /** The big banner at the top of a genre page. `inner` is the title, line and buttons. */

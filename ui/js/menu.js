@@ -94,6 +94,8 @@ document.body.appendChild(menu);
 function closeMenu() { menu.hidden = true; }
 document.addEventListener('click', (e) => { if (!menu.contains(e.target)) closeMenu(); });
 window.addEventListener('blur', closeMenu);
+// Leaving the page (Backspace, mouse back button) closes it too.
+window.addEventListener('hashchange', closeMenu);
 window.addEventListener('scroll', closeMenu, true);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
@@ -128,6 +130,7 @@ async function openMenu(id, x, y, opts = {}) {
   const { cardEl = null, inResume = false, mode = 'full' } = opts;
   menu.dataset.mode = mode;
   const path = `/Users/{userId}/Items/${id}`;
+  const at = location.hash; const moved = () => location.hash !== at; // left the page while loading
   // Show straight away from the saved copy, then check with the server.
   let it = await api.cached(path);
   if (!it) {
@@ -136,6 +139,7 @@ async function openMenu(id, x, y, opts = {}) {
     try { it = await api.get(path); } catch (e) { closeMenu(); toast(String(e), true); return; }
   }
   const pol = await getPolicy();
+  if (moved()) { closeMenu(); return; }
   render(it, inResume, pol, cardEl, mode);
   place(x, y);
   api.get(path).then((fresh) => { if (!menu.hidden && menu.dataset.id === id) render(fresh, inResume, pol, cardEl, mode); }).catch(() => {});
@@ -184,7 +188,7 @@ function render(it, inResume, pol, cardEl, mode = 'full') {
     // Details page cog (Play, watched and favorite are already on screen) and
     // right-click on a season tab: no header, just what's useful there.
     const top = mode === 'season'
-      ? row('playSeason', ICON.play, `Play ${esc(it.Name || 'season')}`, 'primary') + row('played', ICON.check, ud.Played ? 'Mark Unwatched' : 'Mark Watched', ud.Played ? 'on' : '')
+      ? row('playSeason', ICON.play, `Play ${esc(it.Name || 'season')}`, 'primary') + row('played', ICON.check, ud.Played ? 'Mark unwatched' : 'Mark watched', ud.Played ? 'on' : '')
       : '';
     const tools = (canEdit ? row('meta', ICON.pencil, 'Edit metadata…') + row('images', ICON.image, 'Edit images…') : '')
       + (canSubs && hasVideo ? row('subs', ICON.cc, 'Edit subtitles…') : '')
@@ -202,7 +206,7 @@ function render(it, inResume, pol, cardEl, mode = 'full') {
     ${playable ? (again ? row('restart', ICON.play, 'Play again', 'primary') : row('play', ICON.play, resumable ? 'Resume' : 'Play', 'primary')) : ''}
     ${resumable ? row('restart', ICON.restart, 'Play from start') : ''}
     ${row('fav', ICON.heart(ud.IsFavorite), ud.IsFavorite ? 'Remove from Favorites' : 'Add to Favorites', ud.IsFavorite ? 'on' : '')}
-    ${row('played', ICON.check, ud.Played ? 'Mark Unwatched' : 'Mark Watched', ud.Played ? 'on' : '')}
+    ${row('played', ICON.check, ud.Played ? 'Mark unwatched' : 'Mark watched', ud.Played ? 'on' : '')}
     ${inResume ? row('unresume', ICON.remove, 'Remove from Continue Watching') : ''}
     ${manage ? '<div class="ctx-sep"></div><div class="ctx-label">MANAGE</div>' : ''}
     ${canEdit ? row('meta', ICON.pencil, 'Edit metadata…') : ''}

@@ -310,6 +310,8 @@ export function mountSearch() {
   box.querySelector('.tadv').addEventListener('click', (e) => { e.preventDefault(); input.focus(); advanced(); });
   document.addEventListener('pointerdown', (e) => { if (!box.contains(e.target)) hide(); });
   window.addEventListener('hashchange', hide);
+  // Leaving the search results page (or opening a result) empties the box.
+  window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/search') && document.activeElement !== input) input.value = ''; });
   window.addEventListener('keydown', (e) => {
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') || (e.key === '/' && !typing)) {
@@ -329,7 +331,7 @@ export function mountSearch() {
       <label>Type<select name="type">${opt([['', 'Anything'], ['song', 'Songs'], ['album', 'Albums'], ['artist', 'Artists'], ['playlist', 'Playlists'], ['movie', 'Movies'], ['show', 'Shows'], ['episode', 'Episodes'], ['person', 'People'], ['book', 'Audiobooks'], ['author', 'Authors']], f.type)}</select></label></div>
       <div class="sadv-row"><label>Genre<input name="genre" value="${esc(f.genre || '')}" placeholder="e.g. rock"></label>
       <label>Year from<input name="y1" type="number" min="1900" max="2100" value="${f.y1 || ''}"></label><label>to<input name="y2" type="number" min="1900" max="2100" value="${f.y2 || ''}"></label></div>
-      <div class="sadv-row checks"><label class="ck"><input type="checkbox" name="fav" ${f.fav ? 'checked' : ''}>Favorites only</label><label class="ck"><input type="checkbox" name="unplayed" ${f.unplayed ? 'checked' : ''}>Not played yet</label></div>
+      <div class="sadv-row checks"><label class="sck"><input type="checkbox" name="fav" ${f.fav ? 'checked' : ''}>Favorites only</label><label class="sck"><input type="checkbox" name="unplayed" ${f.unplayed ? 'checked' : ''}>Not played yet</label></div>
       <div class="sadv-btns"><button type="button" class="btn secondary sm" data-advx>Cancel</button><button type="submit" class="btn sm">Search</button></div></form>`);
     const form = drop.querySelector('#sadv');
     form.querySelector('[data-advx]').onclick = () => { advOpen = false; run(); };

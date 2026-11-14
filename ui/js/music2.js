@@ -128,7 +128,7 @@ EXTRA.genre = async (v, name) => {
     ${essentials.length ? `<section class="msec"><h2>Essentials</h2><div class="ess" id="gEss">${essentials.map((s, i) => `<div class="srow ess-it" data-i="${i}" data-id="${esc(s.id)}">${coverHtml(s.coverArt, '', 100, 'sm')}<span class="c-n" style="display:none"></span><span class="tt"><span class="t1">${esc(s.title)}</span><span class="t2">${esc(s.artist || '')}</span></span><span class="t2 c-l">${fmt(s.duration)}</span></div>`).join('')}</div></section>` : ''}
     ${artists.length ? row('Top artists', artists.slice(0, 16).map((a) => artistCard({ ...a, albumCount: null })).join('')) : ''}
     ${Object.keys(decades).sort((a, b) => b - a).map((d) => row(`Albums from the ${String(d).slice(2)}s`.replace('the 00s', 'the 2000s'), decades[d].map((a) => albumCard(a)).join(''))).join('')}
-    ${row('Recently added', albums.slice().sort((a, b) => (b.created || '').localeCompare(a.created || '')).slice(0, 16).map((a) => albumCard(a)).join(''))}
+    ${row('Recently added', albums.slice().sort((a, b) => (b.created || '').localeCompare(a.created || '', undefined, { numeric: true, sensitivity: 'base' })).slice(0, 16).map((a) => albumCard(a)).join(''))}
     <div id="gRel"></div>`;
   wireCards(main);
   main.querySelector('#gPlay').onclick = () => playSongs(songs, 0, { from, shuffle: true });
@@ -174,7 +174,7 @@ EXTRA.playlists = async (v) => {
     const years = all.filter((p) => yearOf(p)).sort((a, b) => yearOf(b) - yearOf(a));
     const draw = () => {
       const pins = lib.hpins || [];
-      const sorted = lists.slice().sort((a, b) => sort === 'az' ? a.name.localeCompare(b.name) : sort === 'songs' ? b.songCount - a.songCount : (b.changed || '').localeCompare(a.changed || ''));
+      const sorted = lists.slice().sort((a, b) => sort === 'az' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : sort === 'songs' ? b.songCount - a.songCount : (b.changed || '').localeCompare(a.changed || '', undefined, { numeric: true, sensitivity: 'base' }));
       sorted.sort((a, b) => (pins.includes(b.id) ? 1 : 0) - (pins.includes(a.id) ? 1 : 0) || (pins.includes(a.id) ? pins.indexOf(a.id) - pins.indexOf(b.id) : 0));
       const before = new Map(); main.querySelectorAll('#plGrid [data-pk]').forEach((el) => before.set(el.dataset.pk, el.getBoundingClientRect()));
       main.innerHTML = `<div class="mpage-h"><div><h1 class="disp">Playlists</h1><div class="t2 cnt">${plural(lists.length, 'playlist')}</div></div>
