@@ -196,6 +196,17 @@ function go(el) {
   if (hero || el.closest('.tvd .detail-main')) { glideTo(window, '', 0); return; }
   // Settings' left list stays put while you move through it (it all fits on the screen).
   if (el.closest('.set-side')) { const r = el.getBoundingClientRect(); if (r.top < 0 || r.bottom > viewH()) glideTo(window, '', pageTarget(el, 'nearest')); return; }
+  // A show's seasons and episode row: while they fit on the opening screen the page stays at the
+  // top, with the artwork, Play and the other buttons still in view. It only moves on once you
+  // go down past the episodes.
+  const eps = el.closest('.tvs-eps');
+  if (eps) {
+    const bottom = eps.getBoundingClientRect().bottom + scrollY;
+    if (bottom <= viewH() - 4) {
+      if (row) { warm(row); const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2; glideTo(row, 'scrollLeft', Math.max(0, Math.min(left, row.scrollWidth - row.clientWidth))); }
+      glideTo(window, '', 0); return;
+    }
+  }
   if (!row) { glideTo(window, '', pageTarget(el, 'center')); return; }
   warm(row);
   const left = el.offsetLeft - row.offsetLeft - (row.clientWidth - el.offsetWidth) / 2;
