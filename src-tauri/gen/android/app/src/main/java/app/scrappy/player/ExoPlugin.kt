@@ -133,6 +133,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
       PlayerLog.add("SOUND JAM (ready but not moving at ${pos / 1000}s): new player, try ${kicks - 1}")
       val item = lastItem
       if (item != null) {
+        plainSound = true
         drop(p)
         val np = ensure()
         np.setMediaItem(item, pos)
@@ -185,26 +186,47 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  // Set once the sound has jammed: from then on Dolby/DTS is decoded in the app, not sent untouched.
+  private var plainSound = false
+  private val ffmpegSound by lazy { androidx.media3.decoder.ffmpeg.FfmpegLibrary.isAvailable() }
+  private val CHIP_SOUND = setOf(
+    MimeTypes.AUDIO_AC3, MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_E_AC3_JOC, MimeTypes.AUDIO_AC4,
+    MimeTypes.AUDIO_DTS, MimeTypes.AUDIO_DTS_HD, MimeTypes.AUDIO_DTS_EXPRESS, MimeTypes.AUDIO_TRUEHD
+  )
+
   private fun ensure(): ExoPlayer {
     player?.let { return it }
     // The TV's decoders are driven the plain, older way. The newer way (on by default from
     // Android 12) can leave a TV chip's decoder stuck after a jump in the film.
-    val renderers = DefaultRenderersFactory(activity)
+    // Sound, in order of preference:
+    // 1. A soundbar or receiver that understands Dolby or DTS gets it untouched (surround, Atmos).
+    // 2. Otherwise Scrappy decodes Dolby, DTS and TrueHD itself (FFmpeg) and sends plain sound.
+    // The TV chip's own Dolby/DTS decoder is never used: the TV's log showed it stuck
+    // ("outputThreadLoop: Maybe stuck") with the TV's whole sound system jammed behind it.
+    // After a sound jam (plainSound), nothing is sent untouched for the rest of the session.
+    val plain = plainSound
+    val renderers = object : DefaultRenderersFactory(activity) {
+      override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink? {
+        if (!plain) return super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
+        @Suppress("DEPRECATION")
+        return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder()
+          .setAudioCapabilities(androidx.media3.exoplayer.audio.AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
+          .setEnableFloatOutput(enableFloatOutput)
+          .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+          .build()
+      }
+    }
       .setEnableDecoderFallback(true)
       .forceDisableMediaCodecAsynchronousQueueing()
-      // Dolby, DTS and TrueHD sound is decoded inside the app (FFmpeg) and sent to the TV as plain
-      // sound. The TV's log showed its own sound decoder and sound output jammed for hours after
-      // skipping in a film with that kind of sound, and only a TV restart cleared it.
-      .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-      // Sound is decoded by Android's own decoders first. The TV chip's sound decoder was found
-      // stuck in the TV's log during the freezes ("outputThreadLoop: Maybe stuck"), jamming the
-      // TV's sound output and holding the picture still with it. The chip's decoder stays as a
-      // fallback for formats Android can't decode itself.
+      .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
       .setMediaCodecSelector(MediaCodecSelector { mimeType, secure, tunneling ->
         val all = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling)
         if (!mimeType.startsWith("audio/")) all
+        // No chip decoder for these: untouched to the soundbar, or decoded in the app.
+        else if (ffmpegSound && mimeType in CHIP_SOUND) emptyList()
         else all.sortedBy { if (it.softwareOnly || it.name.startsWith("c2.android.") || it.name.startsWith("OMX.google.")) 0 else 1 }
       })
+    PlayerLog.add(if (plain) "sound: decoded in the app only (after a jam)" else "sound: untouched to a soundbar when it can take it")
     videoDecoder = ""; audioDecoder = ""; dropped = 0
     val p = ExoPlayer.Builder(activity, renderers)
       .setSeekBackIncrementMs(10_000)
