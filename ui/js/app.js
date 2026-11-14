@@ -115,6 +115,7 @@ let ghost = null, ghostObs = null, ghostTimer = 0;
 function dropGhost() {
   clearTimeout(ghostTimer); ghostObs?.disconnect(); ghostObs = null;
   const g = ghost; ghost = null;
+  if (g && window.__perf && !window.__perf.shown) window.__perf.shown = Math.round(performance.now() - window.__perf.t0);
   if (g) { g.classList.add('out'); setTimeout(() => { fillKept(g._entry); g.remove(); }, 180); }
 }
 // A kept page (Google TV) is itself the picture that stays up while the next page draws; afterwards it goes on the shelf.
@@ -163,7 +164,11 @@ function navKey() {
   try { history.replaceState({ ...(st || {}), sk: k }, ''); } catch {}
   return { k, seen: false };
 }
-window.addEventListener('scroll', () => { if (scrollKey) SCROLL.set(scrollKey, window.scrollY); }, { passive: true });
+// (Noted a moment after the page stops moving, and again just before leaving it: reading the
+// position on every frame of a scroll made a slow TV recalculate the page each time.)
+let scrollNoteT = 0;
+const noteScroll = () => { if (scrollKey) SCROLL.set(scrollKey, window.scrollY); };
+window.addEventListener('scroll', () => { clearTimeout(scrollNoteT); scrollNoteT = setTimeout(noteScroll, 140); }, { passive: true });
 function restoreScroll(y) {
   const run = ++restoreRun, t0 = performance.now();
   const stop = () => { restoreRun++; window.removeEventListener('wheel', stop); window.removeEventListener('keydown', stop); };
@@ -220,9 +225,10 @@ function takeKept(nk, hash) {
 async function route(opts = {}) {
   const t0 = performance.now(), h = location.hash || '#/home';
   try { return await routeNow(opts); }
-  finally { if (ON_TV) requestAnimationFrame(() => requestAnimationFrame(() => console.log(`[perf] ${h} drawn in ${Math.round(performance.now() - t0)} ms`))); }
+  finally { if (ON_TV) { window.__perf = { h, t0, code: Math.round(performance.now() - t0) }; requestAnimationFrame(() => requestAnimationFrame(() => { if (window.__perf?.t0 === t0) window.__perf.drawn = Math.round(performance.now() - t0); })); } }
 }
 async function routeNow(opts = {}) {
+  clearTimeout(scrollNoteT); noteScroll();
   // Remember where you came from, so Back buttons on pages can return there.
   if (location.hash !== window.__curHash) { window.__prevHash = window.__curHash || ''; window.__curHash = location.hash; }
   if (!session) await refreshSession();

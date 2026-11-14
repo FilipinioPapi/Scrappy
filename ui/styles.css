@@ -3671,3 +3671,14 @@ html.tv #tvrail .tr-i { height: clamp(34px, calc((100vh / var(--tvzoom, 1) - 170
    so a slow TV spends its time moving the page instead of fading things. */
 html.tv.tv-fast img { transition: none !important; }
 html.tv.tv-fast .card .art { transition: none !important; }
+/* Google TV: rows that are off the screen are not worked on at all (Home can hold 700+ posters).
+   Each keeps its height, so nothing moves when it comes back into view. */
+html.tv .tvmain > [data-row]:not([data-row="hero"]), html.tv .genre-row { content-visibility: auto; contain-intrinsic-size: auto 358px; overflow-clip-margin: 28px; }
+/* Genre tiles: the two posters fade in together once they have arrived. */
+.tvfan { transition: opacity .28s ease; }
+.tvfan.w { opacity: 0; }
+html.tv .tvgen { contain: layout paint style; }
+/* Google TV: the moment you press OK the old screen dims, so the press is answered at once
+   even when the next screen takes a moment to arrive. */
+@keyframes tvLeave { to { opacity: .4; } }
+html.tv .view-ghost > div { animation: tvLeave .22s ease-out .04s forwards; }

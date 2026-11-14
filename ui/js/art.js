@@ -23,9 +23,38 @@ function hold(src) {
   const had = held.get(src);
   if (had) { held.delete(src); held.set(src, had); return; }
   const im = new Image(); im.decoding = 'async'; im.src = src; held.set(src, im);
-  if (held.size > 320) held.delete(held.keys().next().value);
+  // (Kept small: every one is a decoded picture in the TV's scarce memory, and the TV keeps its own copies on disk now.)
+  if (held.size > 90) held.delete(held.keys().next().value);
 }
 document.addEventListener('load', (e) => { const t = e.target; if (t && t.tagName === 'IMG' && t.naturalWidth) { const src = t.currentSrc || t.src; seen.add(src); if (t.naturalWidth <= 800) hold(src); } }, true);
+/** Fetch a picture ahead of time (TV), so the page that uses it can show it at once. */
+export function preload(src) {
+  if (!TV || !src || seen.has(src)) return;
+  const im = new Image(); im.decoding = 'async';
+  im.onload = () => { seen.add(im.src); if (im.naturalWidth <= 800) hold(im.src); };
+  im.src = src;
+}
+// TV: after a fast scroll, pictures that were asked for on the way past but are now far off the
+// screen are put back to sleep, so the ones you are actually looking at are fetched first.
+if (TV) {
+  const wake = new IntersectionObserver((es) => { for (const en of es) if (en.isIntersecting) { const im = en.target; wake.unobserve(im); if (im.dataset.lz) { im.src = im.dataset.lz; delete im.dataset.lz; } } }, { rootMargin: '500px' });
+  let cullT = 0;
+  const cull = () => {
+    const H = innerHeight;
+    for (const im of view.querySelectorAll('.grid img[src], .row img[src]')) {
+      if (im.complete || im.dataset.pre) continue;
+      const box = im.closest('.card') || im; const r = box.getBoundingClientRect();
+      if (r.height && (r.bottom < -1.2 * H || r.top > 2.2 * H)) { im.dataset.lz = im.getAttribute('src'); im.removeAttribute('src'); wake.observe(im); }
+    }
+  };
+  // While a direction is held this runs a few times a second, and once more when you stop.
+  let fastI = 0;
+  new MutationObserver(() => {
+    const fast = document.documentElement.classList.contains('tv-fast');
+    if (fast && !fastI) fastI = setInterval(cull, 320);
+    else if (!fast && fastI) { clearInterval(fastI); fastI = 0; clearTimeout(cullT); cullT = setTimeout(cull, 60); }
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}
 // Clearing the picture cache (Settings) or signing out: those pictures have to load again.
 export const forgetArt = () => { seen.clear(); held.clear(); };
 window.addEventListener('scrappy:rowcache-clear', forgetArt);

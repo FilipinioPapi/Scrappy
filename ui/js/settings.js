@@ -218,7 +218,19 @@ export async function settingsPage(root, ctx, secId) {
     navEl.addEventListener('focusin', (e) => {
       const a = e.target.closest('a'); clearTimeout(t);
       if (!a || a.classList.contains('on')) return;
-      t = setTimeout(() => { if (ctx.alive() && document.activeElement === a) location.replace(a.getAttribute('href')); }, 160);
+      // The section is swapped in place (no page change), so moving down the list stays light.
+      t = setTimeout(() => {
+        if (!ctx.alive() || document.activeElement !== a) return;
+        const id = a.getAttribute('href').split('/').pop(); const to = SECTIONS.find((x) => x.id === id);
+        if (!to || to.admin) { location.replace(a.getAttribute('href')); return; }
+        secId = id;
+        navEl.querySelectorAll('a').forEach((x) => x.classList.toggle('on', x === a));
+        const body = root.querySelector('.set-body');
+        body.querySelector('.kicker').textContent = KICKER[id] || '';
+        body.querySelector('.set-title').textContent = to.name;
+        draw();
+        try { history.replaceState(history.state, '', a.getAttribute('href')); window.__curHash = location.hash; } catch {}
+      }, 90);
     });
     navEl.addEventListener('click', (e) => {
       const a = e.target.closest('a'); if (!a || !a.classList.contains('on')) return;

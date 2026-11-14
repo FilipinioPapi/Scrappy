@@ -93,7 +93,7 @@ menu.className = 'ctx-menu';
 menu.hidden = true;
 document.body.appendChild(menu);
 
-function closeMenu() { menu.hidden = true; }
+function closeMenu() { if (!menu.hidden) menu.hidden = true; }
 document.addEventListener('click', (e) => { if (!menu.contains(e.target)) closeMenu(); });
 window.addEventListener('blur', closeMenu);
 window.addEventListener('scroll', closeMenu, true);

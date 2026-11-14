@@ -45,16 +45,35 @@ function candidates(scope, near) {
   const all = [...scope.querySelectorAll(FOCUSABLE)];
   if (!near) return all.filter((el) => !el.matches(SKIP) && shown(el));
   const H = innerHeight;
-  return all.filter((el) => { const r = el.getBoundingClientRect(); return r.bottom > -1.5 * H && r.top < 2.5 * H && !el.matches(SKIP) && shown(el); });
+  // Whole rows that are far away are ruled out by one measurement of the row, not one per poster
+  // (and rows the TV is not drawing at all are never woken up for it).
+  const far = new Map();
+  const isFar = (el) => { const box = el.closest('.genre-row, [data-row], .section'); if (!box) return false; let f = far.get(box); if (f === undefined) { const r = box.getBoundingClientRect(); f = r.bottom < -1.5 * H || r.top > 2.5 * H; far.set(box, f); } return f; };
+  return all.filter((el) => { if (isFar(el)) return false; const r = el.getBoundingClientRect(); return r.bottom > -1.5 * H && r.top < 2.5 * H && !el.matches(SKIP) && shown(el); });
 }
 // One step inside a grid of posters or along a row, worked out from the neighbours alone.
 let lastArrow = 0, fastT = 0;
+let pend = null, pendRaf = 0;
+function flushPend() { cancelAnimationFrame(pendRaf); pendRaf = 0; const el = pend; pend = null; if (el && el.isConnected) go(el); }
 function quick(cur, k) {
   const par = cur.parentElement; if (!par || !cur.classList.contains('card')) return null;
   if (par.classList.contains('row') || par.classList.contains('mrow')) {
-    if (k !== 'ArrowLeft' && k !== 'ArrowRight') return null;
-    const sib = k === 'ArrowRight' ? cur.nextElementSibling : cur.previousElementSibling;
-    return sib && sib.classList.contains('card') && sib.offsetWidth > 2 ? sib : null;
+    if (k === 'ArrowLeft' || k === 'ArrowRight') {
+      const sib = k === 'ArrowRight' ? cur.nextElementSibling : cur.previousElementSibling;
+      return sib && sib.classList.contains('card') && sib.offsetWidth > 2 ? sib : null;
+    }
+    // Up and Down between plain rows of posters (a title and a row, nothing else to stop on):
+    // straight to the row above or below, at its start or under where you are.
+    const box = cur.closest('.genre-row') || cur.closest('[data-row]');
+    const sib = box && (k === 'ArrowDown' ? box.nextElementSibling : box.previousElementSibling);
+    if (!sib || !sib.matches('.genre-row, [data-row]') || sib.dataset.row === 'hero' || sib.querySelector('.genre-row') || !sib.offsetHeight) return null;
+    const row = sib.querySelector('.row, .mrow'); if (!row || row.closest('.genre-row, [data-row]') !== sib) return null;
+    const cards = row.children; if (!cards.length || !cards[0].classList.contains('card')) return null;
+    for (const f of sib.querySelectorAll(FOCUSABLE)) if (f.parentElement !== row && !f.matches(SKIP)) return null;
+    if (row.scrollLeft < 4) return cards[0];
+    const x = cur.getBoundingClientRect(); const cx = x.left + x.width / 2; let best = null, bd = Infinity;
+    for (const c of cards) { const r = c.getBoundingClientRect(); const d = Math.abs(r.left + r.width / 2 - cx); if (d < bd) { bd = d; best = c; } }
+    return best;
   }
   if (!par.classList.contains('grid')) return null;
   const kids = par.children, n = kids.length;
@@ -233,11 +252,18 @@ addEventListener('keydown', (e) => {
   e.preventDefault();
   // Fast lanes (no measuring of the whole page): inside a poster grid, and along a row of posters.
   // These keep holding a direction smooth however long the list has grown.
-  if (cur && cur.classList.contains('card') && !cur.closest(LAYERS) && document.getElementById('view')?.contains(cur)) {
-    const q = quick(cur, k); if (q) { go(q); return; }
+  // A held button on a slow TV can deliver presses faster than the screen can follow. Presses that
+  // are already old when they arrive are let go, so the screen never trails your finger by seconds.
+  if (e.repeat && e.isTrusted && performance.now() - e.timeStamp > 260) return;
+  // Several presses inside one frame only move the target; the highlight and the page move once.
+  const from = pend && pend.isConnected ? pend : cur;
+  if (from && from.classList.contains('card') && !from.closest(LAYERS) && document.getElementById('view')?.contains(from)) {
+    const q = quick(from, k);
+    if (q) { pend = q; if (!pendRaf) pendRaf = requestAnimationFrame(flushPend); return; }
     // The bottom of a grid that is still loading more: wait there instead of wandering off to the A to Z strip.
-    if ((k === 'ArrowDown' || k === 'ArrowUp') && cur.parentElement?.classList.contains('grid') && cur.parentElement.dataset.more === '1') return;
+    if ((k === 'ArrowDown' || k === 'ArrowUp') && from.parentElement?.classList.contains('grid') && from.parentElement.dataset.more === '1') return;
   }
+  if (pend) { flushPend(); return; }
   const scope = scopeFor(cur);
   if (!cur || !scope.contains(cur)) { const f = first(scope); if (f) go(f); return; }
   // The side rail: Up/Down move inside it, Right goes back to where you were on the page.
@@ -248,6 +274,9 @@ addEventListener('keydown', (e) => {
     if (next) next.focus({ preventScroll: true });
     return;
   }
+  // Settings: Up and Down in the list of sections stay in the list (the bottom is the bottom; it never
+  // hops across to a button in the section).
+  if ((k === 'ArrowDown' || k === 'ArrowUp') && cur.closest('.set-side')) { const side = cur.closest('.set-side'); const n = nearest(cur, k, candidates(side)); if (n) go(n); return; }
   // Settings: Right from the list of sections goes into the section, Left comes back to it.
   if (k === 'ArrowRight' && cur.closest('.set-side')) { const f = candidates(scope).find((el) => el.closest('.set-body')); if (f) go(f); return; }
   if (k === 'ArrowLeft' && cur.closest('.set-body')) { const f = nearest(cur, k, candidates(scope).filter((el) => el.closest('.set-body')), true) || document.querySelector('.set-side a.on'); if (f) { go(f); return; } }
@@ -299,7 +328,7 @@ addEventListener('focusin', (e) => {
   clearTimeout(warmT);
   const m = e.target.closest?.('a.card[href*="#/item/"]')?.getAttribute('href').match(/#\/item\/([^/?]+)/);
   if (!m || root.classList.contains('playing')) return;
-  warmT = setTimeout(() => import('./views.js').then((v) => v.warmItem(decodeURIComponent(m[1]))).catch(() => {}), 220);
+  warmT = setTimeout(() => import('./views.js').then((v) => v.warmItem(decodeURIComponent(m[1]))).catch(() => {}), 130);
 });
 // And once Home has settled, the libraries behind the side bar are fetched quietly.
 let warmedLibs = false;
@@ -307,7 +336,7 @@ addEventListener('scrappy:ready', () => { if (warmedLibs) return; warmedLibs = t
 
 // If the highlighted thing gets redrawn (the home banner changes picture, a row
 // refreshes), the highlight stays in the same spot instead of jumping to the top.
-const BOX = '[data-row], section, .maside, header, .menu, [role=dialog]';
+const BOX = '.genre-row, [data-row], section, .maside, header, .menu, [role=dialog]';
 let last = null;
 let lastT = 0;
 addEventListener('focusin', (e) => {
@@ -315,6 +344,12 @@ addEventListener('focusin', (e) => {
   const el = e.target; clearTimeout(lastT);
   lastT = setTimeout(() => {
     if (!el.isConnected || document.activeElement !== el) return;
+    // Resting in a grid: the posters a few lines ahead (and just behind) are fetched now, before you get there.
+    const par = el.parentElement;
+    if (par?.classList.contains('grid') && el.classList.contains('card')) {
+      const kids = par.children, cols = par._tvc || 7; let i = el._tvi; if (kids[i] !== el) i = Array.prototype.indexOf.call(kids, el);
+      for (let j = Math.max(0, i - 2 * cols), end = Math.min(kids.length, i + 6 * cols); j < end; j++) { const im = kids[j].querySelector('img[loading="lazy"]'); if (im) im.loading = 'eager'; }
+    }
     const box = el.closest?.(BOX);
     last = box ? { box, sel: box.matches('[data-row]') ? `[data-row="${box.dataset.row}"]` : null, idx: candidates(box).indexOf(el) } : null;
   }, 160);
@@ -411,3 +446,28 @@ window.__tvBack = () => {
   if (/^#\/(genres|favorites|search|settings)\b/.test(h) || /^#\/library\/[^/]+$/.test(h)) { window.__tvHomeBack = 1; location.hash = '#/home'; return true; }
   history.back(); return true;
 };
+
+// ---------- Speed readout (for testing) ----------
+// A keyboard's F9 (never sent by a TV remote) shows a small readout in the corner: how long the
+// last screen took, and how smooth the last few seconds were. Used to time the app on real TVs.
+{
+  let box = null, raf = 0, last = 0, gaps = [];
+  const tick = (now) => {
+    if (last) gaps.push([now, now - last]); last = now;
+    while (gaps.length && now - gaps[0][0] > 4000) gaps.shift();
+    raf = requestAnimationFrame(tick);
+  };
+  const paint = () => {
+    if (!box) return;
+    const p = window.__perf || {}; const g = gaps.map((x) => x[1]); const worst = Math.round(Math.max(0, ...g));
+    const slow = g.filter((x) => x > 50).length, fps = g.length ? Math.round(1000 / (g.reduce((a, b) => a + b, 0) / g.length)) : 0;
+    box.textContent = `${p.h || ''}  code ${p.code ?? '-'}  drawn ${p.drawn ?? '-'}  shown ${p.shown ?? '-'} ms | 4s: ${fps} fps, worst ${worst} ms, slow ${slow} | imgs waiting ${[...document.images].filter((i) => i.getAttribute('src') && !i.complete).length} | nodes ${document.getElementsByTagName('*').length}`;
+  };
+  const set = (on) => {
+    try { localStorage.setItem('tvPerf', on ? '1' : ''); } catch {}
+    if (on && !box) { box = document.createElement('div'); box.style.cssText = 'position:fixed;left:0;bottom:0;z-index:99999;background:#000;color:#0f0;font:600 22px monospace;padding:6px 12px;pointer-events:none;white-space:nowrap'; document.body.appendChild(box); raf = requestAnimationFrame(tick); box._t = setInterval(paint, 250); }
+    else if (!on && box) { clearInterval(box._t); cancelAnimationFrame(raf); box.remove(); box = null; last = 0; gaps = []; }
+  };
+  addEventListener('keydown', (e) => { if (e.key === 'F9') set(!box); });
+  try { if (localStorage.getItem('tvPerf')) set(true); } catch {}
+}

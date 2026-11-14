@@ -1,5 +1,5 @@
-Artwork loads much faster: pictures come straight from Emby, many at once, and stay on the TV.
-Fixed: screens tearing and resizing when you open a movie, leave the player or change page.
-Holding or spamming a direction stays smooth however far you have scrolled.
-Fixed: holding OK now opens the quick menu on every remote.
-Still included: Back goes Home, A to Z jump, Settings follows the highlight.
+Home no longer freezes when you hold a direction: rows off the screen are left alone until you reach them.
+Held presses that pile up are dropped, so the screen never trails your finger.
+Genres draws complete on return visits, and tile posters fade in together.
+Settings switches sections on the spot and stays in its list.
+Posters ahead of you load while you rest, and the old screen dims the moment you press OK.

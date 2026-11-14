@@ -4,6 +4,7 @@ import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { genreLook } from './gtiles.js';
 import { noteCollection } from './tvside.js';
+import { preload } from './art.js';
 
 const FIELDS = 'PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo';
 const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
@@ -366,14 +367,39 @@ function genreSection(root, ctx, views) {
   const built = new Map(); // lib id -> { nodes, observe }
   const observeRows = (lib, types, my) => {
     io?.disconnect();
+    // TV: a row is only built once it has stayed near the screen for a moment, so flying past
+    // fifteen rows doesn't start fifteen loads at once; and their titles are fetched quietly ahead
+    // of time, so a row you stop on fills straight away.
+    const near = new Map();
+    const fillSoon = (row) => {
+      if (!ON_TV) { io.unobserve(row); fillGenreRow(row, lib, types, ctx, my, () => gen); return; }
+      if (near.has(row)) return;
+      const tick = () => {
+        if (!near.has(row) || my !== gen || !ctx.alive()) { near.delete(row); return; }
+        if (document.documentElement.classList.contains('tv-fast')) { near.set(row, setTimeout(tick, 160)); return; }
+        near.delete(row); io.unobserve(row); fillGenreRow(row, lib, types, ctx, my, () => gen);
+      };
+      near.set(row, setTimeout(tick, 180));
+    };
     io = new IntersectionObserver((entries) => {
       for (const en of entries) {
-        if (!en.isIntersecting) continue;
-        io.unobserve(en.target);
-        fillGenreRow(en.target, lib, types, ctx, my, () => gen);
+        if (en.isIntersecting) fillSoon(en.target);
+        else if (near.has(en.target)) { clearTimeout(near.get(en.target)); near.delete(en.target); }
       }
     }, { rootMargin: '400px' });
-    rowsEl.querySelectorAll('.genre-row:not(.filled)').forEach((r) => io.observe(r));
+    const rows = [...rowsEl.querySelectorAll('.genre-row:not(.filled)')];
+    rows.forEach((r) => io.observe(r));
+    if (ON_TV) {
+      let i = 0;
+      const ahead = async () => {
+        if (my !== gen || !ctx.alive() || i >= rows.length) return;
+        if (document.documentElement.classList.contains('tv-fast')) { setTimeout(ahead, 600); return; }
+        const r = rows[i++];
+        if (!r.classList.contains('filled')) await genreItems(lib, types, r.dataset.genre).catch(() => {});
+        setTimeout(ahead, 250);
+      };
+      setTimeout(ahead, 3500);
+    }
   };
   const swapIn = (fill) => {
     fill();
@@ -455,13 +481,23 @@ function genreSection(root, ctx, views) {
   showLib(libs.find((l) => l.Id === current), false);
 }
 
+// A genre row's titles, asked for once and kept for a few minutes (random order, so each visit differs).
+const ON_TV = document.documentElement.classList.contains('tv');
+const GENRE_ITEMS = new Map();
+function genreItems(lib, types, id) {
+  const key = `${lib.Id}/${id}/${types}`; const had = GENRE_ITEMS.get(key);
+  if (had && Date.now() - had.t < 600000) return had.p;
+  const p = api.get(`/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${id}&IncludeItemTypes=${types}&Recursive=true&SortBy=Random&Limit=20&Fields=${FIELDS}&${IMG_OPTS}`).then((d) => d?.Items || []);
+  GENRE_ITEMS.set(key, { t: Date.now(), p });
+  p.catch(() => GENRE_ITEMS.delete(key));
+  return p;
+}
+['scrappy:memclear', 'scrappy:refresh', 'scrappy:rowcache-clear'].forEach((n) => window.addEventListener(n, () => GENRE_ITEMS.clear()));
 async function fillGenreRow(rowEl, lib, types, ctx, my, getGen) {
   const id = rowEl.dataset.genre;
   try {
-    // Random order so each visit shows something different.
-    const data = await api.get(`/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${id}&IncludeItemTypes=${types}&Recursive=true&SortBy=Random&Limit=20&Fields=${FIELDS}&${IMG_OPTS}`);
+    const items = await genreItems(lib, types, id);
     if (my !== getGen() || !ctx.alive()) return;
-    const items = data?.Items || [];
     const box = rowEl.querySelector('.genre-items');
     box.innerHTML = items.map((i) => card(i, { shape: 'portrait' })).join('');
     rowEl.classList.add('filled');
@@ -857,8 +893,10 @@ export async function warmItem(id) {
     const seasons = `/Shows/${id}/Seasons?UserId={userId}&Fields=${FIELDS},ChildCount`;
     const series = () => Promise.all([memHas(seasons) ? null : api.get(seasons), seriesTarget(id)]);
     // Already known to be a show: ask for everything at once instead of one after the other.
-    if (kindOf(id) === 'Series') { await Promise.all([memHas(path) ? null : api.get(path), series()]); return; }
+    if (kindOf(id) === 'Series') { const [it0] = await Promise.all([memHas(path) ? api.cached(path) : api.get(path), series()]); if (it0) for (const u of detailArt(it0)) preload(u); return; }
     const it = memHas(path) ? await api.cached(path) : await api.get(path);
+    // Its big pictures are fetched too, so the page opens complete instead of filling in.
+    if (it) for (const u of detailArt(it)) preload(u);
     if (warming !== id || it?.Type !== 'Series') return;
     await series();
   } catch {} finally { if (warming === id) warming = ''; }
@@ -1021,8 +1059,10 @@ export async function libraryView(root, ctx, id, genreId = '') {
     await more();
     if (my !== gen || !ctx.alive()) return;
     const el = grid.children[idx - first] || grid.firstElementChild;
-    if (el) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'center' }); }
-    if (first > 0) { ioUp.unobserve(topS); ioUp.observe(topS); }
+    // Land on the letter at once: line the page up on the row first, then give it the highlight
+    // (so nothing slides a moment later), and hold off adding earlier titles until that has settled.
+    if (el) { el.scrollIntoView({ block: 'center' }); el.focus({ preventScroll: true }); }
+    if (first > 0) setTimeout(() => { if (my === gen && ctx.alive()) { ioUp.unobserve(topS); ioUp.observe(topS); } }, 500);
   }
   root.querySelector('#sort')?.addEventListener('change', (e) => {
     sortIdx = Number(e.target.value);
@@ -1288,6 +1328,17 @@ async function similarSection(el, ctx, it) {
   }, ctx.alive).catch(() => {});
 }
 
+// The big pictures a title's page shows (same addresses the page itself asks for).
+function detailArt(it) {
+  const t = it.ImageTags || {}, out = [];
+  if (it.BackdropImageTags?.length) out.push(img(it.Id, 'Backdrop', it.BackdropImageTags[0], bigW(), 0));
+  else if (it.ParentBackdropImageTags?.length) out.push(img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], bigW(), 0));
+  if (it.Type === 'Episode' && t.Primary) out.push(img(it.Id, 'Primary', t.Primary, 800));
+  else if (t.Primary) out.push(img(it.Id, 'Primary', t.Primary, 600));
+  else if (it.SeriesPrimaryImageTag) out.push(img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, 600));
+  if (it.Type !== 'Episode' && t.Logo) out.push(img(it.Id, 'Logo', t.Logo, 800));
+  return out.filter(Boolean);
+}
 function renderItem(root, ctx, it, seasonId = '') {
   const ud = it.UserData || {};
   const isEp = it.Type === 'Episode';
@@ -1605,7 +1656,14 @@ async function renderChildren(el, ctx, folder) {
 // ---------------- Genres and Favorites (side menu pages) ----------------
 
 // Every genre in your movie and TV libraries as colour tiles; a tile opens that library filtered by it.
+// Genre tile posters are remembered on the TV, so the Genres screen draws complete the next time
+// instead of filling in tile by tile.
 const FAN_ART = new Map();
+try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem('tvFanArt') || '{}'))) if (Array.isArray(v)) FAN_ART.set(k, v); } catch {}
+let fanSaveT = 0;
+const saveFanArt = () => { clearTimeout(fanSaveT); fanSaveT = setTimeout(() => { try { localStorage.setItem('tvFanArt', JSON.stringify(Object.fromEntries([...FAN_ART].slice(-300)))); } catch {} }, 400); };
+['scrappy:rowcache-clear', 'scrappy:art-clear'].forEach((n) => window.addEventListener(n, () => { FAN_ART.clear(); try { localStorage.removeItem('tvFanArt'); } catch {} }));
+const preloadImg = (u) => new Promise((ok) => { const im = new Image(); im.onload = im.onerror = () => ok(); im.src = u; setTimeout(ok, 2500); });
 export async function genresView(root, ctx) {
   root.innerHTML = loadingHtml();
   let vs = [];
@@ -1623,31 +1681,50 @@ export async function genresView(root, ctx) {
   // TV tiles (approved Look 2): two posters from the genre fan out of each tile. Fetched a few at a time after the tiles are up, kept for the session.
   const TVG = document.documentElement.classList.contains('tv');
   grid.classList.toggle('tvgen-tv', TVG);
+  let fanIo = null; ctx.onLeave(() => fanIo?.disconnect());
+  const ready = []; let readyT = 0;
   const fanPosters = async (lib) => {
-    const fans = [...grid.querySelectorAll('.tvfan')];
-    const paint = (f, urls) => f.querySelectorAll('i').forEach((el, k) => { if (urls[k]) el.style.backgroundImage = `url("${urls[k]}")`; else if (urls.length) el.style.display = 'none'; });
-    for (let k = 0; k < fans.length; k += 4) {
-      await Promise.all(fans.slice(k, k + 4).map(async (f) => {
-        const key = lib.Id + '/' + f.dataset.g;
-        if (!FAN_ART.has(key)) {
-          try {
-            const d = await api.get(`/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${f.dataset.g}&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&SortBy=Random&Limit=2&ImageTypes=Primary`);
-            FAN_ART.set(key, (d?.Items || []).map((i) => i.ImageTags?.Primary && img(i.Id, 'Primary', i.ImageTags.Primary, 200)).filter(Boolean));
-          } catch { return; }
-        }
-        if (f.isConnected) paint(f, FAN_ART.get(key));
-      }));
-      if (!ctx.alive() || !fans[0].isConnected) return;
-    }
+    // Only tiles whose posters aren't known yet: all asked for together, each fading in once its
+    // pictures have arrived (never a half-drawn poster).
+    const fans = [...grid.querySelectorAll('.tvfan.w')];
+    const paint = (f, urls) => { f.querySelectorAll('i').forEach((el, k) => { if (urls[k]) el.style.backgroundImage = `url("${urls[k]}")`; else if (urls.length) el.style.display = 'none'; }); f.classList.remove('w'); };
+    const one = async (f) => {
+      const key = lib.Id + '/' + f.dataset.g;
+      if (!FAN_ART.has(key)) {
+        try {
+          const d = await api.get(`/Users/{userId}/Items?ParentId=${lib.Id}&GenreIds=${f.dataset.g}&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&SortBy=Random&Limit=2&ImageTypes=Primary`);
+          FAN_ART.set(key, (d?.Items || []).map((i) => i.ImageTags?.Primary && img(i.Id, 'Primary', i.ImageTags.Primary, 200)).filter(Boolean));
+          saveFanArt();
+        } catch { return; }
+      }
+      const urls = FAN_ART.get(key);
+      await Promise.all(urls.map(preloadImg));
+      // Tiles that become ready around the same time are shown together, in one go.
+      ready.push([f, urls]); clearTimeout(readyT);
+      readyT = setTimeout(() => { const batch = ready.splice(0); requestAnimationFrame(() => batch.forEach(([x, u]) => x.isConnected && paint(x, u))); }, 220);
+    };
+    // Tiles on (or near) the screen first; the rest as you get near them.
+    fanIo?.disconnect();
+    fanIo = new IntersectionObserver((es) => { for (const en of es) if (en.isIntersecting) { fanIo.unobserve(en.target); one(en.target); } }, { rootMargin: '300px' });
+    fans.forEach((f) => fanIo.observe(f));
+  };
+  const fanHtml = (lib, g) => {
+    const urls = FAN_ART.get(lib.Id + '/' + g.Id);
+    if (!urls) return `<span class="tvfan w" data-g="${esc(g.Id)}" aria-hidden="true"><i></i><i></i></span>`;
+    return `<span class="tvfan" data-g="${esc(g.Id)}" aria-hidden="true">${[0, 1].map((k) => (urls[k] ? `<i style="background-image:url(&quot;${esc(urls[k])}&quot;)"></i>` : (urls.length ? '' : '<i></i>'))).join('')}</span>`;
   };
   const draw = async () => {
     const lib = libs.find((l) => l.Id === cur);
     await load(`/Genres?ParentId=${lib.Id}&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&Fields=ItemCounts`, (d) => {
       const gs = d?.Items || [];
+      // The saved copy and the fresh answer are usually the same: then nothing is redrawn.
+      const sig = lib.Id + ':' + gs.map((g) => g.Id + '.' + (g.MovieCount || g.SeriesCount || g.ChildCount || 0)).join(',');
+      if (grid.dataset.sig === sig) return;
+      grid.dataset.sig = sig;
       count.textContent = `${gs.length} genre${gs.length === 1 ? '' : 's'}`;
       grid.innerHTML = gs.map((g) => {
         const look = genreLook(g.Name), n = g.MovieCount || g.SeriesCount || g.ChildCount || 0;
-        return `<a class="tvgen" href="#/library/${encodeURIComponent(lib.Id)}/${encodeURIComponent(g.Id)}" style="--c1:${look.c[0]};--c2:${look.c[1]};--c3:${look.c[2]}"><span class="gf-sym" aria-hidden="true">${look.sym}</span><b>${esc(g.Name)}</b>${n ? `<small>${n} title${n === 1 ? '' : 's'}</small>` : ''}${TVG ? `<span class="tvfan" data-g="${esc(g.Id)}" aria-hidden="true"><i></i><i></i></span>` : ''}</a>`;
+        return `<a class="tvgen" href="#/library/${encodeURIComponent(lib.Id)}/${encodeURIComponent(g.Id)}" style="--c1:${look.c[0]};--c2:${look.c[1]};--c3:${look.c[2]}"><span class="gf-sym" aria-hidden="true">${look.sym}</span><b>${esc(g.Name)}</b>${n ? `<small>${n} title${n === 1 ? '' : 's'}</small>` : ''}${TVG ? fanHtml(lib, g) : ''}</a>`;
       }).join('') || '<div class="empty">No genres in this library yet.</div>';
       if (TVG) fanPosters(lib);
     }, ctx.alive).catch(() => {});
