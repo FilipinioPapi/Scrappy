@@ -116,7 +116,7 @@ class Hero(private val home: Home) {
       val it = byId[p.it.optString("Id")] ?: continue
       if (it.optString("Type") != "Series" && (it.optJSONObject("UserData")?.optBoolean("Played") ?: false)) continue
       val b = bd(it) ?: continue
-      out.add(Pick(it, p.kicker, p.why, Net.image(b.first, "Backdrop/0", b.second, 1920, 90)))
+      out.add(Pick(it, p.kicker, p.why, Net.image(b.first, "Backdrop/0", b.second, if (Img.lowMemory) 1280 else 1920, 90)))
     }
     return if (out.size >= minOf(3, saved.size)) out else null
   }
@@ -190,7 +190,7 @@ class Hero(private val home: Home) {
       n += 4
       val ok = batch.map { c ->
         val b = bd(c.it)!!
-        val url = Net.image(b.first, "Backdrop/0", b.second, 1920, 90)
+        val url = Net.image(b.first, "Backdrop/0", b.second, if (Img.lowMemory) 1280 else 1920, 90)
         val sz = Img.sizeNow(url)
         val good = sz != null && sz.first >= 1280 && sz.first.toFloat() / sz.second in 1.55f..2.1f
         if (good) Pick(c.it, c.kicker, c.why, url) else null

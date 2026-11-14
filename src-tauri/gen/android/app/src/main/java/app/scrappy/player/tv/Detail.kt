@@ -814,7 +814,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private fun drawBackdrop(c: Canvas, o: JSONObject, now: Long): Boolean {
     val h = if (isSeries) 778f else 1080f
     val tag = o.optJSONArray("BackdropImageTags")?.optString(0)
-    val url = if (!tag.isNullOrEmpty()) Net.image(itemId, "Backdrop/0", tag, 1920, 90) else null
+    val url = if (!tag.isNullOrEmpty()) Net.image(itemId, "Backdrop/0", tag, if (Img.lowMemory) 1280 else 1920, 90) else null
     var anim = false
     val pic = Img.get(url)
     r.set(117f, 0f, Ui.W, h)

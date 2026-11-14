@@ -29,9 +29,12 @@ class Pic(val bmp: Bitmap, val at: Long) {
  *  and a memory cache sized for a TV with little memory to spare. */
 object Img {
   private lateinit var dir: File
-  private val mem = object : LruCache<String, Pic>(26 * 1024 * 1024) {
+  private var mem = cache(26)
+  private fun cache(mb: Int) = object : LruCache<String, Pic>(mb * 1024 * 1024) {
     override fun sizeOf(key: String, value: Pic) = value.bytes
   }
+  /** A box with little memory (a cheap stick or a busy TV): smaller cache and smaller backdrops. */
+  var lowMemory = false; private set
   /** url -> last time it was asked for (ms). Jobs no longer wanted are skipped. */
   private val wanted = HashMap<String, Long>()
   private val queued = HashSet<String>()
@@ -47,6 +50,12 @@ object Img {
   fun init(ctx: Context) {
     if (::dir.isInitialized) return
     dir = File(ctx.cacheDir, "native-img").apply { mkdirs() }
+    try {
+      val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+      lowMemory = am.isLowRamDevice || am.memoryClass < 160
+      // An eighth of what Android gives the app, between 12 and 26 MB.
+      mem = cache((am.memoryClass / 8).coerceIn(12, 26))
+    } catch (_: Throwable) {}
     Net.bg { trim() }
   }
 
@@ -67,6 +76,8 @@ object Img {
   fun failed(url: String): Boolean = failed.containsKey(url)
   fun peek(url: String?): Pic? = if (url == null) null else mem.get(url)
   fun clearMemory() { mem.evictAll() }
+  /** Android is short of memory: keep only half (or nothing when the app is in the background). */
+  fun trim(level: Int) { if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) mem.evictAll() else if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) mem.trimToSize(mem.maxSize() / 2) }
 
   private fun file(url: String): File {
     val md = MessageDigest.getInstance("MD5").digest(url.toByteArray())
