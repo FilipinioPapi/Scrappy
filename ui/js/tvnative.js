@@ -8,6 +8,11 @@ import { homeRows } from './homeedit.js';
 const N = window.ScrappyNative;
 const root = document.documentElement;
 
+// This app has its own logo (the regular app keeps logo.png).
+const LOGO = 'logo-native.png';
+function logos() { for (const i of document.querySelectorAll('img[src="logo.png"]')) i.src = LOGO; }
+logos();
+
 // The saved sort of each library grid ("sort:<library>" keys).
 function sorts() {
   const o = {};
@@ -40,6 +45,7 @@ let sent = '';
 let t = 0;
 function check() {
   t = 0;
+  logos();
   const playing = root.classList.contains('playing');
   const keys = playing || !!document.querySelector(LAYERS);
   const vis = keys || !!document.getElementById('toasts')?.firstElementChild;
