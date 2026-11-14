@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: 27.2.12479018
+      # Branches that build "Scrappy Native" (the native-screens app that installs next to the
+      # regular one) and publish it to its own release, tv-native, leaving tv-preview alone.
+      NATIVE_BRANCHES: "claude/project-thread-3i9dca"
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +80,9 @@ jobs:
       - name: Build
         run: |
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then tag=tv; else tag=tv-preview; fi
+          for b in $NATIVE_BRANCHES; do
+            if [ "${{ github.ref_name }}" = "$b" ]; then tag=tv-native; export SCRAPPY_TV_NATIVE=1; fi
+          done
           version="0.3.${{ github.run_number }}"
           echo "TV_TAG=$tag" >> "$GITHUB_ENV"
           echo "TV_VERSION=$version" >> "$GITHUB_ENV"
@@ -114,6 +120,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag=$TV_TAG
-          if [ "$tag" = "tv" ]; then title="Google TV build $TV_VERSION"; else title="Google TV Preview build $TV_VERSION (${{ github.ref_name }})"; fi
+          if [ "$tag" = "tv" ]; then title="Google TV build $TV_VERSION"; elif [ "$tag" = "tv-native" ]; then title="Scrappy Native (Google TV) test build $TV_VERSION"; else title="Google TV Preview build $TV_VERSION (${{ github.ref_name }})"; fi
           gh release delete $tag --yes --cleanup-tag 2>/dev/null || true
           gh release create $tag Scrappy-TV.apk tv.json --title "$title" --notes "Version $TV_VERSION, built from ${{ github.ref_name }} at commit ${{ github.sha }}. First install: Scrappy-TV.apk with the Downloader app. After that the TV app updates itself." --prerelease --target ${{ github.sha }}

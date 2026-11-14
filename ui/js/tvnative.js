@@ -8,6 +8,13 @@ import { homeRows } from './homeedit.js';
 const N = window.ScrappyNative;
 const root = document.documentElement;
 
+// The saved sort of each library grid ("sort:<library>" keys).
+function sorts() {
+  const o = {};
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('sort:')) o[k] = localStorage.getItem(k); } } catch {}
+  return o;
+}
+
 // Settings that native screens need, kept by the web side.
 function sendPrefs() {
   try {
@@ -15,6 +22,7 @@ function sendPrefs() {
       homeRows: localStorage.getItem('homeRows:tv') || '',
       heroMode: pref('heroMode'),
       genreLib: localStorage.getItem('genreLib') || '',
+      sorts: sorts(),
     }));
   } catch {}
 }
@@ -91,5 +99,5 @@ window.__tvNative = {
   who: () => import('./tvwho.js').then((m) => m.who({ side: true })).catch(() => {}),
   pick,
   genreLib: (id) => { try { localStorage.setItem('genreLib', id); } catch {} },
-  sort: (key, i) => { try { localStorage.setItem(key, String(i)); } catch {} },
+  sort: (key, i) => { try { localStorage.setItem(key, String(i)); } catch {} sendPrefs(); },
 };

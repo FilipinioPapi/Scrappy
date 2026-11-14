@@ -14,6 +14,8 @@ val tauriProperties = Properties().apply {
     }
 }
 
+val nativeApp = System.getenv("SCRAPPY_TV_NATIVE") == "1"
+
 android {
     compileSdk = 37
     namespace = "app.scrappy.player"
@@ -25,6 +27,14 @@ android {
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        // "Scrappy Native": the same app with the native screens switched on, installed next to
+        // the regular one (own name, icon and banner, own sign-in). Built when SCRAPPY_TV_NATIVE=1.
+        if (nativeApp) applicationIdSuffix = ".native"
+        buildConfigField("boolean", "NATIVE_APP", nativeApp.toString())
+    }
+    if (nativeApp) {
+        sourceSets.getByName("debug").res.srcDir("src/nativeApp/res")
+        sourceSets.getByName("release").res.srcDir("src/nativeApp/res")
     }
     // One fixed key, so a new build installs over the old one (keeps you signed in).
     // The key is made and kept by the GitHub build; it is never stored in the repo.

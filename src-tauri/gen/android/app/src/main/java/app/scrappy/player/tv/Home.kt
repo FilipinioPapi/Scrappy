@@ -74,9 +74,12 @@ class Home(tv: TvView) : Screen(tv) {
   override fun hide() { hero.pause() }
 
   fun setPrefs(p: JSONObject) {
-    val changed = p.toString() != prefs.toString()
+    val rowsChanged = p.optString("homeRows") != prefs.optString("homeRows")
+    val heroChanged = p.optString("heroMode") != prefs.optString("heroMode")
     prefs = p
-    if (changed && views.isNotEmpty()) { applyOrder(); hero.modeChanged() }
+    if (views.isEmpty()) return
+    if (rowsChanged) applyOrder()
+    if (heroChanged) hero.modeChanged()
   }
 
   override fun stale() { if (loadedFor.isNotEmpty()) { loadRows(true) } }

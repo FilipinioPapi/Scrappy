@@ -1,5 +1,3 @@
-Marking something watched clears its saved spot and the page shows one "Play again" button
-The Audio and Subtitles you pick on a title page are now the ones that play (they were being ignored)
-A row you scrolled along stays where you left it when you come back up or down to it
-Racing down Home never stops on a "See all" link
-People without a photo show two initials on a coloured circle
+Scrappy Native: Home and the library grids are drawn by the TV itself, for smoother scrolling
+Installs next to the regular Scrappy app, with its own dog icon
+Everything else (title pages, the player, menus, sign-in) works the same as the regular app

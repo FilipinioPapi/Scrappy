@@ -11,11 +11,11 @@ import android.widget.FrameLayout
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Joins the native screens to the web side. Off unless switched on (adb: am start ... --ez native true). */
+/** Joins the native screens to the web side. On in Scrappy Native, off in the regular app unless switched on (adb: am start ... --ez native true). */
 class Bridge(private val act: Activity, private val web: WebView) : Host {
   companion object {
     private const val PREFS = "scrappy_native"
-    fun isOn(ctx: Context) = ctx.getSharedPreferences(PREFS, 0).getBoolean("on", false)
+    fun isOn(ctx: Context) = ctx.getSharedPreferences(PREFS, 0).getBoolean("on", app.scrappy.player.BuildConfig.NATIVE_APP)
     fun set(ctx: Context, on: Boolean) = ctx.getSharedPreferences(PREFS, 0).edit().putBoolean("on", on).apply()
     private fun js(s: String) = JSONObject.quote(s)
   }
