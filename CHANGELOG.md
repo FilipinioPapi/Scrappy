@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 39 · Nov 14, 2:37 PM
+**Movies & TV**
+- Changed: Continue Watching shows each show's own picture for episodes, instead of a still from the episode
+
+<sub>Built from 205dcae · includes: Movies & TV</sub>
+
 ### Preview 38 · Nov 14, 2:10 PM
 **General**
 - New app icon: the updated Scrappy dachshund, with a see-through background on the taskbar and desktop. Windows may show the old icon for a while until it refreshes its icon cache
