@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 38 · Nov 14, 2:10 PM
+**General**
+- New app icon: the updated Scrappy dachshund, with a see-through background on the taskbar and desktop. Windows may show the old icon for a while until it refreshes its icon cache
+
+<sub>Built from 3f5d11f · includes: General</sub>
+
 ### Preview 37 · Nov 14, 12:09 PM
 **Movies & TV**
 - Changed: marking a movie or episode watched now resets its progress, and its button says Play again instead of Resume and Play from start
