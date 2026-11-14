@@ -181,7 +181,7 @@ function pageTarget(el, block) {
 // Pictures in the row you're on, and the row below it, load before you reach them.
 function warm(row) {
   const sec = row.closest('section, [data-row]') || row;
-  for (const box of [row, sec.nextElementSibling]) box?.querySelectorAll?.('img[loading="lazy"]').forEach((im, i) => { if (i < 24) im.loading = 'eager'; });
+  for (const box of [row, sec.nextElementSibling]) box?.querySelectorAll?.('img[loading="lazy"]').forEach((im, i) => { if (i < 12) im.loading = 'eager'; });
 }
 function go(el) {
   el.focus({ preventScroll: true });
@@ -365,7 +365,7 @@ addEventListener('focusin', (e) => {
     const par = el.parentElement;
     if (par?.classList.contains('grid') && el.classList.contains('card')) {
       const kids = par.children, cols = par._tvc || 7; let i = el._tvi; if (kids[i] !== el) i = Array.prototype.indexOf.call(kids, el);
-      for (let j = Math.max(0, i - 2 * cols), end = Math.min(kids.length, i + 6 * cols); j < end; j++) { const im = kids[j].querySelector('img[loading="lazy"]'); if (im) im.loading = 'eager'; }
+      for (let j = Math.max(0, i - cols), end = Math.min(kids.length, i + 4 * cols); j < end; j++) { const im = kids[j].querySelector('img[loading="lazy"]'); if (im) im.loading = 'eager'; }
     }
     const box = el.closest?.(BOX);
     last = box ? { box, sel: box.matches('[data-row]') ? `[data-row="${box.dataset.row}"]` : null, idx: candidates(box).indexOf(el) } : null;

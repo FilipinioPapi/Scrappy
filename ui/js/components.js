@@ -33,19 +33,23 @@ const PLAYABLE = new Set(['Movie', 'Episode', 'Video', 'MusicVideo', 'Trailer'])
 export const isPlayable = (it) => PLAYABLE.has(it.Type) || (it.MediaType === 'Video' && !it.IsFolder);
 
 // Choose the best picture for a card shape.
+const ON_TV = document.documentElement.classList.contains('tv');
+// A TV tile is about 230 px wide on a 1080p screen (wide tiles about 390): asking for more only
+// costs a slow TV decode time and picture memory.
+const PW = ON_TV ? 260 : 340, WW = ON_TV ? 420 : 500;
 function pickImage(it, shape) {
   const t = it.ImageTags || {};
   if (shape === 'wide') {
-    if (it.Type === 'Episode' && t.Primary) return img(it.Id, 'Primary', t.Primary, 500);
-    if (t.Thumb) return img(it.Id, 'Thumb', t.Thumb, 500);
-    if (it.BackdropImageTags?.length) return img(it.Id, 'Backdrop', it.BackdropImageTags[0], 500, 0);
-    if (t.Primary) return img(it.Id, 'Primary', t.Primary, 500);
-    if (it.ParentThumbItemId) return img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, 500);
-    if (it.ParentBackdropItemId) return img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags?.[0], 500, 0);
+    if (it.Type === 'Episode' && t.Primary) return img(it.Id, 'Primary', t.Primary, WW);
+    if (t.Thumb) return img(it.Id, 'Thumb', t.Thumb, WW);
+    if (it.BackdropImageTags?.length) return img(it.Id, 'Backdrop', it.BackdropImageTags[0], WW, 0);
+    if (t.Primary) return img(it.Id, 'Primary', t.Primary, WW);
+    if (it.ParentThumbItemId) return img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, WW);
+    if (it.ParentBackdropItemId) return img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags?.[0], WW, 0);
     return null;
   }
-  if (t.Primary) return img(it.Id, 'Primary', t.Primary, 340);
-  if (it.SeriesPrimaryImageTag) return img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, 340);
+  if (t.Primary) return img(it.Id, 'Primary', t.Primary, PW);
+  if (it.SeriesPrimaryImageTag) return img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, PW);
   return null;
 }
 
@@ -84,7 +88,7 @@ export function card(it, opts = {}) {
     <a class="card ${shape}${clickPlay ? ' click-play' : ''}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
       <div class="art">
         ${lo ? `<div class="ph lo" style="background-image:url('${esc(lo)}')"></div>` : `<div class="ph">${esc(it.Name)}</div>`}
-        ${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
+        ${src ? `<img loading="lazy" decoding="async" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
         ${isPlayable(it) ? `<div class="play-over"><span data-play="${esc(it.Id)}" title="Play">${PLAY_ICON}</span></div>` : ''}
         ${badge}
         ${pct ? `<div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>` : ''}
