@@ -261,8 +261,8 @@ addEventListener('keydown', (e) => {
   // if it arrives sooner than the TV took for the last one. A fast TV runs at the top speed below;
   // a slow one settles at whatever pace it can hold smoothly.
   { const now = performance.now(), vert = k === 'ArrowUp' || k === 'ArrowDown';
-    const base = e.repeat ? (vert ? 125 : 85) : 55;
-    const gap = Math.max(base, Math.min(moveCost * 1.1, e.repeat ? 300 : 180));
+    const base = vert ? 125 : 85; // the same limit whether the button is held or pressed over and over
+    const gap = Math.max(base, Math.min(moveCost * 1.1, 300));
     if (now - lastMove < gap) return;
     lastMove = now;
     requestAnimationFrame(() => requestAnimationFrame(() => { const c = performance.now() - now; moveCost = moveCost ? moveCost * 0.6 + c * 0.4 : c; }));
