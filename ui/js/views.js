@@ -1716,7 +1716,7 @@ export async function genresView(root, ctx) {
   root.innerHTML = `<section class="section">
       <div class="section-head"><h2>Genres</h2><span class="count" id="gcount"></span></div>
       ${libs.length > 1 ? `<div class="season-tabs">${libs.map((l) => `<button class="season-tab ${l.Id === cur ? 'active' : ''}" data-lib="${esc(l.Id)}">${esc(l.Name)}</button>`).join('')}</div>` : ''}
-      <div class="tvgen-grid" id="ggrid"></div></section>`;
+      <div class="tvgen-grid" id="ggrid" data-hold></div></section>`;
   const grid = root.querySelector('#ggrid'), count = root.querySelector('#gcount');
   // TV tiles (approved Look 2): two posters from the genre fan out of each tile. Fetched a few at a time after the tiles are up, kept for the session.
   const TVG = document.documentElement.classList.contains('tv');
@@ -1771,8 +1771,10 @@ export async function genresView(root, ctx) {
         const look = genreLook(g.Name), n = g.MovieCount || g.SeriesCount || g.ChildCount || 0;
         return `<a class="tvgen" href="#/library/${encodeURIComponent(lib.Id)}/${encodeURIComponent(g.Id)}" style="--c1:${look.c[0]};--c2:${look.c[1]};--c3:${look.c[2]}"><span class="gf-sym" aria-hidden="true">${look.sym}</span><b>${esc(g.Name)}</b>${n ? `<small>${n} title${n === 1 ? '' : 's'}</small>` : ''}${TVG ? fanHtml(lib, g) : ''}</a>`;
       }).join('') || '<div class="empty">No genres in this library yet.</div>';
+      // The screen you came from stays up until the tiles are in (not just the heading).
+      grid.removeAttribute('data-hold');
       if (TVG) fanPosters(lib);
-    }, ctx.alive).catch(() => {});
+    }, ctx.alive).catch(() => {}).finally(() => grid.removeAttribute('data-hold'));
   };
   root.querySelectorAll('[data-lib]').forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.lib === cur) return;
