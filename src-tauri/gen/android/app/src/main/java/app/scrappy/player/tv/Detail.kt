@@ -53,6 +53,8 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private var epView = "row"
   private var epViewSet = false
   private var eps: List<Card> = emptyList()
+  /** A show's rows below the episodes wait until the episodes are in, so nothing is drawn in the wrong place first. */
+  private var lowerReady = false
   private var epData: List<JSONObject> = emptyList()
   private var upNext = -1
   private var block = 0
@@ -153,7 +155,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       val all = Net.items(v)
       seasons = all.filter { s -> s.optInt("IndexNumber", -1) != 0 } + all.filter { s -> s.optInt("IndexNumber", -1) == 0 }
       measureTabs()
-      if (seasons.isEmpty()) { layout(); tv.invalidate(); return@load }
+      if (seasons.isEmpty()) { lowerReady = true; layout(); tv.invalidate(); return@load }
       val pick = seasons.firstOrNull { s -> s.optString("Id") == selected.ifEmpty { wantSeason } }
         ?: seasons.firstOrNull { s -> s.optInt("IndexNumber", -1) != 0 && (s.optJSONObject("UserData")?.optInt("UnplayedItemCount") ?: 0) > 0 }
         ?: seasons[0]
@@ -181,6 +183,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       val keepF = eps.associate { c -> c.id to c.f }
       epData = list
       eps = list.map { e -> Card(e, Shape.WIDE).also { c -> c.f = keepF[c.id] ?: 0f } }
+      lowerReady = true
       upNext = list.indexOfFirst { e -> (e.optJSONObject("UserData")?.optLong("PlaybackPositionTicks") ?: 0L) > 0 && !(e.optJSONObject("UserData")?.optBoolean("Played") ?: false) }
       if (upNext < 0) upNext = list.indexOfFirst { e -> !(e.optJSONObject("UserData")?.optBoolean("Played") ?: false) }
       blocks = if (epView == "grid" && !all) maxOf(1, (list.size + GRID_BLOCK - 1) / GRID_BLOCK) else 1
@@ -804,8 +807,10 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     anim = drawBackdrop(c, o, now) || anim
     if (isSeries) anim = drawShowHead(c, o, now) || anim else anim = drawMovieHead(c, o, now) || anim
     if (isSeries) anim = drawEpisodes(c, now, dt, y0) || anim
-    anim = drawCast(c, now, dt, y0) || anim
-    anim = drawSimilar(c, now, dt, y0) || anim
+    if (!isSeries || lowerReady) {
+      anim = drawCast(c, now, dt, y0) || anim
+      anim = drawSimilar(c, now, dt, y0) || anim
+    }
     c.restore()
     anim = drawStrip(c, o, now, y0) || anim
     return anim

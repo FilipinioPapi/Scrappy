@@ -32,6 +32,19 @@ object Img {
   private var mem = cache(26)
   private fun cache(mb: Int) = object : LruCache<String, Pic>(mb * 1024 * 1024) {
     override fun sizeOf(key: String, value: Pic) = value.bytes
+    override fun entryRemoved(evicted: Boolean, key: String, old: Pic, new: Pic?) { dropped(old.bytes) }
+  }
+  // A picture let go only gives its memory back (and its copy on the graphics chip) once Java's
+  // garbage collector runs, which on a TV with a quiet Java side can be minutes. After a batch of
+  // pictures has been let go, ask for a collection so the memory really comes back.
+  private var droppedBytes = 0L
+  private var gcSoon = false
+  private fun dropped(b: Int) {
+    droppedBytes += b
+    if (droppedBytes > 8L * 1024 * 1024 && !gcSoon) {
+      gcSoon = true
+      Net.main.postDelayed({ gcSoon = false; droppedBytes = 0; Runtime.getRuntime().gc() }, 400)
+    }
   }
   /** A box with little memory (a cheap stick or a busy TV): smaller cache and smaller backdrops. */
   var lowMemory = false; private set
@@ -53,8 +66,8 @@ object Img {
     try {
       val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
       lowMemory = am.isLowRamDevice || am.memoryClass < 160
-      // An eighth of what Android gives the app, between 12 and 26 MB.
-      mem = cache((am.memoryClass / 8).coerceIn(12, 26))
+      // A tenth of what Android gives the app, between 10 and 20 MB.
+      mem = cache((am.memoryClass / 10).coerceIn(10, 20))
     } catch (_: Throwable) {}
     Net.bg { trim() }
   }
