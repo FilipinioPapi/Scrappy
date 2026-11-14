@@ -372,7 +372,7 @@ function tvSearchPage(root, ctx, q) {
     const v = res.video || { items: [], people: [] };
     const tops = v.items.filter((x) => x.Type !== 'Episode'); const eps = v.items.filter((x) => x.Type === 'Episode');
     const sec = (title, n, body) => n ? `<section class="sres"><div class="section-head"><h2>${title}</h2><span class="count">${n}</span></div>${body}</section>` : '';
-    const person = (p) => `<a class="card portrait tvs-person" href="#/person/${encodeURIComponent(p.Id)}"><div class="art"><div class="ph">${esc(p.Name)}</div>${p.ImageTags?.Primary ? `<img loading="lazy" src="${esc(img(p.Id, 'Primary', p.ImageTags.Primary, 340))}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}</div><div class="title">${esc(p.Name)}</div></a>`;
+    const person = (p) => `<a class="card portrait tvs-person" href="#/person/${encodeURIComponent(p.Id)}"><div class="art"><div class="ph">${esc(p.Name)}</div>${p.ImageTags?.Primary ? `<img loading="lazy" decoding="async" src="${esc(img(p.Id, 'Primary', p.ImageTags.Primary, 220))}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}</div><div class="title">${esc(p.Name)}</div></a>`;
     const other = ['music', 'audiobooks'].flatMap((k) => GROUPS[k](res[k]).filter((g) => g.rows.length)).map((g) => sec(g.title, g.rows.length, `<div class="sgrid">${g.rows.map(rowHtml).join('')}</div>`)).join('');
     const html = sec('Movies &amp; Shows', tops.length, `<div class="grid">${tops.map((it) => card(it)).join('')}</div>`)
       + sec('Episodes', eps.length, `<div class="grid wide">${eps.map((it) => card(it)).join('')}</div>`)

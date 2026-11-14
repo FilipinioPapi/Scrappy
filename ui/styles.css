@@ -3746,3 +3746,6 @@ html.tv .who.full .who-p:focus, html.tv .who-pin .who-p:focus { box-shadow: none
 .watched.pop-in { display: inline-block; }
 
 .tv-veil { position: fixed; inset: 0; z-index: 8; background: var(--bg); pointer-events: none; will-change: opacity; }
+
+/* TV search: groups of results below the screen cost nothing until you reach them. */
+html.tv .tvs .sres { content-visibility: auto; contain-intrinsic-size: auto 620px; overflow-clip-margin: 28px; }
