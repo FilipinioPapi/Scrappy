@@ -55,6 +55,26 @@ if (TV) {
     else if (!fast && fastI) { clearInterval(fastI); fastI = 0; clearTimeout(cullT); cullT = setTimeout(cull, 60); }
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 }
+// TV loading look: a tile near the screen gets a thumbnail-sized copy of its picture first (its own
+// blurred colours), unless the real picture is already there. Nothing extra is fetched while a
+// direction is held or for tiles far away, so the look never costs scrolling speed.
+let loIo = null; const loWait = new Set();
+if (TV) {
+  const put = (el) => {
+    const u = el.dataset.lo; if (!u) return; delete el.dataset.lo;
+    const im = el.parentElement?.querySelector('img'); if (im && im.complete && im.naturalWidth) return;
+    el.style.backgroundImage = `url("${u}")`;
+  };
+  loIo = new IntersectionObserver((es) => {
+    const fast = document.documentElement.classList.contains('tv-fast');
+    for (const en of es) { if (!en.isIntersecting) continue; loIo.unobserve(en.target); if (fast) loWait.add(en.target); else put(en.target); }
+  }, { rootMargin: '160px' });
+  new MutationObserver(() => {
+    if (document.documentElement.classList.contains('tv-fast') || !loWait.size) return;
+    for (const el of loWait) if (el.isConnected && el.dataset.lo) loIo.observe(el);
+    loWait.clear();
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}
 // Clearing the picture cache (Settings) or signing out: those pictures have to load again.
 export const forgetArt = () => { seen.clear(); held.clear(); };
 window.addEventListener('scrappy:rowcache-clear', forgetArt);
@@ -125,6 +145,7 @@ new MutationObserver((muts) => {
   const added = [];
   for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1 && n.isConnected) added.push(n);
   if (!added.length) return;
+  if (loIo) for (const n of added) { if (n.classList.contains('lo')) { if (n.dataset.lo) loIo.observe(n); } else for (const el of n.getElementsByClassName('lo')) if (el.dataset.lo) loIo.observe(el); }
   // 1. Pictures already shown this session go straight in.
   for (const n of added) {
     const ims = n.tagName === 'IMG' ? [n] : n.getElementsByTagName('img');
