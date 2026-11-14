@@ -17,6 +17,8 @@ object PlayerLog {
   @Synchronized
   fun add(what: String) {
     val s = (SystemClock.elapsedRealtime() - t0) / 1000
+    // Also in the TV's own log (tag ScrappyPlayer), so a test over adb can read it without opening the panel.
+    try { android.util.Log.i("ScrappyPlayer", what.take(300)) } catch (e: Throwable) { }
     lines.addLast("%d:%02d  %s".format(s / 60, s % 60, what.take(160)))
     while (lines.size > 40) lines.removeFirst()
   }

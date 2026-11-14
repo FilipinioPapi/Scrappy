@@ -417,7 +417,12 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
         }
         "subScale" -> view?.subtitleView?.setFractionalTextSize(0.0533f * a.optDouble("value", 1.0).toFloat())
         // Plain subtitles move up out of the way while the control bar is showing (100 = normal spot).
-        "subPos" -> view?.subtitleView?.setBottomPaddingFraction((0.08 + (100.0 - a.optDouble("value", 100.0)) / 100.0).coerceIn(0.08, 0.5).toFloat())
+        "subPos" -> {
+          val raw = a.optDouble("value", 100.0)
+          val pad = (0.08 + (100.0 - (if (raw.isNaN()) 100.0 else raw)) / 100.0).coerceIn(0.08, 0.35).toFloat()
+          PlayerLog.add("subtitles moved: asked $raw, padding $pad, view ${view?.subtitleView?.width}x${view?.subtitleView?.height}")
+          view?.subtitleView?.setBottomPaddingFraction(pad)
+        }
         "track" -> selectTrack(p, a.optString("type"), a.optString("id"))
         "stop" -> {
           p.stop()
