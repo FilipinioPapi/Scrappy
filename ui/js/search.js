@@ -3,7 +3,7 @@
 // tab's results first. Forgives typos, and understands typed filters:
 // in:music  type:song  genre:rock  year:2010-2019  fav:yes  is:unplayed
 import { api, img } from './api.js';
-import { esc, toast, loadingHtml, card, initials } from './components.js';
+import { esc, toast, loadingHtml, card } from './components.js';
 import { playSongs, cover, fmt, IC } from './mplayer.js';
 import { nd, coverHtml, href, plural, lib, kindOf } from './music.js';
 import { absCover, absAuthorImg, playBook } from './bplayer.js';
