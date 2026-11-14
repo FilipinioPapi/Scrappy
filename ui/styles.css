@@ -3682,3 +3682,8 @@ html.tv .tvgen { contain: layout paint style; }
    even when the next screen takes a moment to arrive. */
 @keyframes tvLeave { to { opacity: .4; } }
 html.tv .view-ghost > div { animation: tvLeave .22s ease-out .04s forwards; }
+
+/* TV loading look: a tile starts as its picture's own blurred colours (a thumbnail-sized copy,
+   stretched), and the real picture fades in over it. */
+.card .art .ph.lo { background-size: cover; background-position: center; padding: 0; }
+html.tv:not(.tv-fast) .card .art img { transition: opacity .26s ease; }

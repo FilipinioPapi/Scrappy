@@ -1,4 +1,4 @@
-import { img, api } from './api.js';
+import { img, tiny, api } from './api.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -59,6 +59,7 @@ export function shapeFor(it) {
 export function card(it, opts = {}) {
   const shape = opts.shape || shapeFor(it);
   const src = pickImage(it, shape);
+  const lo = tiny(src);
   const ud = it.UserData || {};
   let title = it.Name;
   let sub = opts.subtitle ?? '';
@@ -82,7 +83,7 @@ export function card(it, opts = {}) {
   return `
     <a class="card ${shape}${clickPlay ? ' click-play' : ''}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
       <div class="art">
-        <div class="ph">${esc(it.Name)}</div>
+        ${lo ? `<div class="ph lo" style="background-image:url('${esc(lo)}')"></div>` : `<div class="ph">${esc(it.Name)}</div>`}
         ${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
         ${isPlayable(it) ? `<div class="play-over"><span data-play="${esc(it.Id)}" title="Play">${PLAY_ICON}</span></div>` : ''}
         ${badge}

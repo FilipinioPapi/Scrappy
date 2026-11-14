@@ -119,6 +119,9 @@ if (TV) {
   }, true);
 }
 
+/** TV: a thumbnail-sized copy of a picture (a few hundred bytes). Stretched across the tile it reads
+ *  as the picture's own blurred colours while the real one is on its way. '' when not available. */
+export const tiny = (src) => (DIRECT && src && src.startsWith(DIRECT + '/Items/') ? src.replace(/maxWidth=\d+&quality=\d+/, 'maxWidth=32&quality=50') : '');
 export function img(itemId, type, tag, width = 400, index) {
   if (!itemId || !tag) return null;
   width = fitW(width);
