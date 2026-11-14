@@ -39,6 +39,7 @@ const ON_TV = document.documentElement.classList.contains('tv');
 const PW = ON_TV ? 260 : 340, WW = ON_TV ? 420 : 500;
 function pickImage(it, shape) {
   const t = it.ImageTags || {};
+  if (it._poster && shape !== 'wide') return it._poster;   // a collection borrowing its first film's poster (TV)
   if (shape === 'wide') {
     if (it.Type === 'Episode' && t.Primary) return img(it.Id, 'Primary', t.Primary, WW);
     if (t.Thumb) return img(it.Id, 'Thumb', t.Thumb, WW);
@@ -62,7 +63,17 @@ export function shapeFor(it) {
 
 export function card(it, opts = {}) {
   const shape = opts.shape || shapeFor(it);
-  const src = pickImage(it, shape);
+  // TV, Continue Watching: an episode shows its show's artwork with the show's title on it, which
+  // is far easier to recognise from the couch than a frame from the episode (Jayden's pick, B2).
+  let src = pickImage(it, shape), over = '';
+  if (opts.showArt && it.Type === 'Episode') {
+    const back = it.ParentBackdropItemId && it.ParentBackdropImageTags?.[0] ? img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], WW, 0) : null;
+    const logo = it.ParentLogoItemId && it.ParentLogoImageTag ? img(it.ParentLogoItemId, 'Logo', it.ParentLogoImageTag, 300) : null;
+    const thumb = it.ParentThumbItemId && it.ParentThumbImageTag ? img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, WW) : null;
+    if (back && logo) { src = back; over = `<span class="art-over has-logo"><img class="art-logo" src="${esc(logo)}" alt="" onload="this.classList.add('loaded')" onerror="this.parentNode.classList.remove('has-logo');this.remove()"><b>${esc(it.SeriesName || '')}</b></span>`; }
+    else if (thumb) src = thumb;   // a show's "thumb" picture already carries its title
+    else if (back) { src = back; over = `<span class="art-over"><b>${esc(it.SeriesName || '')}</b></span>`; }
+  }
   const lo = hueOf(src);
   const ud = it.UserData || {};
   let title = it.Name;
@@ -89,6 +100,7 @@ export function card(it, opts = {}) {
       <div class="art">
         ${lo ? `<div class="ph lo" style="background:${lo}"></div>` : `<div class="ph">${esc(it.Name)}</div>`}
         ${src ? `<img loading="lazy" decoding="async" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
+        ${over}
         ${isPlayable(it) ? `<div class="play-over"><span data-play="${esc(it.Id)}" title="Play">${PLAY_ICON}</span></div>` : ''}
         ${badge}
         ${pct ? `<div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>` : ''}

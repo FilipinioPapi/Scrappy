@@ -251,13 +251,13 @@ function loadRows(root, ctx, views) {
   genreSection(root, ctx, views);
   buildHero(root, ctx);
 
-  load(`/Users/{userId}/Items/Resume?Limit=24&Recursive=true&MediaTypes=Video&${q}`, (data) => {
+  load(`/Users/{userId}/Items/Resume?Limit=24&Recursive=true&MediaTypes=Video&${q}${ON_TV ? ',Logo' : ''}`, (data) => {
     const items = data?.Items || [];
     const slot = root.querySelector('[data-row=resume]');
     if (!slot) return;
     slot.innerHTML = items.length
       ? `<section class="section" data-cw><div class="section-head"><h2>Continue Watching</h2></div>
-          <div class="row">${items.map((i) => card(i, { shape: 'wide', clickPlay: true })).join('')}</div></section>`
+          <div class="row">${items.map((i) => card(i, { shape: 'wide', clickPlay: true, showArt: ON_TV })).join('')}</div></section>`
       : '';
   }, ctx.alive).catch(() => {});
 
@@ -347,7 +347,7 @@ function genreSection(root, ctx, views) {
   slot.innerHTML = `
     <section class="section genre-section">
       <div class="genre-head">
-        <h2 class="genre-title">BROWSE BY GENRE</h2>
+        <h2 class="genre-title">${ON_TV ? 'Browse by genre' : 'BROWSE BY GENRE'}</h2>
         ${libs.length > 1 ? `<div class="season-tabs">${libs.map((l) => `<button class="season-tab ${l.Id === current ? 'active' : ''}" data-lib="${esc(l.Id)}">${esc(l.Name)}</button>`).join('')}</div>` : ''}
       </div>
       <div class="genre-rows"></div>
@@ -884,6 +884,30 @@ function libraryQuery(view) {
   }
 }
 
+// TV (Jayden's pick, C2): a collection with no picture of its own borrows the poster of its first
+// film. Looked up once per collection and remembered, so later visits draw it straight away.
+const BOX_ART = new Map();
+try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem('tvBoxArt') || '{}'))) BOX_ART.set(k, v); } catch {}
+['scrappy:rowcache-clear', 'scrappy:art-clear'].forEach((n) => window.addEventListener(n, () => { BOX_ART.clear(); try { localStorage.removeItem('tvBoxArt'); } catch {} }));
+const boxNeeds = (it) => ON_TV && it.Type === 'BoxSet' && !it.ImageTags?.Primary;
+function boxKnown(items) { for (const it of items) if (boxNeeds(it) && BOX_ART.get(it.Id)) it._poster = BOX_ART.get(it.Id); }
+async function boxArt(grid, items) {
+  let fresh = false;
+  for (const it of items) {
+    if (!boxNeeds(it) || BOX_ART.has(it.Id)) continue;
+    let src = '';
+    try {
+      const d = await api.get(`/Users/{userId}/Items?ParentId=${it.Id}&Limit=1&SortBy=ProductionYear,SortName&SortOrder=Ascending&Fields=PrimaryImageAspectRatio&ImageTypeLimit=1&EnableImageTypes=Primary`);
+      const f = d?.Items?.[0];
+      if (f?.ImageTags?.Primary) src = img(f.Id, 'Primary', f.ImageTags.Primary, 260) || '';
+    } catch { continue; }
+    BOX_ART.set(it.Id, src); fresh = true;
+    const art = src && grid.isConnected && grid.querySelector(`.card[data-id="${CSS.escape(it.Id)}"] .art`);
+    if (art && !art.querySelector('img')) art.querySelector('.ph')?.insertAdjacentHTML('afterend', `<img decoding="async" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">`);
+  }
+  if (fresh) try { localStorage.setItem('tvBoxArt', JSON.stringify(Object.fromEntries([...BOX_ART].slice(-400)))); } catch {}
+}
+
 // The address of a library's first page. One place, so the TV can fetch it ahead of time.
 // The TV asks for fewer posters per page: it draws them faster and only ~14 fit on screen.
 function libPath(id, view, by, order, gid, extra, tv) {
@@ -1033,7 +1057,9 @@ export async function libraryView(root, ctx, id, genreId = '') {
           grid.removeAttribute('data-hold');
           grid.innerHTML = '';
           const items = apply(data);
+          boxKnown(items);
           grid.insertAdjacentHTML('beforeend', items.map((it) => card(it)).join(''));
+          boxArt(grid, items);
           rendered = items.length;
           if (TV && !document.documentElement.classList.contains('playing')) {
             const cs = grid.querySelectorAll('.card');
@@ -1046,7 +1072,9 @@ export async function libraryView(root, ctx, id, genreId = '') {
         const data = await api.get(path);
         if (myGen !== gen || !ctx.alive()) return;
         const items = data.Items || [];
+        boxKnown(items);
         grid.insertAdjacentHTML('beforeend', items.map((it) => card(it)).join(''));
+        boxArt(grid, items);
         start += items.length;
         if (!items.length) total = start;
       }
@@ -1081,7 +1109,9 @@ export async function libraryView(root, ctx, id, genreId = '') {
       const items = (data.Items || []).slice(0, first - s);
       const anchor = grid.contains(document.activeElement) ? document.activeElement : grid.firstElementChild;
       const top0 = anchor?.getBoundingClientRect().top ?? 0, y0 = scrollY;
+      boxKnown(items);
       grid.insertAdjacentHTML('afterbegin', items.map((it) => card(it)).join(''));
+      boxArt(grid, items);
       first = s;
       if (anchor) {
         let d = anchor.getBoundingClientRect().top - top0;

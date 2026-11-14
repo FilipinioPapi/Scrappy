@@ -3798,3 +3798,17 @@ html.tv .tvs-bar { padding-right: 0; }
 /* "Player details": a plain readout over the video, for a photo when something is stuck. */
 .p-details { position: absolute; left: 40px; top: 110px; z-index: 6; max-width: 62%; max-height: 62%; overflow: hidden; margin: 0; padding: 16px 20px; border-radius: 14px; background: rgba(0,0,0,.78); color: #fff; font: 500 15px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; pointer-events: none; }
 html.tv #player .p-set-fix { flex-wrap: wrap; }
+
+/* ---------- Google TV: Jayden's look answers (A2, B2, D2) ---------- */
+/* A2: "Browse by genre" reads like every other row title on Home. */
+html.tv .genre-title { font-family: inherit; font-weight: 800; font-size: 20px; color: var(--text); letter-spacing: -.2px; text-shadow: none; }
+/* B2: Continue Watching episodes carry their show's artwork and title. The title always sits
+   inside the tile: a logo is fitted into its corner box, a plain name wraps to two lines at most. */
+.card .art .art-over { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top, rgba(10,6,6,.82) 0%, rgba(10,6,6,.35) 38%, rgba(10,6,6,0) 62%); }
+.card .art .art-over img.art-logo { position: absolute; left: 6%; bottom: 11%; width: auto; height: auto; max-width: 62%; max-height: 44%; object-fit: contain; object-position: left bottom; transform: none !important; filter: drop-shadow(0 2px 5px rgba(0,0,0,.75)); }
+.card .art .art-over b { position: absolute; left: 6%; right: 6%; bottom: 10%; font-family: var(--display); font-weight: 400; font-size: 27px; line-height: 1.02; letter-spacing: .4px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.card .art .art-over.has-logo b { display: none; }
+/* D2: on a strip of tabs the remote's spot is filled white; the picked tab keeps a red outline
+   (the same rule as the A to Z strip), so only one thing ever looks "selected". */
+html.tv .season-tabs .season-tab:focus { background: #fff !important; color: #120C0C !important; outline: none; box-shadow: none; }
+html.tv .season-tabs:focus-within .season-tab.active:not(:focus) { background: none !important; color: #fff; box-shadow: inset 0 0 0 2px var(--red); }
