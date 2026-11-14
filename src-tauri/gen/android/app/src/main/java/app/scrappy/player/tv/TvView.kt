@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.os.SystemClock
 import android.view.KeyEvent
+import org.json.JSONObject
 import android.view.View
 import kotlin.math.abs
 import kotlin.math.exp
@@ -35,6 +36,10 @@ interface Host {
   fun reroute()
   /** Find more subtitles for this video (the web side's dialog). */
   fun subtitles(id: String)
+  /** Search every signed-in server (the web side's search), answered as sections to draw. */
+  fun search(text: String, done: (JSONObject?) -> Unit)
+  /** The TV keyboard (with voice) for a text box: change = each edit, done = Search/Done (null = closed with Back). */
+  fun keyboard(text: String, change: (String) -> Unit, done: (String?) -> Unit)
 }
 
 /** One glide per scroller, the same feel as the web screens (tv.js glideTo), in 1080p units. */
@@ -111,6 +116,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   fun home(): Home = screens.getOrPut("home") { Home(this) } as Home
   fun grid(id: String, genre: String): Grid = screens.getOrPut("lib/$id/$genre") { Grid(this, id, genre) } as Grid
   fun genres(): Genres = screens.getOrPut("genres") { Genres(this) } as Genres
+  fun search(): Search = screens.getOrPut("search") { Search(this) } as Search
   fun favs(): Favs = screens.getOrPut("favorites") { Favs(this) } as Favs
   fun person(id: String): Person {
     val d = screens.getOrPut("person/$id") { Person(this, id) } as Person
@@ -153,6 +159,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     if (isItem(p)) return detail(java.net.URLDecoder.decode(p[2], "UTF-8"))
     if (h == "#/genres") return genres()
     if (h == "#/favorites") return favs()
+    if (h == "#/search") return search()
     if (p.size == 3 && p[1] == "person" && p[2].isNotEmpty()) return person(java.net.URLDecoder.decode(p[2], "UTF-8"))
     return null
   }
@@ -161,7 +168,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     val h = hash.substringBefore('?')
     if (h == "" || h == "#" || h == "#/" || h == "#/home") return true
     val p = h.split('/')
-    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" ||
+    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" || h == "#/search" ||
       (p.size == 3 && p[1] == "person" && p[2].isNotEmpty())
   }
 

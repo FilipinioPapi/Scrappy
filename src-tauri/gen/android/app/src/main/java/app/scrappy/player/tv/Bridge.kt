@@ -54,7 +54,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   private fun eval(s: String) = act.runOnUiThread { web.evaluateJavascript(s, null) }
 
   /** Keys while a native screen is up and nothing from the web is on top. */
-  fun takesKeys() = active && !webKeys && !playing
+  fun takesKeys() = active && !webKeys && !playing && box?.hasFocus() != true
 
   private var hadNativeKeys = false
   private var webHidden = false
@@ -153,5 +153,59 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   override fun replace(hash: String, go: Boolean) = eval(
     if (go) "location.replace(${js(hash)})" else "history.replaceState(history.state, '', ${js(hash)}); window.__curHash = location.hash")
   override fun subtitles(id: String) = eval("window.__tvNative && window.__tvNative.subtitles(${js(id)})")
+  private val searches = HashMap<Int, (JSONObject?) -> Unit>()
+  private var searchN = 0
+  @JavascriptInterface fun searchDone(seq: Int, json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { null }
+    act.runOnUiThread { searches.remove(seq)?.invoke(o) }
+  }
+  override fun search(text: String, done: (JSONObject?) -> Unit) {
+    val n = ++searchN; searches[n] = done
+    eval("window.__tvNative && window.__tvNative.search($n, ${js(text)})")
+  }
+
+  /** An invisible text box under the native view takes the TV keyboard's typing and voice. */
+  private var box: KeyBox? = null
+  private class KeyBox(ctx: Context) : android.widget.EditText(ctx) {
+    var onBack: (() -> Unit)? = null
+    override fun onKeyPreIme(keyCode: Int, event: android.view.KeyEvent): Boolean {
+      if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) { onBack?.invoke(); return true }
+      return keyCode == android.view.KeyEvent.KEYCODE_BACK || super.onKeyPreIme(keyCode, event)
+    }
+  }
+  private var watcher: android.text.TextWatcher? = null
+  override fun keyboard(text: String, change: (String) -> Unit, done: (String?) -> Unit) {
+    act.runOnUiThread {
+      val parent = web.parent as? ViewGroup ?: return@runOnUiThread
+      val b = box ?: KeyBox(act).also { k ->
+        k.alpha = 0f; k.isSingleLine = true; k.isFocusableInTouchMode = true
+        k.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        k.inputType = android.text.InputType.TYPE_CLASS_TEXT
+        parent.addView(k, 0, FrameLayout.LayoutParams(2, 2))
+        box = k
+      }
+      watcher?.let { b.removeTextChangedListener(it) }
+      b.setText(text); b.setSelection(text.length)
+      val imm = act.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+      var closed = false
+      fun close(result: String?) {
+        if (closed) return; closed = true
+        watcher?.let { b.removeTextChangedListener(it) }; watcher = null
+        imm.hideSoftInputFromWindow(b.windowToken, 0)
+        b.clearFocus(); view.requestFocus()
+        done(result)
+      }
+      watcher = object : android.text.TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
+        override fun onTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
+        override fun afterTextChanged(s: android.text.Editable?) { change(s?.toString() ?: "") }
+      }.also { b.addTextChangedListener(it) }
+      b.setOnEditorActionListener { v, _, _ -> close(v.text.toString()); true }
+      b.onBack = { close(null) }
+      b.requestFocus()
+      b.post { imm.showSoftInput(b, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT) }
+    }
+  }
+
   override fun reroute() = eval("window.dispatchEvent(new HashChangeEvent('hashchange'))")
 }

@@ -159,6 +159,17 @@ class PreviewTest {
     override fun replace(hash: String, go: Boolean) {}
     override fun reroute() {}
     override fun subtitles(id: String) {}
+    override fun search(text: String, done: (JSONObject?) -> Unit) {
+      calls.add("search $text")
+      val secs = JSONArray()
+        .put(JSONObject().put("title", "Best match").put("kind", "cards").put("noCount", true).put("items", JSONArray().put(item(4))))
+        .put(JSONObject().put("title", "Movies & Shows").put("kind", "cards").put("items", JSONArray().apply { for (i in 0 until 9) put(item(i + 5, if (i % 3 == 2) "Series" else "Movie")) }))
+        .put(JSONObject().put("title", "People").put("kind", "people").put("items", JSONArray().put(JSONObject().put("Id", "p1").put("Name", "Gunnar Hansen").put("ImageTags", JSONObject().put("Primary", "x"))).put(JSONObject().put("Id", "p2").put("Name", "Tim Gunn"))))
+        .put(JSONObject().put("title", "Episodes").put("kind", "wide").put("items", JSONArray().apply { for (i in 0 until 3) put(item(i + 2, "Episode")) }))
+        .put(JSONObject().put("title", "Music").put("kind", "rows").put("rows", JSONArray().apply { for (i in 0 until 6) put(JSONObject().put("href", "#/music/album/a$i").put("title", "Song $i").put("sub", "Song · Artist $i").put("right", "3:2$i").put("h", i * 50)) }))
+      android.os.Handler(Looper.getMainLooper()).post { done(JSONObject().put("failed", JSONArray().put("Audiobookshelf")).put("sections", secs)) }
+    }
+    override fun keyboard(text: String, change: (String) -> Unit, done: (String?) -> Unit) { calls.add("keyboard"); change("gun"); done("gun") }
   }
 
   private lateinit var tv: TvView
@@ -242,6 +253,17 @@ class PreviewTest {
     tv.route("#/person/p0"); pump(3000); shot("person")
     press(KeyEvent.KEYCODE_DPAD_DOWN); shot("person-d1", 1200)
     File(out, "pages-calls.txt").writeText(host.calls.joinToString("\n") + "\n---\n" + synchronized(log) { log.joinToString("\n") })
+  }
+
+  @Test fun search() {
+    start()
+    tv.route("#/search"); pump(1500); shot("search")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); pump(1500); shot("search-gun")
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("search-d1", 1000)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_DOWN); shot("search-d3", 1000)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("search-d4", 1000)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("search-d5", 1000)
+    File(out, "search-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun grid() {

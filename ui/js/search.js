@@ -397,6 +397,26 @@ function tvSearchPage(root, ctx, q) {
   window.dispatchEvent(new Event('scrappy:ready'));
 }
 
+// Google TV, native search screen: the same search and the same order, handed back as data for the app to draw.
+export async function tvSearchData(text) {
+  const res = await searchAll(text, true);
+  const v = res.video || { items: [], people: [] };
+  const tops = v.items.filter((x) => x.Type !== 'Episode'); const eps = v.items.filter((x) => x.Type === 'Episode');
+  let best = null, bestS = 0.84;
+  for (const it of tops) { const s = score(text, it.Name); if (s > bestS) { best = it; bestS = s; } }
+  for (const p of v.people) { const s = score(text, p.Name); if (s > bestS) { best = p; bestS = s; } }
+  const isP = best && v.people.includes(best);
+  const secs = [];
+  if (best) secs.push({ title: 'Best match', kind: isP ? 'people' : 'cards', items: [best], noCount: true });
+  const restTops = tops.filter((x) => x !== best), restPeople = v.people.filter((x) => x !== best);
+  if (restTops.length) secs.push({ title: 'Movies & Shows', kind: 'cards', items: restTops });
+  if (restPeople.length) secs.push({ title: 'People', kind: 'people', items: restPeople });
+  if (eps.length) secs.push({ title: 'Episodes', kind: 'wide', items: eps });
+  for (const k of ['music', 'audiobooks']) for (const g of GROUPS[k](res[k])) if (g.rows.length) secs.push({ title: g.title, kind: 'rows', rows: g.rows.map(({ data, ...r }) => r) });
+  if (secs.length) tvRemember(text);
+  return { failed: res.failed || [], sections: secs };
+}
+
 export async function searchPage(root, ctx) {
   const q = new URLSearchParams(location.hash.split('?')[1] || '').get('q') || '';
   if (/Android/i.test(navigator.userAgent)) return tvSearchPage(root, ctx, q);

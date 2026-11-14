@@ -125,6 +125,7 @@ function refocus() {
 
 window.__tvNative = {
   refocus,
+  search: (seq, text) => import('./search.js').then((m) => m.tvSearchData(text)).catch((e) => ({ failed: [], sections: [], error: String(e) })).then((r) => { try { N.searchDone(seq, JSON.stringify(r)); } catch {} }),
   play: (id, fromStart) => playItem(id, !!fromStart),
   playSeries: (id, fromStart) => playSeries(id, !!fromStart),
   toast: (msg, err) => toast(msg, !!err),
