@@ -295,7 +295,8 @@ addEventListener('keydown', (e) => {
     const q = quick(from, k);
     if (q) { pend = q; if (!pendRaf) pendRaf = requestAnimationFrame(flushPend); return; }
     // The bottom of a grid that is still loading more: wait there instead of wandering off to the A to Z strip.
-    if ((k === 'ArrowDown' || k === 'ArrowUp') && from.parentElement?.classList.contains('grid') && from.parentElement.dataset.more === '1') return;
+    // (Only Down: Up from the top line must still reach the Sort, Show and Genre buttons.)
+    if (k === 'ArrowDown' && from.parentElement?.classList.contains('grid') && from.parentElement.dataset.more === '1') return;
   }
   if (pend) { flushPend(); return; }
   const scope = scopeFor(cur);
