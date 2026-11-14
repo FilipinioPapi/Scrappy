@@ -5,8 +5,11 @@
 // Audiobookshelf keeps your spot: we open a "play session" when a book starts,
 // send the position every 15 seconds and on pause, and close it when you stop.
 import { api, listen, IMG_BASE } from './api.js';
+const { emit } = window.__TAURI__.event;
 import { esc, toast } from './components.js';
-import { followHTML, followBind, followActive, FOLLOW_ICON } from './follow.js';
+import { pref, on, onPref } from './prefs.js';
+import { followHTML, followBind, followActive, followRoot, openSettings, FOLLOW_ICON, POP_ICON } from './follow.js';
+import { loadBookmarks, bookmarksFor, onBookmarks, addBookmark, listHtml, wireList, actionToast, MARK } from './bookmarks.js';
 import { mode, enterBookMode, music as M, setVolume, toggleMute, onMusic, IC } from './mplayer.js';
 
 const { invoke } = window.__TAURI__.core;
@@ -110,9 +113,22 @@ async function sync(close = false) {
 }
 async function closeSession() { if (B.session) await sync(true); }
 
-export function toggleBook() {
+export async function toggleBook() {
   if (!B.item) return;
-  if (!B.started || !B.session) return playBook(B.item.id, { at: B.pos });
+  // Starting again (e.g. after a restart): playBook asks the server where you are,
+  // so listening on another device in between isn't overwritten.
+  if (!B.started || !B.session) return playBook(B.item.id);
+  // Resuming after a while: if another device moved on since, jump to its spot first.
+  if (!B.playing && B.pausedAt && Date.now() - B.pausedAt > 20000) {
+    let moved = false;
+    try {
+      const p = await api.abs(`/api/me/progress/${encodeURIComponent(B.item.id)}`);
+      if (p && !p.isFinished && (p.lastUpdate || 0) > B.lastSync + 2000 && Math.abs((p.currentTime || 0) - B.pos) > 5) { seekBook(p.currentTime); moved = true; }
+    } catch {}
+    // Settings: back a little after a pause, so you catch the last sentence (more after a long break).
+    const away = Date.now() - B.pausedAt;
+    if (!moved && on('bRewind') && away > 60000) seekBook(Math.max(0, B.pos - (away > 30 * 60000 ? 15 : 5)));
+  }
   invoke('music_command', { args: ['cycle', 'pause'] }).catch(fail);
 }
 export function pauseBook() { if (B.started && B.playing) invoke('music_set', { name: 'pause', value: 'yes' }).catch(() => {}); }
@@ -129,6 +145,16 @@ export function seekBook(t) {
     .catch(() => {});
 }
 export const skip = (secs) => seekBook(B.pos + secs);
+// Skip lengths from Settings ("10/30" = back 10, forward 30). The buttons show the numbers.
+const skipLens = () => { const [b, f] = String(pref('bSkip')).split('/').map(Number); return { b: b || 10, f: f || 10 }; };
+const skipBack = () => skip(-skipLens().b);
+const skipFwd = () => skip(skipLens().f);
+function drawSkips(root = document) {
+  const { b, f } = skipLens();
+  root.querySelectorAll('#bbBack,#tbBack,#bnBack').forEach((x) => { const t = x.querySelector('text'); if (t) t.textContent = b; x.title = x.ariaLabel = `Back ${b} seconds`; });
+  root.querySelectorAll('#bbFwd,#tbFwd,#bnFwd').forEach((x) => { const t = x.querySelector('text'); if (t) t.textContent = f; x.title = x.ariaLabel = `Forward ${f} seconds`; });
+}
+onPref('bSkip', () => drawSkips());
 export function prevChapter() {
   const i = chapterAt(B.chapters, B.pos);
   if (i < 0) return seekBook(0);
@@ -182,7 +208,7 @@ listen('music-prop', ({ payload: { name, value } }) => {
     B.track = value;
   } else if (name === 'pause') {
     const was = B.playing; B.playing = value === false;
-    if (was && !B.playing) { sync(); save(); }
+    if (was && !B.playing) { B.pausedAt = Date.now(); sync(); save(); }
     notify();
   }
 });
@@ -216,7 +242,7 @@ bar.id = 'bbar';
 bar.hidden = true;
 bar.innerHTML = `
   <div class="mb-now">
-    <button type="button" class="mb-cover" id="bbCover" title="Now listening"><img alt=""></button>
+    <button type="button" class="mb-cover" id="bbCover" title="Now playing"><img alt=""></button>
     <div class="mb-txt"><a class="mb-title" id="bbTitle"></a><div class="mb-sub" id="bbSub"></div><div class="mb-sub bb-ch" id="bbCh"></div></div>
   </div>
   <div class="mb-mid">
@@ -233,10 +259,12 @@ bar.innerHTML = `
   </div>
   <div class="mb-right">
     <span class="bb-left" id="bbLeft"></span>
+    <button type="button" class="gb bb-fa" id="bbFa" title="Follow along" aria-label="Follow along">${FOLLOW_ICON}</button>
+    <button type="button" class="gb bb-mark" id="bbMark" title="Bookmarks (B)" aria-label="Bookmarks">${MARK}<i class="bb-bn"></i></button>
     <button type="button" class="gb" id="bbChap" title="Chapters" aria-label="Chapters">${BI.chapters}</button>
     <button type="button" class="gb" id="bbMute" title="Mute" aria-label="Mute">${IC.vol}</button>
     <div class="mseek vol" id="bbVol"><div class="track"><i></i></div><b></b></div>
-    <button type="button" class="gb" id="bbExp" title="Now listening" aria-label="Now listening">${IC.expand}</button>
+    <button type="button" class="gb" id="bbExp" title="Now playing" aria-label="Now playing">${IC.expand}</button>
   </div>`;
 document.body.appendChild(bar);
 const pop = document.createElement('div');
@@ -271,6 +299,7 @@ function draw() {
   $('bbPrev').disabled = $('bbNext').disabled = !B.chapters.length;
   $('bbChap').hidden = !B.chapters.length;
   drawSleep();
+  drawMarkBadge();
   drawProgress();
   if (pop.dataset.kind && !pop.classList.contains('off')) fillPop(pop.dataset.kind);
 }
@@ -299,6 +328,8 @@ function drawProgress() {
   const { start, end } = span();
   $('bbPos').textContent = clock(B.pos - start); $('bbRem').textContent = '-' + clock(end - B.pos);
   setFill($('bbSeek'), (B.pos - start) / Math.max(1, end - start));
+  drawTicks($('bbSeek'));
+  if (pop.dataset.kind === 'marks' && !pop.classList.contains('off')) markAt();
   if (pop.dataset.kind === 'chapters' && !pop.classList.contains('off')) markChapter();
 }
 function slider(el, onMove, onDone) {
@@ -316,14 +347,15 @@ slider($('bbSeek'), (f) => { dragging = true; const { start, end } = span(); set
   (f) => { dragging = false; const { start, end } = span(); seekBook(start + f * (end - start)); });
 slider($('bbVol'), (f) => { setVolume(f * 100); draw(); });
 $('bbPlay').onclick = toggleBook;
-$('bbBack').onclick = () => skip(-10);
-$('bbFwd').onclick = () => skip(10);
+$('bbBack').onclick = skipBack;
+$('bbFwd').onclick = skipFwd;
 $('bbPrev').onclick = prevChapter;
 $('bbNext').onclick = nextChapter;
 $('bbMute').onclick = () => { toggleMute(); draw(); };
 $('bbSpd').onclick = (e) => togglePop('speed', e.currentTarget);
 $('bbSleep').onclick = (e) => togglePop('sleep', e.currentTarget);
 $('bbChap').onclick = (e) => togglePop('chapters', e.currentTarget);
+$('bbMark').onclick = (e) => togglePop('marks', e.currentTarget);
 onMusic(() => { if (mode.book) draw(); });
 bar.addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap'); });
 
@@ -383,8 +415,9 @@ slider(TB('tbSeek'), (f) => { tbDrag = true; const { start, end } = span(); setF
   (f) => { tbDrag = false; const { start, end } = span(); seekBook(start + f * (end - start)); });
 slider(TB('tbVol'), (f) => { setVolume(f * 100); draw(); });
 TB('tbPlay').onclick = toggleBook;
-TB('tbBack').onclick = () => skip(-10);
-TB('tbFwd').onclick = () => skip(10);
+TB('tbBack').onclick = skipBack;
+TB('tbFwd').onclick = skipFwd;
+drawSkips();
 TB('tbMute').onclick = () => { toggleMute(); draw(); };
 TB('tbSpd').onclick = (e) => togglePop('speed', e.currentTarget);
 TB('tbCover').onclick = () => { location.hash = B.item ? `#/audiobooks/book/${encodeURIComponent(B.item.id)}` : '#/audiobooks'; };
@@ -409,7 +442,7 @@ function togglePop(kind, anchor) {
   if (kind === 'chapters') pop.querySelector('.cur')?.scrollIntoView({ block: 'center' });
 }
 function closePop() { pop.classList.add('off'); document.querySelectorAll('.pop-on').forEach((b) => b.classList.remove('pop-on')); }
-document.addEventListener('pointerdown', (e) => { if (!pop.classList.contains('off') && !pop.contains(e.target) && !e.target.closest('#bbSpd,#bbSleep,#bbChap,#bnSpd,#bnSleep,#tbSpd')) closePop(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.classList.contains('off') && !pop.contains(e.target) && !e.target.closest('#bbSpd,#bbSleep,#bbChap,#bbMark,#bnSpd,#bnSleep,#tbSpd,.bm-toast')) closePop(); });
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 
 const STOPS = Array.from({ length: Math.round((SPEED_MAX - SPEED_MIN) / SPEED_STEP) + 1 }, (_, i) => Math.round((SPEED_MIN + i * SPEED_STEP) * 100) / 100);
@@ -447,6 +480,8 @@ function fillPop(kind) {
     const opts = [[null, 'Off'], [15, '15 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'], ['chapter', 'End of chapter']];
     pop.innerHTML = `<div class="bb-ph">Sleep timer</div>` + opts.map(([v, l]) => `<button type="button" class="bb-mi${cur === v ? ' on' : ''}" data-sl="${v ?? ''}">${l}${cur === v ? BI.check : ''}</button>`).join('');
     pop.querySelectorAll('[data-sl]').forEach((b) => (b.onclick = () => { const v = b.dataset.sl; setSleep(v === '' ? null : v === 'chapter' ? 'chapter' : Number(v)); closePop(); }));
+  } else if (kind === 'marks') {
+    fillMarks();
   } else if (kind === 'chapters') {
     if (pop.dataset.for !== B.item?.id || pop.querySelectorAll('.bb-chi').length !== B.chapters.length) {
       pop.dataset.for = B.item?.id || '';
@@ -463,36 +498,116 @@ function markChapter() {
   const n = pop.querySelector('#bbChN'); if (n) n.textContent = ci >= 0 ? `${ci + 1} of ${B.chapters.length}` : '';
 }
 
+// ---------- Bookmarks (kept in Audiobookshelf, see bookmarks.js) ----------
+let markEdit = null, markFresh = null, markKey = '';
+const markJump = (t) => { if (!B.item) return; if (!B.started) playBook(B.item.id, { at: t }); else seekBook(t); };
+function drawMarkBadge() {
+  const n = B.item ? bookmarksFor(B.item.id).length : 0;
+  const i = $('bbMark').querySelector('.bb-bn'); i.textContent = n || ''; i.hidden = !n;
+  $('bbMark').title = n ? `Bookmarks (${n}) · press B to save your spot` : 'Bookmarks · press B to save your spot';
+}
+/** Small gold ticks on a seek bar for bookmarks inside the part it shows. */
+function drawTicks(el) {
+  if (!el || !B.item) return;
+  const { start, end } = span();
+  const ts = bookmarksFor(B.item.id).map((b) => b.time).filter((t) => t >= start && t <= end);
+  const key = `${start}|${end}|${ts.join(',')}`;
+  if (el.dataset.ticks === key) return;
+  el.dataset.ticks = key;
+  el.querySelectorAll('.bm-tick').forEach((x) => x.remove());
+  ts.forEach((t) => { const x = document.createElement('span'); x.className = 'bm-tick'; x.style.left = ((t - start) / Math.max(1, end - start)) * 100 + '%'; el.appendChild(x); });
+}
+function markAt() { const a = pop.querySelector('#bmAt'); if (a) a.textContent = `Saves your spot at ${clock(B.pos)}`; const inp = pop.querySelector('#bmName'); if (inp && document.activeElement !== inp && !inp.dataset.typed) inp.value = curChapter()?.title || ''; }
+function fillMarks() {
+  if (!B.item) return;
+  const id = B.item.id, list = bookmarksFor(id);
+  const key = `${id}|${list.map((b) => b.time + ':' + b.title).join(',')}|${markEdit}|${markFresh}`;
+  if (key !== markKey || !pop.querySelector('#bmList')) {
+    markKey = key;
+    if (!pop.querySelector('#bmList') || pop.dataset.for !== 'marks:' + id) {
+      pop.dataset.for = 'marks:' + id;
+      pop.innerHTML = `<div class="bb-ph"><span>Bookmarks</span><span class="t2" id="bmN"></span></div>
+        <form class="bm-add" id="bmAdd"><input id="bmName" maxlength="120" placeholder="Name this bookmark" aria-label="Bookmark name" autocomplete="off"><button type="submit" class="btn small">${line('<path d="M12 5v14M5 12h14"/>', 16)}<span>Add</span></button></form>
+        <div class="bm-at" id="bmAt"></div>
+        <div class="bm-list" id="bmList"></div>
+        <div class="bm-sync">${line('<path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5"/>', 13)}Synced with Audiobookshelf</div>`;
+      const inp = pop.querySelector('#bmName');
+      inp.oninput = () => { inp.dataset.typed = inp.value ? '1' : ''; };
+      inp.onkeydown = (e) => e.stopPropagation();
+      pop.querySelector('#bmAdd').onsubmit = (e) => {
+        e.preventDefault();
+        saveMark(inp.value || curChapter()?.title).then(() => { inp.dataset.typed = ''; inp.value = ''; inp.blur(); markAt(); });
+      };
+    }
+    pop.querySelector('#bmN').textContent = list.length ? `${list.length} in this book` : '';
+    const box = pop.querySelector('#bmList');
+    box.innerHTML = listHtml(id, B.chapters, { editing: markEdit, fresh: markFresh });
+    wireList(box, id, markJump, (t) => { markEdit = t; fillMarks(); });
+  }
+  markAt();
+}
+async function saveMark(title) {
+  if (!B.item) return null;
+  try {
+    const t = await addBookmark(B.item.id, B.pos, title || curChapter()?.title || 'Bookmark');
+    markFresh = t; return t;
+  } catch (e) { toast(String(e), true); return null; }
+}
+/** The B key: save the spot right away, with a Rename button in the note. */
+async function quickMark() {
+  const t = await saveMark();
+  if (t == null) return;
+  actionToast(`Bookmark saved at ${clock(t)}`, 'Rename', () => {
+    markEdit = t;
+    const a = nowOpen ? null : $('bbMark');
+    if (nowOpen) { nowPane = 'marks'; drawPane(); drawNowMarks(); }
+    else if (pop.dataset.kind !== 'marks' || pop.classList.contains('off')) togglePop('marks', a); else fillMarks();
+  });
+}
+onBookmarks(() => {
+  if (!B.item) return;
+  drawMarkBadge(); drawTicks($('bbSeek'));
+  if (pop.dataset.kind === 'marks' && !pop.classList.contains('off')) fillMarks();
+  if (nowOpen) { drawTicks(n$('bnSeek')); drawNowMarks(); }
+});
+// Refresh from Audiobookshelf when a book loads and now and then (bookmarks made on the phone show up).
+let marksFor = null;
+onBook(() => { if (B.item && B.item.id !== marksFor) { marksFor = B.item.id; markEdit = markFresh = null; loadBookmarks(true); } });
+if (B.item) { marksFor = B.item.id; loadBookmarks(true); }
+setInterval(() => { if (B.item && mode.book) loadBookmarks(); }, 60000);
+
 // Space = play/pause while a book owns the player (not while typing or watching video).
 window.addEventListener('keydown', (e) => {
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
   const vp = document.getElementById('player');
   if (typing || (vp && !vp.hidden) || !mode.book) return;
   if (e.code === 'Space' && B.item && location.hash.startsWith('#/audiobooks')) { e.preventDefault(); toggleBook(); }
+  if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey && !e.altKey && B.item && (B.started || nowOpen)) { e.preventDefault(); quickMark(); }
 });
 
 // After a restart, show the last book in the bar (paused) if a book was the last thing playing.
 if (B.item && localStorage.getItem('lastAudio') === 'book') enterBookMode();
 draw();
 
-// ---------- Now listening: the full-screen book player ----------
+// ---------- Now playing: the full-screen book player ----------
 const now = document.createElement('div');
 now.id = 'bnow'; now.hidden = true;
 document.body.appendChild(now);
-let nowOpen = false, nowFor = null, nowPane = ['about', 'follow'].includes(localStorage.getItem('bnowPane')) ? localStorage.getItem('bnowPane') : 'chapters';
+let nowOpen = false, nowFor = null, nowPane = ['about', 'follow', 'marks'].includes(localStorage.getItem('bnowPane')) ? localStorage.getItem('bnowPane') : 'chapters';
 const plain = (html) => { const d = new DOMParser().parseFromString(String(html || ''), 'text/html'); d.querySelectorAll('br,p,div,li').forEach((n) => n.append('\n')); return (d.body.textContent || '').replace(/\n{3,}/g, '\n\n').trim(); };
-export function openBookNow() {
+export function openBookNow(pane) {
   if (!B.item) return;
+  if (pane) { nowPane = pane; try { localStorage.setItem('bnowPane', pane); } catch {} }
   nowOpen = true; now.hidden = false; now.classList.remove('closing'); document.body.classList.add('bnow-open');
   closePop(); buildNow();
 }
 export function closeBookNow() {
   if (!nowOpen) return;
-  nowOpen = false; now.classList.add('closing'); closePop(); followActive(false);
+  nowOpen = false; now.classList.add('closing'); closePop(); syncFollow();
   setTimeout(() => { if (!nowOpen) { now.hidden = true; now.classList.remove('closing'); document.body.classList.remove('bnow-open'); } }, 280);
 }
-$('bbCover').onclick = openBookNow;
-$('bbExp').onclick = openBookNow;
+$('bbCover').onclick = () => openBookNow();
+$('bbExp').onclick = () => openBookNow();
 window.addEventListener('hashchange', closeBookNow);
 window.addEventListener('keydown', (e) => { if (nowOpen && e.key === 'Escape' && pop.classList.contains('off')) { e.preventDefault(); closeBookNow(); } });
 window.addEventListener('book:stop', closeBookNow);
@@ -506,7 +621,7 @@ function buildNow() {
   now.innerHTML = `
     <div class="mn-bg"><img src="${absCover(it, 600)}" alt="" onload="this.classList.add('in')" onerror="this.remove()"></div>
     <div class="mn-top"><button type="button" class="gb sq" id="bnClose" title="Close" aria-label="Close">${line('<path d="M6 9l6 6 6-6"/>')}</button>
-      <div class="mn-from"><div class="kicker">NOW LISTENING</div><div class="t1">Audiobooks</div></div>
+      <div class="mn-from"><div class="kicker">NOW PLAYING</div><div class="t1">Audiobooks</div></div>
       <a class="gb sq" id="bnBook" href="#/audiobooks/book/${encodeURIComponent(it.id)}" title="Open the book page" aria-label="Open the book page">${line('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3"/>')}</a></div>
     <div class="bn-body">
       <div class="bn-left">
@@ -528,13 +643,19 @@ function buildNow() {
         <div class="mn-bot bn-bot"><button type="button" class="gb" id="bnMute" aria-label="Mute">${IC.vol}</button><div class="mseek vol" id="bnVol"><div class="track"><i></i></div><b></b></div>
           <span class="sp"></span>
           <button type="button" class="gb mode" data-pane="follow" title="Follow along" aria-label="Follow along">${FOLLOW_ICON}</button>
+          <button type="button" class="gb mode bn-markbtn" data-pane="marks" title="Bookmarks (B)" aria-label="Bookmarks">${MARK}<i class="bb-bn"></i></button>
           ${B.chapters.length ? `<button type="button" class="gb mode" data-pane="chapters" title="Chapters" aria-label="Chapters">${BI.chapters}</button>` : ''}
           <button type="button" class="gb mode" data-pane="about" title="About this book" aria-label="About this book">${line('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>')}</button></div>
       </div>
       <div class="bn-right">
         ${B.chapters.length ? `<div class="bn-pane" data-pane="chapters"><div class="bn-card"><div class="bn-head"><h2 class="disp">CHAPTERS</h2><span class="t2" id="bnChN"></span></div>
           <div class="bn-list" id="bnList">${B.chapters.map((c, i) => `<button type="button" class="bk-chi bn-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div></div></div>` : ''}
-        ${followHTML()}
+        <div class="bn-pane" data-pane="marks"><div class="bn-card"><div class="bn-head"><h2 class="disp">BOOKMARKS</h2><span class="t2" id="bnMkN"></span></div>
+          <form class="bm-add" id="bnMkAdd"><input id="bnMkName" maxlength="120" placeholder="Name this bookmark" aria-label="Bookmark name" autocomplete="off"><button type="submit" class="btn small">${line('<path d="M12 5v14M5 12h14"/>', 16)}<span>Add</span></button></form>
+          <div class="bm-at" id="bnMkAt"></div>
+          <div class="bn-list bm-list" id="bnMkList"></div>
+          <div class="bm-sync">${line('<path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5"/>', 13)}Synced with Audiobookshelf</div></div></div>
+        ${followHTML('now', `<button type="button" class="gb sq fa-popbtn" title="Pop out into its own window" aria-label="Pop out into its own window">${POP_ICON}</button>`)}
         <div class="bn-pane" data-pane="about"><div class="bn-card bn-about"><div class="bn-head"><h2 class="disp">ABOUT THIS BOOK</h2></div>
           <div class="bn-scroll">${desc ? `<p>${esc(desc)}</p>` : '<p class="t2">No description.</p>'}
           <div class="bn-facts">${facts.map(([k, v]) => `<span>${k}</span><b>${esc(v)}</b>`).join('')}</div></div></div></div>
@@ -543,8 +664,9 @@ function buildNow() {
   if (!B.chapters.length && nowPane === 'chapters') nowPane = 'about';
   n$('bnClose').onclick = closeBookNow;
   n$('bnPlay').onclick = toggleBook;
-  n$('bnBack').onclick = () => skip(-10);
-  n$('bnFwd').onclick = () => skip(10);
+  n$('bnBack').onclick = skipBack;
+  n$('bnFwd').onclick = skipFwd;
+  drawSkips();
   n$('bnPrev').onclick = prevChapter;
   n$('bnNext').onclick = nextChapter;
   n$('bnSpd').onclick = (e) => togglePop('speed', e.currentTarget);
@@ -555,15 +677,19 @@ function buildNow() {
   slider(n$('bnVol'), (f) => { setVolume(f * 100); drawNow(); draw(); });
   now.querySelectorAll('.mode[data-pane]').forEach((b) => (b.onclick = () => { nowPane = b.dataset.pane; try { localStorage.setItem('bnowPane', nowPane); } catch {} drawPane(); }));
   n$('bnList')?.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (!b) return; const c = B.chapters[Number(b.dataset.i)]; if (!c) return; if (!B.started) playBook(B.item.id, { at: c.start }); else seekBook(c.start); });
-  followBind(now, B);
-  drawPane(); drawNow(true);
+  now.querySelector('.fa-popbtn').onclick = popOut;
+  const mkIn = n$('bnMkName');
+  mkIn.oninput = () => { mkIn.dataset.typed = mkIn.value ? '1' : ''; };
+  mkIn.onkeydown = (e) => e.stopPropagation();
+  n$('bnMkAdd').onsubmit = (e) => { e.preventDefault(); saveMark(mkIn.value || curChapter()?.title).then(() => { mkIn.dataset.typed = ''; mkIn.value = ''; mkIn.blur(); }); };
+  nowMarkKey = ''; fBound = null; drawPane(); drawNow(true); drawNowMarks();
 }
 let nowDrag = false, nowCh = -2;
 function drawPane() {
   now.querySelectorAll('.bn-pane').forEach((p) => p.classList.toggle('off', p.dataset.pane !== nowPane));
   now.querySelectorAll('.mode[data-pane]').forEach((b) => b.classList.toggle('on', b.dataset.pane === nowPane));
   if (nowPane === 'chapters') scrollCur(true);
-  followActive(nowOpen && nowPane === 'follow');
+  syncFollow();
 }
 function scrollCur(force) { const l = n$('bnList'), c = l?.querySelector('.cur'); if (l && c && (force || !l.matches(':hover'))) l.scrollTo({ top: c.offsetTop - l.clientHeight / 3, behavior: force ? 'auto' : 'smooth' }); }
 function drawNow(first) {
@@ -582,6 +708,8 @@ function drawNow(first) {
   setFill(n$('bnVol'), M.muted ? 0 : M.volume / 100);
   const c = curChapter(), ci = chapterAt(B.chapters, B.pos);
   n$('bnCh').textContent = c?.title || '';
+  drawTicks(n$('bnSeek'));
+  const mkAt = n$('bnMkAt'); if (mkAt) { mkAt.textContent = `Saves your spot at ${clock(B.pos)}`; const mi = n$('bnMkName'); if (document.activeElement !== mi && !mi.dataset.typed) mi.value = c?.title || ''; }
   if (!nowDrag) { const { start, end } = span(); n$('bnPos').textContent = clock(B.pos - start); n$('bnRem').textContent = '-' + clock(end - B.pos); setFill(n$('bnSeek'), (B.pos - start) / Math.max(1, end - start)); }
   const f = B.duration ? B.pos / B.duration : 0;
   n$('bnBookBar').style.width = (f * 100).toFixed(2) + '%';
@@ -594,6 +722,82 @@ function drawNow(first) {
   if (ci !== nowCh) { const was = nowCh; nowCh = ci; if (!first && was !== -2) scrollCur(false); }
 }
 const plural = (n) => `${n} chapter${n === 1 ? '' : 's'}`;
+let nowMarkKey = '';
+function drawNowMarks() {
+  if (!nowOpen || !B.item) return;
+  const id = B.item.id, list = bookmarksFor(id);
+  const key = `${id}|${list.map((b) => b.time + ':' + b.title).join(',')}|${markEdit}|${markFresh}`;
+  const n = now.querySelector('.bn-markbtn .bb-bn'); if (n) { n.textContent = list.length || ''; n.hidden = !list.length; }
+  if (key === nowMarkKey) return;
+  nowMarkKey = key;
+  n$('bnMkN').textContent = list.length ? `${list.length} in this book` : '';
+  const box = n$('bnMkList');
+  box.innerHTML = listHtml(id, B.chapters, { editing: markEdit, fresh: markFresh });
+  wireList(box, id, markJump, (t) => { markEdit = t; drawNowMarks(); });
+}
 onBook(() => drawNow());
 onMusic(() => { if (mode.book) drawNow(); });
 setInterval(() => { if (nowOpen && B.playing) drawNow(); }, 1000);
+
+
+// ---------- Follow along: right panel, and its own pop-out window ----------
+// The Follow along button in the bottom bar opens a panel on the right, like Music's queue.
+// From there it can open in Now playing, or pop out into its own window (and come back).
+const panel = document.createElement('aside');
+panel.id = 'bpanel'; panel.className = 'bpanel'; panel.setAttribute('aria-label', 'Follow along');
+panel.innerHTML = followHTML('panel',
+  `<button type="button" class="gb" id="fpPop" title="Pop out into its own window" aria-label="Pop out into its own window">${POP_ICON}</button>
+   <button type="button" class="gb" id="fpNow" title="Open in Now playing" aria-label="Open in Now playing">${line('<path d="M6 15l6-6 6 6"/>')}</button>`,
+  `<button type="button" class="gb" id="fpClose" title="Close" aria-label="Close">${line('<path d="M6 6l12 12M18 6L6 18"/>')}</button>`);
+document.body.appendChild(panel);
+let panelWant = localStorage.getItem('bpanel') === '1', popped = false, fBound = null;
+const onBooks = () => location.hash.startsWith('#/audiobooks');
+const panelShown = () => panelWant && !popped && onBooks() && !!B.item && mode.book;
+function setPanel(on) { panelWant = on; try { localStorage.setItem('bpanel', on ? '1' : ''); } catch {} syncFollow(); }
+/** Decide where the text shows (Now playing, the panel, or the pop-out window) and run the worker only then. */
+function syncFollow() {
+  const show = panelShown();
+  panel.classList.toggle('open', show);
+  document.body.classList.toggle('bpanel-open', show);
+  $('bbFa').classList.toggle('on', show || popped);
+  const nowF = nowOpen && nowPane === 'follow';
+  const host = nowF ? now : show ? panel : null;
+  if (host && (host !== fBound || followRoot() !== host)) { fBound = host; followBind(host, B); }
+  if (!host) fBound = null;
+  followActive(nowF || show || popped);
+}
+$('bbFa').onclick = () => { if (popped) invoke('fa_popout').catch(() => {}); else setPanel(!panelShown()); };
+panel.querySelector('#fpClose').onclick = () => setPanel(false);
+panel.querySelector('#fpNow').onclick = () => openBookNow('follow');
+panel.querySelector('#fpPop').onclick = popOut;
+window.addEventListener('hashchange', () => setTimeout(syncFollow, 0));
+onBook(() => { if (!!B.item !== !!fBound || (panelWant && !panel.classList.contains('open'))) syncFollow(); });
+
+// The pop-out window shows the text and a small player; this window stays in charge of playback.
+async function popOut() {
+  if (!B.item) return;
+  try { await invoke('fa_popout'); } catch (e) { toast(String(e), true); return; }
+  popped = true;
+  if (nowOpen) closeBookNow();
+  syncFollow(); sendState();
+}
+function sendState() {
+  if (!popped) return;
+  const it = B.item, m = it?.media?.metadata || {}, c = curChapter(), { start, end } = span();
+  emit('fa-state', { item: it ? { id: it.id } : null, title: m.title || '', author: m.authorName || '', chapter: c?.title || '', cover: absCover(it, 300),
+    pos: B.pos, playing: B.playing && B.started, started: B.started, speed: B.speed, start, end }).catch(() => {});
+}
+setInterval(sendState, 250);
+onBook(sendState);
+listen('fa-cmd', ({ payload: c }) => {
+  if (!c) return;
+  if (c.cmd === 'hello') sendState();
+  else if (c.cmd === 'toggle') toggleBook();
+  else if (c.cmd === 'skip') { if (Number(c.n) < 0) skipBack(); else if (Number(c.n) > 0) skipFwd(); }
+  else if (c.cmd === 'seek') seekBook(Number(c.pos) || 0);
+  else if (c.cmd === 'speed') { const L = [1, 1.25, 1.5, 1.75, 2, 0.9]; const i = L.findIndex((v) => Math.abs(v - B.speed) < 0.01); setSpeed(L[(i + 1) % L.length]); }
+});
+// The pop-out window closed (its send-back button or its X): the text comes back to the panel.
+listen('fa-popin', () => { if (!popped) return; popped = false; panelWant = true; try { localStorage.setItem('bpanel', '1'); } catch {} syncFollow(); });
+window.addEventListener('book:stop', () => { if (popped) invoke('fa_popin').catch(() => {}); });
+syncFollow();

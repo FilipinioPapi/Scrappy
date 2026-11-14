@@ -1,10 +1,13 @@
 // Audiobooks tab (Audiobookshelf): Home, Library, a genre's books, an author's books, and the book page.
 // Playback and the bottom bar live in bplayer.js.
-import { api } from './api.js';
+import { api, quiet } from './api.js';
 import { esc, toast, loadingHtml } from './components.js';
+import { homeRows, rowCache } from './homeedit.js';
 import { IC } from './mplayer.js';
 import { MI, hue } from './music.js';
 import { fanTile, fanBanner, learnColors } from './gtiles.js';
+import { loadBookmarks, bookmarksFast, bookmarksFor, onBookmarks, listHtml, wireList, allBookmarks } from './bookmarks.js';
+import { shellAttrs, headHtml, navHtml, wireSize, markNav, libStore, libHtml, drawLib as drawSideLib, wireLib } from './sidemenu.js';
 import { book, playBook, toggleBook, seekBook, setFinished, onBook, absCover, absAuthorImg, hm, clock, chapterAt, BI } from './bplayer.js';
 
 const line = (d, n = 20) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -14,6 +17,7 @@ const NAV = [
   ['authors', 'Authors', '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'],
   ['series', 'Series', '<rect x="3" y="6" width="12" height="15" rx="1.5"/><path d="M7 3h12.5A1.5 1.5 0 0 1 21 4.5V17"/>'],
   ['genres', 'Genres', '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>'],
+  ['bookmarks', 'Bookmarks', '<path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/>'],
 ];
 const BOOK_ICON = 'M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3';
 const plural = (n, w) => `${(n || 0).toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
@@ -28,10 +32,15 @@ const seriesOf = (it) => { const m = md(it); const s = m.series; if (Array.isArr
 
 // ---------- Data ----------
 let LIBS = null;
-async function libraries() {
+const expired = (v) => (e) => { if (String(e) === 'ABS_SESSION_EXPIRED' && v?.alive()) v.ctx.fail(String(e)); };
+async function libraries(v) {
   if (!LIBS) {
-    const r = await api.abs('/api/libraries');
-    LIBS = (r.libraries || []).filter((l) => l.mediaType === 'book');
+    // The list saved last time is enough to start with; the server's follows.
+    const pick = (r) => (r?.libraries || []).filter((l) => l.mediaType === 'book');
+    const fresh = api.abs('/api/libraries').then(pick);
+    const saved = pick(await api.absCached('/api/libraries').catch(() => null));
+    if (saved.length) { LIBS = saved; fresh.then((l) => { if (l.length) LIBS = l; }, expired(v)); }
+    else LIBS = await fresh;
   }
   if (!LIBS.length) throw new Error('No audiobook libraries found on your Audiobookshelf server.');
   return LIBS;
@@ -44,13 +53,44 @@ async function absLoad(path, render, alive) {
   if (cached) { shown = JSON.stringify(cached); if (alive()) render(cached, true); }
   try {
     const fresh = await api.abs(path);
-    if (alive() && JSON.stringify(fresh) !== shown) render(fresh, false);
+    if (alive() && JSON.stringify(fresh) !== shown) { if (shown) quiet(); render(fresh, false); }
     return fresh;
   } catch (e) { if (!cached) throw e; return cached; }
 }
-let PROG = new Map();
-async function loadProgress() {
-  try { const me = await api.abs('/api/me'); PROG = new Map((me.mediaProgress || []).filter((p) => !p.episodeId).map((p) => [p.libraryItemId, p])); } catch {}
+// Pages open from what is already here: this session's copy, else the one saved on this
+// computer last time. Only a first-ever visit waits for the server. The server's answer
+// follows in the background, and if it differs the page is drawn again quietly, once
+// (see booksView). `sig` picks the part of the answer the page actually shows.
+const MEM = new Map(), FLY = new Map(), GOT = new Map();
+const SOON = 15000; // an answer this fresh is not asked for again
+function fetchFresh(path) {
+  if (!FLY.has(path)) FLY.set(path, api.abs(path).then((d) => { MEM.set(path, d); GOT.set(path, Date.now()); return d; }).finally(() => FLY.delete(path)));
+  return FLY.get(path);
+}
+async function fast(path, v, { sig = JSON.stringify, fallback } = {}) {
+  if (MEM.has(path) && (v?.final || (Date.now() - GOT.get(path) < SOON && !FLY.has(path)))) return MEM.get(path);
+  const fresh = fetchFresh(path);
+  let have = MEM.get(path);
+  if (have === undefined) have = await api.absCached(path).catch(() => null);
+  if (have == null) { try { return await fresh; } catch (e) { if (fallback !== undefined && String(e) !== 'ABS_SESSION_EXPIRED') return fallback; throw e; } }
+  const was = sig(have);
+  const differs = fresh.then((d) => sig(d) !== was, (e) => { expired(v)(e); return false; });
+  if (v?.checks) v.checks.push(differs);
+  return have;
+}
+let PROG = new Map(), progReady = false, progFly = null, progAt = 0;
+// Signing out: the next person starts clean.
+window.addEventListener('scrappy:rowcache-clear', () => { MEM.clear(); GOT.clear(); PROG = new Map(); progReady = false; progAt = 0; LIBS = null; sideItems = null; });
+const progSig = () => [...PROG.values()].map((p) => `${p.libraryItemId}|${p.isFinished ? 1 : 0}|${Math.round((p.progress || 0) * 200)}`).sort().join(',');
+async function loadProgress(v) {
+  if (v?.final || (progAt && Date.now() - progAt < SOON && !progFly)) return PROG;
+  const apply = (me) => { PROG = new Map((me?.mediaProgress || []).filter((p) => !p.episodeId).map((p) => [p.libraryItemId, p])); progReady = true; };
+  if (!progFly) progFly = api.abs('/api/me').then((me) => { const was = progSig(); apply(me); progAt = Date.now(); return progSig() !== was; }).finally(() => { progFly = null; });
+  const fresh = progFly;
+  if (!progReady) { const c = await api.absCached('/api/me').catch(() => null); if (c && !progReady) apply(c); }
+  if (!progReady) { try { await fresh; } catch (e) { expired(v)(e); } return PROG; }
+  const differs = fresh.catch((e) => { expired(v)(e); return false; });
+  if (v?.checks) v.checks.push(differs);
   return PROG;
 }
 // Keep the progress bars right while a book plays or gets marked finished.
@@ -63,7 +103,9 @@ window.addEventListener('book:progress', ({ detail: d }) => {
 });
 const progOf = (id) => PROG.get(id);
 const pctOf = (id) => { const p = progOf(id); return p ? (p.isFinished ? 1 : p.progress || 0) : 0; };
-const items = async (lib) => (await api.abs(`/api/libraries/${lib}/items?minified=1&sort=addedAt&desc=1&limit=0`)).results || [];
+const itemsPath = (lib) => `/api/libraries/${lib}/items?minified=1&sort=addedAt&desc=1&limit=0`;
+const items = async (lib, v) => (await fast(itemsPath(lib), v)).results || [];
+const libAuthors = (lib, v) => fast(`/api/libraries/${lib}/authors`, v, { fallback: { authors: [] } });
 
 // ---------- Pieces ----------
 function coverBox(it, w = 300, cls = '') {
@@ -100,7 +142,10 @@ function genreTile(g, list) {
 }
 const section = (title, sub, inner, extra = '', id = '') => `<section class="msec"${id ? ` id="${id}"` : ''}><div class="msec-h"><h2>${esc(title)}${sub ? ` <span class="t2 bk-sub">${esc(sub)}</span>` : ''}</h2>${extra}</div>${inner}</section>`;
 const crumbs = (trail) => `<div class="crumbs"><button type="button" class="gb sq" onclick="history.back()" aria-label="Back">${MI.back}</button>${trail.map(([l, h], i) => (i === trail.length - 1 ? `<b>${esc(l)}</b>` : `<a href="${h}">${esc(l)}</a><span>›</span>`)).join('')}</div>`;
+// The page area outlives its pages: wire it once, or one click would play many times over.
+const wiredPlay = new WeakSet();
 function wirePlay(el) {
+  if (wiredPlay.has(el)) return; wiredPlay.add(el);
   el.addEventListener('click', (e) => {
     const b = e.target.closest('[data-playbook]'); if (!b) return;
     e.preventDefault(); e.stopPropagation();
@@ -111,14 +156,80 @@ function wirePlay(el) {
 
 // ---------- Shell ----------
 function shellHtml() {
-  return `<div class="mshell bkshell" style="--mside:240px">
+  return `<div ${shellAttrs('bkshell')}>
     <aside class="maside">
-      <div class="mhead"><span class="lbl">AUDIOBOOKS</span></div>
-      ${NAV.map(([p, l, d]) => `<a class="mnav" data-p="${p}" href="${H(p)}">${line(d)}<span class="lbl">${l}</span></a>`).join('')}
+      ${headHtml('AUDIOBOOKS')}
+      ${navHtml(NAV.map(([p, l, d]) => [p, l, d, H(p)]))}
       <div id="bkLibs"></div>
+      ${libHtml([['book', 'Books'], ['author', 'Authors'], ['series', 'Series']])}
+      <div class="mgrab" title="Drag to resize"></div>
     </aside>
     <section class="mmain" id="mmain"></section>
   </div>`;
+}
+
+// ---------- Your Library in the side menu ----------
+// Recents = books you've listened to (newest first, with time left), plus authors you opened.
+// Series show under the Series chip, from the books you're in the middle of.
+const SL = libStore('books');
+const AUTH_KEY = 'bkSideAuthors';
+let sideItems = null;
+const openedAuthors = () => { try { return JSON.parse(localStorage.getItem(AUTH_KEY) || '[]'); } catch { return []; } };
+function noteAuthor(a) {
+  const list = [{ id: a.id, name: a.name, imagePath: a.imagePath, updatedAt: a.updatedAt, at: Date.now() }, ...openedAuthors().filter((x) => x.id !== a.id)].slice(0, 20);
+  try { localStorage.setItem(AUTH_KEY, JSON.stringify(list)); } catch {}
+  redrawSide();
+}
+function sideRecents() {
+  const byId = new Map((sideItems || []).map((it) => [it.id, it]));
+  const out = [];
+  const seenSeries = new Set();
+  [...PROG.values()].filter((p) => byId.has(p.libraryItemId) && (p.progress > 0 || p.isFinished))
+    .sort((a, b) => (b.lastUpdate || 0) - (a.lastUpdate || 0)).slice(0, 30).forEach((p) => {
+      const it = byId.get(p.libraryItemId), m = md(it), dur = it.media?.duration || 0;
+      const left = p.isFinished ? 'Finished' : dur ? hm(dur - (p.currentTime || 0)) + ' left' : '';
+      out.push({ k: 'bk:' + it.id, kind: 'book', t: m.title || 'Untitled', sub: [m.authorName, left].filter(Boolean).join(' · '), img: absCover(it, 100), href: bookHref(it.id), prog: p.isFinished ? 0 : p.progress, at: p.lastUpdate || 0 });
+      const ser = (m.seriesName || '').replace(/ #\S+$/, '');
+      if (ser && !seenSeries.has(ser)) { seenSeries.add(ser); out.push({ k: 'sr:' + ser, kind: 'series', onlyFil: true, t: ser, sub: ['Series', m.authorName].filter(Boolean).join(' · '), img: absCover(it, 100), shape: 'stack', href: H('series') + '?q=' + encodeURIComponent(ser), at: (p.lastUpdate || 0) - 1 }); }
+    });
+  openedAuthors().forEach((a) => out.push({ k: 'au:' + a.id, kind: 'author', t: a.name, sub: 'Author', img: absAuthorImg(a, 100), shape: 'round', href: authorHref(a.id), at: a.at }));
+  return out.sort((a, b) => b.at - a.at);
+}
+function redrawSide() { const sh = document.querySelector('.bkshell'); if (sh) drawSideLib(sh, SL, sideRecents()); }
+async function loadSideItems() {
+  try {
+    const path = itemsPath(libId());
+    const c = MEM.get(path) || await api.absCached(path).catch(() => null);
+    if (c?.results) { sideItems = c.results; redrawSide(); }
+    sideItems = (await fetchFresh(path)).results || sideItems; redrawSide();
+  } catch {}
+}
+window.addEventListener('book:progress', () => { clearTimeout(redrawSide.t); redrawSide.t = setTimeout(redrawSide, 1500); });
+
+// ---------- Bookmarks page: every bookmark, grouped by book ----------
+async function bookmarksPage(v) {
+  const { main, alive } = v;
+  const [all] = await Promise.all([items(libId(), v), bookmarksFast()]);
+  if (!alive()) return;
+  const byId = new Map(all.map((it) => [it.id, it]));
+  const edit = {};
+  const draw = () => {
+    if (!alive()) { off(); return; }
+    const groups = [];
+    for (const b of allBookmarks()) { let g = groups.find((x) => x.id === b.libraryItemId); if (!g) groups.push(g = { id: b.libraryItemId }); }
+    main.innerHTML = `<div class="msec-h bk-bmh"><h1 class="disp mtitle">Bookmarks</h1></div>`
+      + (groups.length ? groups.map((g) => {
+        const it = byId.get(g.id), m = md(it);
+        return `<section class="bk-bmg"><a class="bk-bmb" href="${bookHref(g.id)}">${it ? coverBox(it, 120, 'sm') : ''}<span><b>${esc(m.title || 'A book that is no longer in this library')}</b><small class="t2">${esc(m.authorName || '')}</small></span></a>
+          <div class="bm-list" data-id="${esc(g.id)}">${listHtml(g.id, [], { playBtn: true, editing: edit[g.id] ?? null })}</div></section>`;
+      }).join('') : `<div class="empty">No bookmarks yet. Press <kbd>B</kbd> or the bookmark button while listening to save your spot.</div>`);
+    main.querySelectorAll('.bm-list').forEach((box) => {
+      const id = box.dataset.id;
+      wireList(box, id, (t) => (book.item?.id === id && book.started ? seekBook(t) : playBook(id, { at: t })), (t) => { edit[id] = t; draw(); });
+    });
+  };
+  const off = onBookmarks(draw);
+  draw();
 }
 function drawLibs(root) {
   const box = root.querySelector('#bkLibs'); if (!box || !LIBS || LIBS.length < 2) return;
@@ -131,16 +242,22 @@ export async function booksView(root, ctx) {
   const [, page = '', rawId = ''] = path.split('/');
   const id = decodeURIComponent(rawId);
   const params = new URLSearchParams(qs || '');
-  if (!root.querySelector('.bkshell')) root.innerHTML = shellHtml();
+  if (!root.querySelector('.bkshell')) {
+    root.innerHTML = shellHtml();
+    const sh = root.querySelector('.bkshell');
+    wireSize(sh);
+    wireLib(sh, SL, redrawSide, (k) => sideRecents().find((e) => e.k === k));
+    loadProgress().then(redrawSide);
+  }
   // Home is lit on the home page, Library on the library pages (book and author pages light neither).
-  const lit = ['', 'library', 'authors', 'series', 'genres', 'stats'].includes(page) ? page : page === 'genre' ? 'genres' : null;
-  root.querySelectorAll('.mnav[data-p]').forEach((a) => a.classList.toggle('on', a.dataset.p === lit));
+  const lit = ['', 'library', 'authors', 'series', 'genres', 'stats', 'bookmarks'].includes(page) ? page : page === 'genre' ? 'genres' : null;
+  markNav(root, lit);
+  redrawSide();
   const main = root.querySelector('#mmain');
   main.className = 'mmain bk page-' + (page || 'home');
   main.innerHTML = loadingHtml();
-  const v = { main, ctx, alive: ctx.alive, params };
-  try {
-    await libraries(); drawLibs(root);
+  const v = { main, ctx, alive: ctx.alive, params, checks: [], memo: {}, final: false };
+  const draw = async () => {
     switch (page) {
       case 'library': return params.get('genre') ? await libraryPage(v) : await shelfPage(v);
       case 'authors': return await authorsPage(v);
@@ -149,9 +266,28 @@ export async function booksView(root, ctx) {
       case 'genre': return await genrePage(v, id);
       case 'book': return await bookPage(v, id);
       case 'author': return await authorPage(v, id);
+      case 'bookmarks': return await bookmarksPage(v);
       case 'stats': return await (await import('./stats.js')).statsPage(main, 'abs', ctx.alive);
       default: return await homePage(v);
     }
+  };
+  try {
+    await libraries(v); drawLibs(root);
+    if (!sideItems) loadSideItems();
+    // Once the page is up: if the server's answers differ from the copies it was drawn
+    // from, draw it again without the entrance, unless it is already being used.
+    let touched = false; const touch = () => { touched = true; };
+    const off = () => ['pointerdown', 'keydown', 'input'].forEach((t) => main.removeEventListener(t, touch, true));
+    ['pointerdown', 'keydown', 'input'].forEach((t) => main.addEventListener(t, touch, true));
+    ctx.onLeave?.(off);
+    await draw();
+    const checks = v.checks; v.checks = null;
+    Promise.all(checks).then(async (r) => {
+      off();
+      if (!r.some(Boolean) || !ctx.alive() || touched || window.scrollY > 400) return;
+      quiet(); v.final = true;
+      try { await draw(); } catch {}
+    });
   } catch (e) {
     if (!ctx.alive()) return;
     if (String(e) === 'ABS_SESSION_EXPIRED') return ctx.fail(String(e));
@@ -163,10 +299,11 @@ export async function booksView(root, ctx) {
 async function homePage(v) {
   const { main, alive, params } = v;
   const lib = libId();
+  const seriesShelf = (r) => JSON.stringify((Array.isArray(r) ? r : []).find((s) => s.id === 'continue-series')?.entities?.map((e) => e?.id) || []);
   const [all, , authorsR, shelves] = await Promise.all([
-    items(lib), loadProgress(),
-    api.abs(`/api/libraries/${lib}/authors`).catch(() => ({ authors: [] })),
-    api.abs(`/api/libraries/${lib}/personalized?limit=12`).catch(() => []),
+    items(lib, v), loadProgress(v),
+    libAuthors(lib, v),
+    fast(`/api/libraries/${lib}/personalized?limit=12`, v, { fallback: [], sig: seriesShelf }),
   ]);
   if (!alive()) return;
   if (!all.length) { main.innerHTML = '<div class="empty">This library has no books yet.</div>'; return; }
@@ -185,15 +322,46 @@ async function homePage(v) {
   const authors = (authorsR.authors || []).slice().sort((a, b) => (b.numBooks || 0) - (a.numBooks || 0)).slice(0, 14);
   const again = [...PROG.values()].filter((p) => p.isFinished && byId.has(p.libraryItemId)).sort((a, b) => (b.finishedAt || b.lastUpdate || 0) - (a.finishedAt || a.lastUpdate || 0)).slice(0, 14).map((p) => byId.get(p.libraryItemId));
 
+  // Smart rows (approved mock). Because you finished: books you haven't started that share the
+  // author, series, narrator or genre of the last book you finished. Short listens: under 5 hours.
+  const lastDone = again[0];
+  // Keep the same picks for a while so the rows don't reshuffle on every visit.
+  const keep = (id, list) => { const c = rowCache('books', id); const ids = c.get(); const got = ids && ids.map((x) => byId.get(x)).filter(Boolean); if (got && got.length === ids.length) return got; c.set(list.map((it) => it.id)); return list; };
+  let because = [];
+  if (lastDone) {
+    const L = md(lastDone), sn = (m) => (seriesOf({ media: { metadata: m } }) || '').replace(/ · Book .*$/, '');
+    const lg = new Set(L.genres || []), ls = sn(L);
+    because = fresh.map((it) => {
+      const m = md(it); let sc = 0;
+      if (L.authorName && m.authorName === L.authorName) sc += 3;
+      if (ls && sn(m) === ls) sc += 3;
+      if (L.narratorName && m.narratorName === L.narratorName) sc += 2;
+      (m.genres || []).forEach((g) => { if (lg.has(g)) sc += 1; });
+      return [it, sc + Math.random() * 0.5];
+    }).filter((e) => e[1] >= 1).sort((a, b) => b[1] - a[1]).slice(0, 14).map((e) => e[0]);
+    because = keep('because-' + lastDone.id, because);
+  }
+  const short = all.filter((it) => { const d = it.media?.duration || 0; const p = progOf(it.id); return d > 0 && d < 5 * 3600 && !p?.isFinished; })
+    .sort(() => Math.random() - 0.5).slice(0, 14);
+  const shortKept = keep('short', short).filter((it) => !progOf(it.id)?.isFinished);
+  short.splice(0, short.length, ...shortKept);
+  const W = (id, html) => `<div data-hrow="${id}">${html}</div>`;
   main.innerHTML = [
-    cont.length ? section('Continue listening', plural(cont.length, 'book') + ' in progress', `<div class="bk-conts">${cont.map(contCard).join('')}</div>`) : '',
-    section('Recently added', '', `<div class="mrow">${recent.map((it) => bookCard(it)).join('')}</div>`, `<a class="seeall" href="${H('library')}">See all</a>`),
-    genres.length ? section('Genres', 'From your library', `<div class="bk-genres">${genres.map(([g, l]) => genreTile(g, l)).join('')}</div>`, '', 'row-genres') : '',
-    fresh.length ? section('Discover', "Books you haven't started yet", `<div class="mrow" id="bkDisc">${pick().map((it) => bookCard(it)).join('')}</div>`, '<button type="button" class="btn secondary small" id="bkShuf">Shuffle picks</button>') : '',
-    series.length ? section('Continue a series', 'Next book in series you\'ve started', `<div class="bk-conts">${series.map((it) => seriesCard(it, it.series?.name || it.media?.metadata?.series?.name)).join('')}</div>`) : '',
-    authors.length ? section('Authors', 'Click one to see all their books', `<div class="mrow">${authors.map(authorCard).join('')}</div>`, '', 'row-authors') : '',
-    again.length ? section('Listen again', "Books you've finished", `<div class="mrow">${again.map((it) => bookCard(it)).join('')}</div>`) : '',
+    W('cont', cont.length ? section('Continue listening', plural(cont.length, 'book') + ' in progress', `<div class="bk-conts">${cont.map(contCard).join('')}</div>`) : ''),
+    W('because', because.length ? section(`Because you finished ${md(lastDone).title || ''}`, 'Same author, series, narrator or genre', `<div class="mrow">${because.map((it) => bookCard(it)).join('')}</div>`) : ''),
+    W('recent', section('Recently added', '', `<div class="mrow">${recent.map((it) => bookCard(it)).join('')}</div>`, `<a class="seeall" href="${H('library')}">See all</a>`)),
+    W('short', short.length ? section('Short listens', 'Under 5 hours', `<div class="mrow">${short.map((it) => bookCard(it)).join('')}</div>`) : ''),
+    W('genres', genres.length ? section('Genres', 'From your library', `<div class="bk-genres">${genres.map(([g, l]) => genreTile(g, l)).join('')}</div>`, '', 'row-genres') : ''),
+    W('disc', fresh.length ? section('Discover', "Books you haven't started yet", `<div class="mrow" id="bkDisc">${(v.memo.disc || (v.memo.disc = pick())).map((it) => bookCard(it)).join('')}</div>`, '<button type="button" class="btn secondary small" id="bkShuf">Shuffle picks</button>') : ''),
+    W('series', series.length ? section('Continue a series', 'Next book in series you\'ve started', `<div class="bk-conts">${series.map((it) => seriesCard(it, it.series?.name || it.media?.metadata?.series?.name)).join('')}</div>`) : ''),
+    W('authors', authors.length ? section('Authors', 'Click one to see all their books', `<div class="mrow">${authors.map(authorCard).join('')}</div>`, '', 'row-authors') : ''),
+    W('again', again.length ? section('Listen again', "Books you've finished", `<div class="mrow">${again.map((it) => bookCard(it)).join('')}</div>`) : ''),
   ].join('');
+  homeRows(main, 'books', [
+    { id: 'cont', label: 'Continue listening' }, { id: 'because', label: 'Because you finished…', smart: true }, { id: 'recent', label: 'Recently added' },
+    { id: 'short', label: 'Short listens', smart: true }, { id: 'genres', label: 'Genres' }, { id: 'disc', label: 'Discover' },
+    { id: 'series', label: 'Continue a series' }, { id: 'authors', label: 'Authors' }, { id: 'again', label: 'Listen again' },
+  ], 'Audiobooks');
   learnColors(main);
   main.querySelector('#bkShuf')?.addEventListener('click', () => { main.querySelector('#bkDisc').innerHTML = pick().map((it) => bookCard(it)).join(''); });
   wirePlay(main);
@@ -207,7 +375,7 @@ const FILTERS = [['all', 'All'], ['new', 'Not started'], ['prog', 'In progress']
 async function libraryPage(v) {
   const { main, alive, params } = v;
   const genre = params.get('genre') || '';
-  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  const [all] = await Promise.all([items(libId(), v), loadProgress(v)]);
   if (!alive()) return;
   const st = { q: '', sort: localStorage.getItem('bkSort') || 'added', fil: 'all' };
   const base = genre ? all.filter((it) => (md(it).genres || []).includes(genre)) : all;
@@ -245,11 +413,12 @@ async function libraryPage(v) {
 // ---------- One author ----------
 async function authorPage(v, id) {
   const { main, alive } = v;
-  await loadProgress();
+  await loadProgress(v);
   await absLoad(`/api/authors/${encodeURIComponent(id)}?include=items`, (a) => {
     const list = (a.libraryItems || []).slice().sort((x, y) => seriesOf(x).localeCompare(seriesOf(y)) || (md(x).publishedYear || '').localeCompare(md(y).publishedYear || ''));
     const fin = list.filter((it) => progOf(it.id)?.isFinished).length;
     const img = absAuthorImg(a, 400), bio = plainText(a.description);
+    if (noteAuthor.last !== a.id) { noteAuthor.last = a.id; noteAuthor(a); }
     main.innerHTML = `
       ${crumbs([['Authors', H('authors')], [a.name]])}
       <div class="bk-ahead"><div class="mcv round bk-av bk-big" style="--h:${hue(a.name)}"><b>${esc(initials(a.name))}</b>${img ? `<img src="${img}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}</div>
@@ -269,7 +438,7 @@ function wireMore(main, textId, btnId) {
 // ---------- One book ----------
 async function bookPage(v, id) {
   const { main, alive } = v;
-  let item = null, unsub = null, tick = null;
+  let item = null, unsub = null, tick = null, unBm = null;
   await absLoad(`/api/items/${encodeURIComponent(id)}?expanded=1&include=progress`, (it) => {
     item = it;
     const m = md(it), chapters = it.media?.chapters || [], dur = it.media?.duration || 0;
@@ -292,8 +461,11 @@ async function bookPage(v, id) {
           ${seriesOf(it) ? `<div class="kicker bk-k">SERIES</div><div class="bk-line">${esc(seriesOf(it))}</div>` : ''}
           ${(m.genres || []).length ? `<div class="kicker bk-k">GENRES</div><div class="bk-chips">${m.genres.map((g) => `<a class="bk-chip" href="${H('genre/' + encodeURIComponent(g))}">${esc(g)}</a>`).join('')}</div>` : ''}
         </div>
-        ${chapters.length ? `<div><div class="bk-chh"><h2 class="bk-h2">Chapters</h2><span class="t2">${plural(chapters.length, 'chapter')}</span></div>
-          <div class="bk-chl" id="bkChl">${chapters.map((c, i) => `<button type="button" class="bk-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div></div>` : ''}
+        <div><div class="bk-chh"><div class="bk-tabs" role="tablist">
+            ${chapters.length ? `<button type="button" role="tab" data-tab="ch">Chapters <em>${chapters.length}</em></button>` : ''}
+            <button type="button" role="tab" data-tab="bm">Bookmarks <em id="bkBmN"></em></button></div></div>
+          ${chapters.length ? `<div class="bk-chl" id="bkChl">${chapters.map((c, i) => `<button type="button" class="bk-chi" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c.title || 'Chapter ' + (i + 1))}</span><span class="tk">${BI.check}</span><span class="left"></span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div>` : ''}
+          <div class="bk-chl bm-list bk-bml" id="bkBml"></div></div>
       </div>`;
     wireMore(main, 'bkDesc', 'bkDescMore');
     const here = () => book.item?.id === id && book.started;
@@ -337,6 +509,27 @@ async function bookPage(v, id) {
       const c = chapters[Number(b.dataset.i)]; if (!c) return;
       if (here()) seekBook(c.start); else playBook(id, { at: c.start });
     });
+    // Chapters / Bookmarks switch (remembered). Bookmarks come from Audiobookshelf.
+    let bmEdit = null;
+    const tabs = main.querySelectorAll('.bk-tabs [data-tab]');
+    const setTab = (k) => {
+      if (!chapters.length) k = 'bm';
+      tabs.forEach((b) => b.classList.toggle('on', b.dataset.tab === k));
+      const chl = main.querySelector('#bkChl'); if (chl) chl.hidden = k !== 'ch';
+      main.querySelector('#bkBml').hidden = k !== 'bm';
+    };
+    tabs.forEach((b) => (b.onclick = () => { try { localStorage.setItem('bkTab', b.dataset.tab); } catch {} setTab(b.dataset.tab); }));
+    const drawMarks = () => {
+      if (!alive()) { unBm?.(); return; }
+      const n = bookmarksFor(id).length;
+      main.querySelector('#bkBmN').textContent = n; main.querySelector('#bkBmN').hidden = !n;
+      const box = main.querySelector('#bkBml');
+      box.innerHTML = listHtml(id, chapters, { playBtn: true, editing: bmEdit });
+      wireList(box, id, (t) => (here() ? seekBook(t) : playBook(id, { at: t })), (t) => { bmEdit = t; drawMarks(); });
+    };
+    unBm?.(); unBm = onBookmarks(drawMarks);
+    setTab(localStorage.getItem('bkTab') === 'bm' ? 'bm' : 'ch');
+    drawMarks(); loadBookmarks();
     unsub?.(); unsub = onBook(refresh);
     // While this book plays, keep the progress and the current chapter moving.
     clearInterval(tick); tick = setInterval(() => { if (!alive()) { clearInterval(tick); unsub?.(); return; } if (here() && book.playing) refresh(); }, 1000);
@@ -385,8 +578,10 @@ function wireFind(main, fn) { let t; main.querySelector('#bkQ').addEventListener
 const save = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 /** Big lists draw a screenful first, then the rest as you scroll near the end. */
 function drawChunks(box, parts, after) {
-  let n = 0; const step = 12;
-  const more = () => { box.insertAdjacentHTML('beforeend', parts.slice(n, n + step).join('')); n += step; after?.(); if (n < parts.length) io.observe(box.lastElementChild); };
+  // Up to 12 pieces at a time, fewer when the pieces are big (a genre's shelf can hold a
+  // hundred books), so no single step holds the app up.
+  let n = 0; const step = 12, budget = 70000;
+  const more = () => { let to = n, size = 0; while (to < parts.length && to - n < step && (to === n || size + parts[to].length <= budget)) size += parts[to++].length; box.insertAdjacentHTML('beforeend', parts.slice(n, to).join('')); n = to; after?.(); if (n < parts.length) io.observe(box.lastElementChild); };
   const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); more(); } }, { rootMargin: '800px' });
   box._more = () => { io.disconnect(); if (n < parts.length) more(); else box._more = null; };
   box.innerHTML = ''; if (!parts.length) { box._more = null; return; } more();
@@ -433,7 +628,7 @@ function mountWall(wall, rail, alive, chunked = true) {
 const LSORTS = [['title', 'Title A–Z'], ['author', 'Author'], ['added', 'Recently added'], ['progress', 'Progress']];
 async function shelfPage(v) {
   const { main, alive } = v;
-  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  const [all] = await Promise.all([items(libId(), v), loadProgress(v)]);
   if (!alive()) return;
   const st = { q: '', sort: LSORTS.some(([k]) => k === localStorage.getItem('bkShelfSort')) ? localStorage.getItem('bkShelfSort') : 'title' };
   main.innerHTML = `${pageHead('LIBRARY', 'Find a book')}
@@ -452,7 +647,7 @@ async function shelfPage(v) {
 async function authorsPage(v) {
   const { main, alive } = v;
   const lib = libId();
-  const [all, , ar] = await Promise.all([items(lib), loadProgress(), api.abs(`/api/libraries/${lib}/authors`).catch(() => ({ authors: [] }))]);
+  const [all, , ar] = await Promise.all([items(lib, v), loadProgress(v), libAuthors(lib, v)]);
   if (!alive()) return;
   const byName = new Map();
   all.forEach((it) => authorsOf(it).forEach((n) => { const k = n.toLowerCase(); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(it); }));
@@ -497,7 +692,7 @@ const SVIEWS = [['shelves', 'Shelves', line('<rect x="3" y="4" width="5" height=
   ['grid', 'Collections', line('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', 16)]];
 async function seriesPage(v) {
   const { main, alive, params } = v;
-  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  const [all] = await Promise.all([items(libId(), v), loadProgress(v)]);
   if (!alive()) return;
   const series = seriesGroups(all);
   const st = { q: (params.get('q') || '').toLowerCase(), sort: SSORTS.some(([k]) => k === localStorage.getItem('bkSerSort')) ? localStorage.getItem('bkSerSort') : 'author', view: localStorage.getItem('bkSerView') === 'grid' ? 'grid' : 'shelves' };
@@ -526,7 +721,7 @@ async function seriesPage(v) {
 // ---------- Genres: a shelf per genre ----------
 async function genresPage(v) {
   const { main, alive } = v;
-  const [all] = await Promise.all([items(libId()), loadProgress()]);
+  const [all] = await Promise.all([items(libId(), v), loadProgress(v)]);
   if (!alive()) return;
   const gmap = new Map();
   all.forEach((it) => (md(it).genres || []).forEach((g) => { if (!gmap.has(g)) gmap.set(g, []); gmap.get(g).push(it); }));
@@ -546,15 +741,14 @@ async function genresPage(v) {
 async function genrePage(v, g) {
   const { main, alive } = v;
   const lib = libId();
-  const [all] = await Promise.all([items(lib), loadProgress()]);
+  const [all, , ar] = await Promise.all([items(lib, v), loadProgress(v), libAuthors(lib, v)]);
   if (!alive()) return;
   const mine = all.filter((it) => (md(it).genres || []).includes(g));
   if (!mine.length) { main.innerHTML = crumbs([['Genres', H('genres')], [g]]) + '<div class="empty">No books in this genre.</div>'; return; }
   const cont = mine.filter((it) => !progOf(it.id)?.isFinished && pctOf(it.id) > 0).sort((a, b) => (progOf(b.id)?.lastUpdate || 0) - (progOf(a.id)?.lastUpdate || 0));
   const series = seriesGroups(mine).sort((a, b) => b.list.length - a.list.length);
   const byAuthor = new Map(); mine.forEach((it) => authorsOf(it).forEach((n) => byAuthor.set(n, (byAuthor.get(n) || 0) + 1)));
-  const known = new Map(); try { ((await api.abs(`/api/libraries/${lib}/authors`)).authors || []).forEach((a) => known.set(String(a.name).toLowerCase(), a)); } catch {}
-  if (!alive()) return;
+  const known = new Map(); (ar.authors || []).forEach((a) => known.set(String(a.name).toLowerCase(), a));
   const authors = [...byAuthor.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14).map(([n, c]) => ({ ...(known.get(n.toLowerCase()) || { name: n }), numBooks: c }));
   const hours = mine.reduce((t, it) => t + (it.media?.duration || 0), 0) / 3600;
   const recent = mine.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)).slice(0, 20);

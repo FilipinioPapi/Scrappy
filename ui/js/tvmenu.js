@@ -1,0 +1,39 @@
+// Google TV: one simple pick-from-a-list card (approved mock). Used for Sort / Show / Genre
+// on the grids, the Hold OK quick menu and anything else that is a short list on the TV.
+// Up/Down move, OK picks, Back closes. Resolves with the picked index, or null.
+import { esc } from './components.js';
+
+export function tvPick(title, options, selected = -1, note = '', startAt = -1) {
+  return new Promise((done) => {
+    const from = document.activeElement;
+    const box = document.createElement('div');
+    box.className = 'tvm'; box.setAttribute('role', 'dialog');
+    box.innerHTML = `<div class="tvm-card"><h4>${esc(title)}${note ? `<small>${esc(note)}</small>` : ''}</h4><div class="tvm-list">${options.map((o, i) => `<button type="button" class="tvm-opt${i === selected ? ' sel' : ''}" data-i="${i}">${selected >= 0 ? '<i></i>' : ''}<span>${esc(o)}</span></button>`).join('')}</div></div>`;
+    const close = (v) => { removeEventListener('keydown', onKey, true); box.remove(); if (from?.isConnected) from.focus({ preventScroll: true }); done(v); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(null); } };
+    addEventListener('keydown', onKey, true);
+    box.addEventListener('click', (e) => { const o = e.target.closest('.tvm-opt'); if (o) close(Number(o.dataset.i)); else if (e.target === box) close(null); });
+    document.body.appendChild(box);
+    // A long list ends on a whole row instead of slicing the last visible choice in half.
+    const list = box.querySelector('.tvm-list'), one = list.firstElementChild;
+    if (one && list.scrollHeight > list.clientHeight + 1) { const row = one.offsetHeight + 4; list.style.maxHeight = Math.max(1, Math.floor((list.clientHeight + 4) / row)) * row - 4 + 'px'; list.style.flex = 'none'; }
+    const first = (startAt >= 0 && box.querySelectorAll('.tvm-opt')[startAt]) || box.querySelector('.tvm-opt.sel') || box.querySelector('.tvm-opt');
+    first?.focus({ preventScroll: true }); first?.scrollIntoView({ block: 'center' });
+  });
+}
+
+// A short thing to read (what's new, tips): a title, a few lines and one OK button. Back or OK closes it.
+export function tvInfo(title, lines) {
+  return new Promise((done) => {
+    const from = document.activeElement;
+    const box = document.createElement('div');
+    box.className = 'tvm'; box.setAttribute('role', 'dialog');
+    box.innerHTML = `<div class="tvm-card tvm-info"><h4>${esc(title)}</h4><ul>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul><button type="button" class="tvm-opt tvm-ok"><span>OK</span></button></div>`;
+    const close = () => { removeEventListener('keydown', onKey, true); box.remove(); if (from?.isConnected) from.focus({ preventScroll: true }); done(); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+    addEventListener('keydown', onKey, true);
+    box.addEventListener('click', (e) => { if (e.target.closest('.tvm-ok') || e.target === box) close(); });
+    document.body.appendChild(box);
+    box.querySelector('.tvm-ok').focus({ preventScroll: true });
+  });
+}

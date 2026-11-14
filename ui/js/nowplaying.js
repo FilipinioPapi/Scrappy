@@ -2,6 +2,7 @@
 // Up next, Lyrics or the Visualizer (Bars, Wave, Circle, Particles).
 import { listen, api } from './api.js';
 import { esc, toast } from './components.js';
+import { on, onPref } from './prefs.js';
 import { music, onMusic, current, togglePlay, next, prev, seek, toggleShuffle, cycleRepeat, setVolume, toggleMute, setFavorite, playAt, removeAt, moveInQueue, clearUpNext, cover, fmt, IC } from './mplayer.js';
 import { nd, coverHtml, songMenu, MI, hue, href, refreshPlaylists } from './music.js';
 
@@ -34,7 +35,9 @@ let under = localStorage.getItem('mnowunder') || (mode === 'lyrics' ? 'lyrics' :
 const setMode = (m) => { mode = m; if (m !== 'viz') under = m; try { localStorage.setItem('mnowmode', mode); localStorage.setItem('mnowunder', under); } catch {} };
 // The visualizer can be switched off entirely, like lyrics.
 let vizShow = localStorage.getItem('mnowviz') !== 'off';
-const setVizShow = (on) => { vizShow = on; try { localStorage.setItem('mnowviz', on ? 'on' : 'off'); } catch {} };
+const setVizShow = (v) => { vizShow = v; try { localStorage.setItem('mnowviz', v ? 'on' : 'off'); } catch {} };
+// The Settings page turns it on or off too.
+onPref('mnowviz', (v) => { vizShow = v !== 'off'; if (!el.hidden) drawRight(); });
 let open = false;
 let settingsOpen = false;
 
@@ -54,10 +57,52 @@ window.addEventListener('hashchange', closeNow);
 window.addEventListener('keydown', (e) => { if (open && e.key === 'Escape') { e.preventDefault(); closeNow(); } });
 
 let builtFor = null;
+let artFor = '';
+let swapTok = 0;
+const fromLabel = () => (music.from ? `PLAYING FROM ${({ album: 'ALBUM', artist: 'ARTIST', playlist: 'PLAYLIST', genre: 'GENRE', mix: 'MIX', songs: 'YOUR LIBRARY', genremix: 'MIX', artistfav: 'FAVORITES' })[music.from.type] || ''}` : 'NOW PLAYING');
+const metaHtml = (s) => `${s.artistId ? `<a href="${href('artist', s.artistId)}">${esc(s.artist)}</a>` : esc(s.artist || '')}${s.album ? ` · <a class="plain" href="${href('album', s.albumId)}?song=${encodeURIComponent(s.id)}">${esc(s.album)}</a>` : ''}${s.year ? ' · ' + s.year : ''}`;
+
+// Track changed while the page is open: swap the words in place and keep the
+// old cover up until the new one has loaded, then fade it in on top.
+function swapTrack(s) {
+  builtFor = s.id;
+  const $ = (q) => el.querySelector(q);
+  el.style.setProperty('--h', hue(s.album || s.title));
+  $('.mn-from .kicker').textContent = fromLabel();
+  $('.mn-from .t1').textContent = music.from?.name || s.album || '';
+  $('#mnT').textContent = s.title;
+  $('.mn-meta').innerHTML = metaHtml(s);
+  const id = s.coverArt || '';
+  if (id !== artFor) {
+    artFor = id;
+    const tok = ++swapTok;
+    const slots = [['.mn-bg', 600], ['.dlabel', 300], ['.mn-cover', 600]];
+    const done = () => {
+      if (tok !== swapTok || !open) return;
+      const lbl = $('.dlabel'); if (lbl) lbl.style.setProperty('--h', hue(s.album || s.title));
+      const cv = $('.mn-cover'); if (cv) { cv.style.setProperty('--h', hue(s.album || s.title)); const sp = cv.querySelector('span'); if (sp) sp.textContent = s.album || s.title || ''; }
+      for (const [q, w] of slots) {
+        const box = $(q); if (!box) continue;
+        const olds = [...box.querySelectorAll(':scope > img')];
+        if (!id) { olds.forEach((o) => o.remove()); continue; }
+        const im = new Image(); im.alt = ''; im.src = cover(id, w); im.className = 'swap'; im.onerror = () => im.remove();
+        // Sit on top of the old picture, which stays fully visible underneath.
+        const ref = q === '.dlabel' ? box.querySelector('.gloss') : null;
+        box.insertBefore(im, ref);
+        requestAnimationFrame(() => requestAnimationFrame(() => im.classList.add('in')));
+        setTimeout(() => olds.forEach((o) => o.remove()), 700);
+      }
+    };
+    if (!id) done();
+    else Promise.all(slots.map(([, w]) => { const im = new Image(); im.src = cover(id, w); return im.decode().catch(() => {}); })).then(done);
+  }
+  // Up next redraws in sync(); only the lyrics need fetching again. The visualizer keeps running.
+  const ly = $('#lyr'); if (ly) { ly.innerHTML = '<div class="t2">Looking for lyrics…</div>'; loadLyrics(); }
+}
 function build() {
   const s = current(); if (!s) return closeNow();
-  builtFor = s.id;
-  const fromLbl = music.from ? `PLAYING FROM ${({ album: 'ALBUM', artist: 'ARTIST', playlist: 'PLAYLIST', genre: 'GENRE', mix: 'MIX', songs: 'YOUR LIBRARY', genremix: 'MIX', artistfav: 'FAVORITES' })[music.from.type] || ''}` : 'NOW PLAYING';
+  builtFor = s.id; artFor = s.coverArt || '';
+  const fromLbl = fromLabel();
   el.style.setProperty('--h', hue(s.album || s.title));
   el.innerHTML = `
     <div class="mn-bg"><img src="${cover(s.coverArt, 600)}" alt="" onload="this.classList.add('in')" onerror="this.remove()"></div>
@@ -68,7 +113,7 @@ function build() {
       <div class="mn-left">
         <div class="mn-art${music.playing ? ' on' : ''}" id="mnArt"><div class="vin"><div class="vdisc"><div class="shine"></div><div class="dlabel" style="--h:${hue(s.album || s.title)}">${s.coverArt ? `<img src="${cover(s.coverArt, 300)}" alt="" onload="this.classList.add('in')" onerror="this.remove()">` : ''}<i class="gloss"></i><i class="hole"></i></div></div></div>${coverHtml(s.coverArt, s.album || s.title, 600, 'mn-cover')}</div>
         <div class="mn-title"><div class="disp" id="mnT">${esc(s.title)}</div><button type="button" class="gb lg${s.starred ? ' on' : ''}" id="mnFav" title="${s.starred ? 'Remove from Favorites' : 'Add to Favorites'}">${s.starred ? IC.heartOn : IC.heart}</button></div>
-        <div class="meta mn-meta">${s.artistId ? `<a href="${href('artist', s.artistId)}">${esc(s.artist)}</a>` : esc(s.artist || '')}${s.album ? ` · <a class="plain" href="${href('album', s.albumId)}?song=${encodeURIComponent(s.id)}">${esc(s.album)}</a>` : ''}${s.year ? ' · ' + s.year : ''}</div>
+        <div class="meta mn-meta">${metaHtml(s)}</div>
         <div class="mb-seek mn-seek"><span id="mnPos">0:00</span><div class="mseek" id="mnSeek"><div class="track"><i></i></div><b></b></div><span id="mnDur">0:00</span></div>
         <div class="mn-ctl"><button type="button" class="gb lg" id="mnShuf" aria-label="Shuffle">${IC.shuffle}</button><button type="button" class="gb sq xl" id="mnPrev" aria-label="Previous">${IC.prev}</button>
           <button type="button" class="mb-play xl" id="mnPlay" aria-label="Play">${IC.play}</button><button type="button" class="gb sq xl" id="mnNext" aria-label="Next">${IC.next}</button><button type="button" class="gb lg" id="mnRep" aria-label="Repeat">${IC.repeat}<i class="one">1</i></button></div>
@@ -116,7 +161,7 @@ function slider(s, onMove, onDone) {
 function sync() {
   if (!open) return;
   const s = current(); if (!s) return closeNow();
-  if (s.id !== builtFor) return build();
+  if (s.id !== builtFor) swapTrack(s);
   const $ = (q) => el.querySelector(q);
   const p = $('#mnPlay'); const showPause = music.playing && music.started;
   if (p.dataset.st !== String(showPause)) { p.dataset.st = String(showPause); p.innerHTML = showPause ? IC.pause : IC.play; }
@@ -150,7 +195,7 @@ function drawRight() {
   if (mode === 'viz' && !vizShow) setMode(under);
   el.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === 'viz' ? vizShow : b.dataset.mode === (mode === 'viz' ? '' : mode)));
   const key = (vizShow ? (mode === 'viz' ? 'F' : 'V') : 'N') + mode;
-  if (rightKey === null || key === rightKey || !box.firstElementChild || matchMedia('(prefers-reduced-motion: reduce)').matches) { rightKey = key; renderRight(box); return; }
+  if (rightKey === null || key === rightKey || !box.firstElementChild || matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('calm')) { rightKey = key; renderRight(box); return; }
   rightKey = key;
   rightBusy?.cancel();
   const out = box.animate([{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(-10px) scale(.985)', filter: 'blur(3px)' }], { duration: 160, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
@@ -206,10 +251,13 @@ function drawQueue() {
 
 // ---------- Lyrics ----------
 let lyr = { id: null, lines: [], synced: false };
+// Scrolling the lyrics yourself stops them following the song; right-click (or the hint) follows again.
+let freeScroll = false;
+const autoLooked = new Set();
 async function loadLyrics() {
   const s = current(); const box = el.querySelector('#lyr'); if (!s || !box) return;
   if (lyr.id !== s.id) {
-    lyr = { id: s.id, lines: [], synced: false };
+    lyr = { id: s.id, lines: [], synced: false }; freeScroll = false;
     try {
       const r = await nd('getLyricsBySongId', { id: s.id });
       const list = r.lyricsList?.structuredLyrics || [];
@@ -236,7 +284,26 @@ async function loadLyrics() {
       if (current()?.id === s.id) { lyr = { id: s.id, ...got }; loadLyrics(); }
     } catch (err) { b.disabled = false; b.querySelector('span').textContent = 'Try again'; const m = b2.querySelector('#lyrMsg'); if (m) m.textContent = String(err?.message || err); }
   });
-  b2.onclick = (e) => { const p = e.target.closest('[data-li]'); if (p && lyr.synced) seek(lyr.lines[+p.dataset.li].t); };
+  // Settings: look online by itself (once per song).
+  if (!lyr.lines.length && on('lyricsAuto') && !autoLooked.has(s.id)) { autoLooked.add(s.id); b2.querySelector('#lyrFetch')?.click(); }
+  b2.onclick = (e) => {
+    const p = e.target.closest('[data-li]'); if (p && lyr.synced) { seek(lyr.lines[+p.dataset.li].t); follow(b2); }
+  };
+  if (lyr.synced && lyr.lines.length) {
+    // The hint sits under the lyrics (never on top of them) and slides open smoothly.
+    let hint = b2.parentElement.querySelector('.lyr-hint');
+    if (!hint) { b2.insertAdjacentHTML('afterend', '<button type="button" class="lyr-hint">Right-click to follow the song again</button>'); hint = b2.nextElementSibling; }
+    hint.classList.toggle('show', freeScroll);
+    hint.onclick = () => follow(b2);
+    const loose = () => { if (!freeScroll) { freeScroll = true; hint.classList.add('show'); } };
+    b2.addEventListener('wheel', loose, { passive: true });
+    b2.addEventListener('touchmove', loose, { passive: true });
+    b2.addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) loose(); });
+    // Dragging the scrollbar (a press to the right of the text area).
+    b2.addEventListener('mousedown', (e) => { if (e.offsetX > b2.clientWidth) loose(); });
+    b2.oncontextmenu = (e) => { e.preventDefault(); follow(b2); };
+  }
+  if (!lyr.synced || !lyr.lines.length) b2.parentElement.querySelector('.lyr-hint')?.remove();
   lastLi = -1; lyricTick();
 }
 // Lyrics found online are kept on this PC, per song.
@@ -256,6 +323,11 @@ function parseFound(r) {
   const txt = r?.plainLyrics || '';
   return { synced: false, lines: txt.trim() ? txt.split(/\r?\n/).map((v) => ({ t: null, v })) : [] };
 }
+function follow(box) {
+  freeScroll = false;
+  box.parentElement?.querySelector('.lyr-hint')?.classList.remove('show');
+  lastLi = -1; lyricTick();
+}
 let lastLi = -1;
 function lyricTick() {
   if (!lyr.synced || current()?.id !== lyr.id) return;
@@ -265,7 +337,11 @@ function lyricTick() {
   box.querySelectorAll('p.on').forEach((p) => p.classList.remove('on'));
   const p = box.querySelector(`[data-li="${i}"]`); if (!p) return;
   p.classList.add('on');
-  box.scrollTo({ top: p.offsetTop - box.clientHeight / 2 + p.offsetHeight / 2, behavior: 'smooth' });
+  // Measure the line inside the lyrics box itself. offsetTop counts from the whole right-hand panel,
+  // so with the visualizer above it the current line was scrolled up out of sight.
+  if (freeScroll) return;
+  const y = p.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+  box.scrollTo({ top: y - box.clientHeight / 2 + p.offsetHeight / 2, behavior: 'smooth' });
 }
 
 // ---------- Visualizer ----------

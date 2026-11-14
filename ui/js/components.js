@@ -1,4 +1,4 @@
-import { img, api } from './api.js';
+import { img, hueOf, api } from './api.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,19 +33,25 @@ const PLAYABLE = new Set(['Movie', 'Episode', 'Video', 'MusicVideo', 'Trailer'])
 export const isPlayable = (it) => PLAYABLE.has(it.Type) || (it.MediaType === 'Video' && !it.IsFolder);
 
 // Choose the best picture for a card shape.
+const ON_TV = document.documentElement.classList.contains('tv');
+// A TV tile is about 230 px wide on a 1080p screen (wide tiles about 390): asking for more only
+// costs a slow TV decode time and picture memory.
+const PW = ON_TV ? 260 : 340, WW = ON_TV ? 420 : 500;
 function pickImage(it, shape) {
   const t = it.ImageTags || {};
+  if (it._poster && shape !== 'wide') return it._poster;   // a collection borrowing its first film's poster (TV)
   if (shape === 'wide') {
-    if (it.Type === 'Episode' && t.Primary) return img(it.Id, 'Primary', t.Primary, 500);
-    if (t.Thumb) return img(it.Id, 'Thumb', t.Thumb, 500);
-    if (it.BackdropImageTags?.length) return img(it.Id, 'Backdrop', it.BackdropImageTags[0], 500, 0);
-    if (t.Primary) return img(it.Id, 'Primary', t.Primary, 500);
-    if (it.ParentThumbItemId) return img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, 500);
-    if (it.ParentBackdropItemId) return img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags?.[0], 500, 0);
+    if (it.Type === 'Episode' && t.Primary) return img(it.Id, 'Primary', t.Primary, WW);
+    if (t.Thumb) return img(it.Id, 'Thumb', t.Thumb, WW);
+    if (it.BackdropImageTags?.length) return img(it.Id, 'Backdrop', it.BackdropImageTags[0], WW, 0);
+    if (t.Primary) return img(it.Id, 'Primary', t.Primary, WW);
+    if (it.ParentThumbItemId) return img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, WW);
+    if (it.ParentBackdropItemId) return img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags?.[0], WW, 0);
+    if (it.Type === 'Episode' && it.SeriesPrimaryImageTag && it.SeriesId) return img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, WW);
     return null;
   }
-  if (t.Primary) return img(it.Id, 'Primary', t.Primary, 340);
-  if (it.SeriesPrimaryImageTag) return img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, 340);
+  if (t.Primary) return img(it.Id, 'Primary', t.Primary, PW);
+  if (it.SeriesPrimaryImageTag) return img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, PW);
   return null;
 }
 
@@ -58,7 +64,18 @@ export function shapeFor(it) {
 
 export function card(it, opts = {}) {
   const shape = opts.shape || shapeFor(it);
-  const src = pickImage(it, shape);
+  // TV, Continue Watching: an episode shows its show's artwork with the show's title on it, which
+  // is far easier to recognise from the couch than a frame from the episode (Jayden's pick, B2).
+  let src = pickImage(it, shape), over = '';
+  if (opts.showArt && it.Type === 'Episode') {
+    const back = it.ParentBackdropItemId && it.ParentBackdropImageTags?.[0] ? img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], WW, 0) : null;
+    const logo = it.ParentLogoItemId && it.ParentLogoImageTag ? img(it.ParentLogoItemId, 'Logo', it.ParentLogoImageTag, 300) : null;
+    const thumb = it.ParentThumbItemId && it.ParentThumbImageTag ? img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, WW) : null;
+    if (back && logo) { src = back; over = `<span class="art-over has-logo"><img class="art-logo" src="${esc(logo)}" alt="" onload="this.classList.add('loaded')" onerror="this.parentNode.classList.remove('has-logo');this.remove()"><b>${esc(it.SeriesName || '')}</b></span>`; }
+    else if (thumb) src = thumb;   // a show's "thumb" picture already carries its title
+    else if (back) { src = back; over = `<span class="art-over"><b>${esc(it.SeriesName || '')}</b></span>`; }
+  }
+  const lo = hueOf(src);
   const ud = it.UserData || {};
   let title = it.Name;
   let sub = opts.subtitle ?? '';
@@ -67,9 +84,8 @@ export function card(it, opts = {}) {
       title = it.SeriesName || it.Name;
       sub = [epCode(it), it.Name].filter(Boolean).join(' · ');
     } else if (it.ProductionYear) {
-      sub = it.Type === 'Series' && it.EndDate && it.Status === 'Ended'
-        ? `${it.ProductionYear}–${new Date(it.EndDate).getFullYear()}`
-        : String(it.ProductionYear);
+      const endY = it.Type === 'Series' && it.EndDate && it.Status === 'Ended' ? new Date(it.EndDate).getFullYear() : 0;
+      sub = endY && endY !== it.ProductionYear ? `${it.ProductionYear}–${endY}` : String(it.ProductionYear);
     }
   }
   const pct = ud.PlayedPercentage && !ud.Played ? ud.PlayedPercentage : 0;
@@ -83,8 +99,9 @@ export function card(it, opts = {}) {
   return `
     <a class="card ${shape}${clickPlay ? ' click-play' : ''}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
       <div class="art">
-        <div class="ph">${esc(it.Name)}</div>
-        ${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
+        ${lo ? `<div class="ph lo" style="background:${lo}"></div>` : `<div class="ph">${esc(it.Name)}</div>`}
+        ${src ? `<img loading="lazy" decoding="async" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
+        ${over}
         ${isPlayable(it) ? `<div class="play-over"><span data-play="${esc(it.Id)}" title="Play">${PLAY_ICON}</span></div>` : ''}
         ${badge}
         ${pct ? `<div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>` : ''}
@@ -212,4 +229,28 @@ function addRowArrows(row) {
 
 // Every sideways row: Movies & TV rows (.row) and Music / Audiobooks rows (.mrow).
 const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows]), #view .mrow:not([data-arrows])').forEach(addRowArrows);
-new MutationObserver(scanRows).observe(document.getElementById('view'), { childList: true, subtree: true });
+// (Not on the TV: arrows and bars are for the mouse, and measuring every row costs time.)
+{ const v = document.getElementById('view'); if (v && !/Android/.test(navigator.userAgent)) new MutationObserver(scanRows).observe(v, { childList: true, subtree: true }); }
+
+// "Heath Ledger" -> "HL": the letters shown for a person with no photo (TV).
+export function initials(name) { const w = String(name || '?').trim().split(/\s+/).filter(Boolean); return ((w[0]?.[0] || '?') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+
+// A title page follows "Mark watched": the saved spot is gone, so the bar and "Resume / Play from start"
+// give way to one "Play again" button (and back to "Play" when the mark comes off).
+export function syncPlayButtons(it, played) {
+  if (!location.hash.startsWith('#/item/' + encodeURIComponent(it.Id))) return;
+  const view = document.getElementById('view'); if (!view) return;
+  const main = view.querySelector(`.detail [data-play="${CSS.escape(it.Id)}"]:not(.secondary)`); if (!main) return;
+  view.querySelectorAll(`.detail [data-play="${CSS.escape(it.Id)}"].secondary[data-from-start]`).forEach((b) => { if (document.activeElement === b) main.focus({ preventScroll: true }); b.remove(); });
+  main.innerHTML = `${PLAY_ICON} ${played ? 'Play again' : 'Play'}`;
+  main.dataset.fromStart = '1';
+  view.querySelectorAll('.detail .resume-bar').forEach((b) => b.remove());
+  view.querySelectorAll('.tvd-strip span').forEach((sp) => { sp.textContent = sp.textContent.replace(/ · [^·]* left$/, ''); });
+}
+// Marking watched also clears the saved spot on the server (some servers keep it).
+export async function clearResume(it) {
+  try {
+    const now = await api.get(`/Users/{userId}/Items/${it.Id}`);
+    if (now?.UserData?.PlaybackPositionTicks > 0) await api.post(`/Users/{userId}/Items/${it.Id}/UserData`, { PlaybackPositionTicks: 0, Played: true, IsFavorite: !!now.UserData.IsFavorite });
+  } catch {}
+}

@@ -1,0 +1,9 @@
+{
+  "identifier": "app.scrappy.player",
+  "bundle": {
+    "resources": null,
+    "android": {
+      "minSdkVersion": 24
+    }
+  }
+}

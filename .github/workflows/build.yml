@@ -3,15 +3,64 @@ name: Build Windows app
 on:
   push:
   workflow_dispatch:
+    inputs:
+      allow_rewind:
+        description: "Let this build replace a download it doesn't contain (only to undo a bad build on purpose)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
+# Where downloads come from:
+#   main          -> "Latest build"
+#   preview-build -> "Preview build" (every feature branch merges in here to be tested)
+#   anything else -> builds as a check only, never replaces a download.
+env:
+  PREVIEW_BRANCH: preview-build
+
+# One build at a time per branch, so an older build can never finish last and win.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/preview-build' }}
+
 jobs:
   windows:
+    # The Google TV branch builds only the TV app, so it doesn't replace the Windows Preview.
+    if: github.ref_name != 'claude/project-thread-qraw4y'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Gatekeeper: work out which download this build would replace (if any), and stop
+      # right away if this code is missing anything that download was built from.
+      - name: Gatekeeper
+        id: gate
+        shell: bash
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/main) tag=latest ;;
+            refs/heads/$PREVIEW_BRANCH) tag=preview ;;
+            *) tag="" ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -z "$tag" ]; then
+            echo "::notice::$GITHUB_REF_NAME builds as a check only. Merge it into $PREVIEW_BRANCH to put it in the Preview download."
+            exit 0
+          fi
+          old=$(git ls-remote origin "refs/tags/$tag" | cut -f1)
+          if [ -z "$old" ]; then echo "No current '$tag' download, nothing to protect."; exit 0; fi
+          if git merge-base --is-ancestor "$old" HEAD 2>/dev/null; then
+            echo "OK: this build contains $old, which the current '$tag' download was built from."
+          elif [ "${{ inputs.allow_rewind }}" = "true" ]; then
+            echo "::warning::Replacing '$tag' with a build that doesn't contain $old (allowed by hand)."
+          else
+            echo "::error::Blocked: the current '$tag' download was built from $old, and this code doesn't contain it. Publishing would remove work. Merge that work into $GITHUB_REF_NAME first."
+            echo "Missing commits:"; git log --oneline "HEAD..$old" 2>/dev/null | head -50 || echo "(commit $old not found in this repository)"
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -92,13 +141,24 @@ jobs:
           curl.exe -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o $dll https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll
           if ($LASTEXITCODE -ne 0) { throw "nsis_tauri_utils download failed" }
 
+      # Every build gets its own version number (0.2.<build number>) so the app can tell an
+      # update is newer. With the signing key set, it also makes the signed update files.
       - name: Build
         shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
           npm ci
+          $ver = "0.2.${{ github.run_number }}"
+          "APP_VERSION=$ver" | Out-File -Append $env:GITHUB_ENV
+          $conf = @{ version = $ver }
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) { $conf.bundle = @{ createUpdaterArtifacts = $true } }
+          else { Write-Host "::warning::No TAURI_SIGNING_PRIVATE_KEY secret yet, so this build can't be offered as an auto-update." }
+          $conf | ConvertTo-Json -Compress | Set-Content "$PWD/tauri.ci.json"
           # Retry if a tool download fails (network), up to 3 attempts.
           for ($i = 1; $i -le 3; $i++) {
-            npx tauri build
+            npx tauri build --config "$PWD/tauri.ci.json"
             if ($LASTEXITCODE -eq 0) { break }
             if ($i -eq 3) { exit 1 }
             Write-Host "Build attempt $i failed; retrying in 30s"
@@ -114,6 +174,8 @@ jobs:
           Copy-Item -Recurse src-tauri/whisper portable/whisper
           Compress-Archive -Path portable/* -DestinationPath Scrappy-portable.zip -Force
           Copy-Item (Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1).FullName Scrappy-setup.exe
+          $sig = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe.sig -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($sig) { Copy-Item $sig.FullName Scrappy-setup.exe.sig }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -122,13 +184,62 @@ jobs:
             Scrappy-setup.exe
             Scrappy-portable.zip
 
-      # main -> "Latest build"; any other branch -> "Preview build" (for testing before merging).
+      # Check again just before publishing, in case the download changed during the build.
       - name: Publish build
+        if: steps.gate.outputs.tag != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ("${{ github.ref }}" -eq "refs/heads/main") { $tag = "latest"; $title = "Latest build" } else { $tag = "preview"; $title = "Preview build (${{ github.ref_name }})" }
+          $tag = "${{ steps.gate.outputs.tag }}"
+          if ($tag -eq "latest") { $title = "Latest build" } else { $title = "Preview build" }
+          $old = (git ls-remote origin "refs/tags/$tag") -split "\s+" | Select-Object -First 1
+          if ($old -and "${{ inputs.allow_rewind }}" -ne "true") {
+            git merge-base --is-ancestor $old HEAD
+            if ($LASTEXITCODE -ne 0) { throw "Blocked: '$tag' changed to $old during this build and this code doesn't contain it." }
+          }
+          $repo = "${{ github.repository }}"
+          # Drafts with this title are leftovers from a publish that didn't finish. Clear them first.
+          function Get-Drafts { (gh api "repos/$repo/releases?per_page=50" | ConvertFrom-Json) | Where-Object { $_.draft -and $_.name -eq $title } }
+          Get-Drafts | ForEach-Object { gh api -X DELETE "repos/$repo/releases/$($_.id)" | Out-Null }
           gh release delete $tag --yes --cleanup-tag 2>$null
           $notes = "Built from ${{ github.ref_name }} at commit ${{ github.sha }}. Download Scrappy-setup.exe to install, or the portable zip to run without installing."
-          gh release create $tag Scrappy-setup.exe Scrappy-portable.zip --title $title --notes $notes --prerelease --target ${{ github.sha }}
+          # The newest entry ("### ...") in the PC app section ("## ... PC app") of CHANGELOG.md:
+          # all of it goes in the release notes, its bullet points in the in-app update notes.
+          $desk = ""; $entry = @()
+          if (Test-Path CHANGELOG.md) {
+            $lines = Get-Content CHANGELOG.md -Encoding utf8; $inPc = $false; $inEntry = $false; $out = @()
+            foreach ($l in $lines) {
+              if ($l -match '^## ') { if ($inEntry) { break }; $inPc = $l -match 'PC app|Desktop'; continue }
+              if ($inPc -and $l -match '^### ') { if ($inEntry) { break }; $inEntry = $true; $entry += $l; continue }
+              if ($inEntry) { $entry += $l; if ($l.Trim() -match '^[-*] ') { $out += $l.Trim() } }
+            }
+            $desk = $out -join "`n"
+          }
+          if ($entry.Count) { $notes = ($entry -join "`n").Trim() + "`n`n---`n" + $notes }
+          $files = @("Scrappy-setup.exe", "Scrappy-portable.zip")
+          # latest.json tells the app's updater about this build (only when it's signed).
+          if (Test-Path Scrappy-setup.exe.sig) {
+            $manifest = @{
+              version = $env:APP_VERSION
+              notes = $desk
+              pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+              platforms = @{ "windows-x86_64" = @{ signature = (Get-Content Scrappy-setup.exe.sig -Raw).Trim(); url = "https://github.com/$repo/releases/download/$tag/Scrappy-setup.exe" } }
+            }
+            $manifest | ConvertTo-Json -Depth 5 | Set-Content latest.json
+            $files += @("Scrappy-setup.exe.sig", "latest.json")
+          }
+          # A file, so quotes and line breaks in the notes reach GitHub as written.
+          $notes | Set-Content -Encoding utf8 release-notes.md
+          gh release create $tag @files --title $title --notes-file release-notes.md --prerelease --target ${{ github.sha }}
+          if ($LASTEXITCODE -ne 0) { throw "Creating the '$tag' release failed (see the error above)." }
+          # gh sometimes leaves the new release as an untagged draft (Nov 11). Make sure it ends up published.
+          for ($i = 0; $i -lt 6; $i++) {
+            $d = Get-Drafts
+            if (-not $d) { break }
+            Start-Sleep 5
+            $d | ForEach-Object { gh api -X PATCH "repos/$repo/releases/$($_.id)" -F draft=false -f tag_name=$tag | Out-Null }
+          }
+          $live = gh api "repos/$repo/releases/tags/$tag" | ConvertFrom-Json
+          if (-not $live -or $live.tag_name -ne $tag -or $live.draft) { throw "The '$tag' release didn't get published. Check the Releases page." }
+          Write-Host "Published: $($live.html_url)"

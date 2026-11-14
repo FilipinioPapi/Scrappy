@@ -8,6 +8,8 @@ use std::time::Duration;
 
 pub const CLIENT_NAME: &str = "Scrappy Media Center";
 pub const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The real app version (set at start-up), so Emby's device list shows which Scrappy each person has.
+pub static APP_VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// What we remember between launches. The password is never stored, only the
 /// access token Emby hands back after login.
@@ -33,6 +35,11 @@ pub struct Config {
     pub abs_name: String,
     pub abs_user: String,
     pub abs_token: String,
+    /// Request service address; empty = the Emby address + /requests.
+    pub requests_url: String,
+    /// "Who's watching": everyone signed in on this device (see profiles.rs), and who is active.
+    pub profiles: Vec<crate::profiles::Profile>,
+    pub active_profile: String,
 }
 
 impl Config {
@@ -67,7 +74,7 @@ impl Config {
             CLIENT_NAME,
             device_name(),
             self.device_id,
-            CLIENT_VERSION
+            APP_VERSION.get().map(String::as_str).unwrap_or(CLIENT_VERSION)
         );
         if !self.user_id.is_empty() {
             h.push_str(&format!(", UserId=\"{}\"", self.user_id));
@@ -100,7 +107,15 @@ pub fn http_client() -> reqwest::Client {
 pub fn normalize_server(input: &str) -> String {
     let mut s = input.trim().trim_end_matches('/').to_string();
     if !s.starts_with("http://") && !s.starts_with("https://") {
-        s = format!("http://{s}");
+        // A bare public name ("movies.example.com") gets a secure connection, so the
+        // sign-in never crosses the internet in the clear. Home addresses (numbers,
+        // a port, .local and friends) stay on plain http as before.
+        let host = s.split('/').next().unwrap_or("").to_ascii_lowercase();
+        let home = host.contains(':')
+            || !host.contains('.')
+            || host.chars().all(|c| c.is_ascii_digit() || c == '.')
+            || [".local", ".lan", ".home", ".internal", ".localdomain"].iter().any(|t| host.ends_with(t));
+        s = format!("{}://{s}", if home { "http" } else { "https" });
     }
     // If the user pasted the web app address, drop the web part.
     for suffix in ["/web/index.html", "/web"] {
@@ -303,6 +318,35 @@ pub fn device_profile(max_bitrate: u64) -> Value {
     })
 }
 
+#[cfg(not(target_os = "android"))]
+fn profile_for_this_device(max_bitrate: u64) -> Value {
+    device_profile(max_bitrate)
+}
+
+/// On the TV: direct play only what the TV's own player handles; Emby converts the rest
+/// (usually just the sound, e.g. DTS on a TV without DTS, leaving the picture untouched).
+#[cfg(target_os = "android")]
+fn profile_for_this_device(max_bitrate: u64) -> Value {
+    let caps = crate::mpv::caps();
+    let join = |k: &str, fallback: &str| -> String {
+        caps[k].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(",")).filter(|s| !s.is_empty()).unwrap_or_else(|| fallback.to_string())
+    };
+    let video = join("video", "h264,hevc");
+    let audio = join("audio", "aac,mp3,flac,opus,ac3,eac3");
+    let mut p = device_profile(max_bitrate);
+    p["Name"] = json!("Scrappy (Google TV)");
+    p["DirectPlayProfiles"] = json!([
+        { "Type": "Video", "Container": "mp4,m4v,mkv,webm,mov,ts,mpegts", "VideoCodec": video, "AudioCodec": audio },
+        { "Type": "Audio", "Container": "flac,mp3,aac,m4a,ogg,opus,wav,alac", "AudioCodec": audio }
+    ]);
+    p["TranscodingProfiles"] = json!([{
+        "Container": "ts", "Type": "Video", "VideoCodec": "h264,hevc",
+        "AudioCodec": if audio.contains("eac3") { "aac,ac3,eac3" } else if audio.contains("ac3") { "aac,ac3" } else { "aac" },
+        "Context": "Streaming", "Protocol": "hls", "MaxAudioChannels": "8", "BreakOnNonKeyFrames": true
+    }]);
+    p
+}
+
 pub struct ExternalSub {
     pub url: String,
     pub title: String,
@@ -344,7 +388,7 @@ pub async fn playback_target(
         cfg,
         reqwest::Method::POST,
         &path,
-        Some(json!({ "DeviceProfile": device_profile(max_bitrate) })),
+        Some(json!({ "DeviceProfile": profile_for_this_device(max_bitrate) })),
     )
     .await?;
 

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>scrappy-requests</Name>
+  <Repository>ghcr.io/filipiniopapi/scrappy-requests:preview</Repository>
+  <Registry>https://github.com/FilipinioPapi/Scrappy/pkgs/container/scrappy-requests</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/FilipinioPapi/Scrappy</Support>
+  <Project>https://github.com/FilipinioPapi/Scrappy/tree/preview-build/requests-service</Project>
+  <Overview>The service behind Scrappy's Request button. Keeps the request list, searches TMDB, MusicBrainz and Audible, and checks Emby, Navidrome and Audiobookshelf for what's already there. Reach it through your Emby address under /requests.</Overview>
+  <Category>MediaServer:Other</Category>
+  <WebUI>http://[IP]:[PORT:8095]/requests/api/health</WebUI>
+  <Icon>https://raw.githubusercontent.com/FilipinioPapi/Scrappy/preview-build/src-tauri/icons/128x128.png</Icon>
+  <Config Name="Port" Target="8095" Default="8095" Mode="tcp" Description="Only your reverse proxy needs to reach this. No port forward." Type="Port" Display="always" Required="true" Mask="false">8095</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/scrappy-requests" Mode="rw" Description="The request list lives here (requests.db). Back this up." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/scrappy-requests</Config>
+  <Config Name="Admins" Target="ADMINS" Default="" Mode="" Description="Emby usernames that can manage everyone's requests, comma-separated" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Region" Target="REGION" Default="US" Mode="" Description="Country for release dates" Type="Variable" Display="always" Required="false" Mask="false">US</Config>
+  <Config Name="TMDB API key" Target="TMDB_API_KEY" Default="" Mode="" Description="themoviedb.org: Settings, API (short key or long read access token)" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Emby URL" Target="EMBY_URL" Default="http://192.168.1.10:8096" Mode="" Description="Emby as Unraid sees it (local address is fine)" Type="Variable" Display="always" Required="true" Mask="false">http://192.168.1.10:8096</Config>
+  <Config Name="Emby API key" Target="EMBY_API_KEY" Default="" Mode="" Description="Emby Dashboard: Advanced, API Keys" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Navidrome URL" Target="NAVIDROME_URL" Default="http://192.168.1.10:4533" Mode="" Description="Navidrome as Unraid sees it" Type="Variable" Display="always" Required="false" Mask="false">http://192.168.1.10:4533</Config>
+  <Config Name="Navidrome user" Target="NAVIDROME_USER" Default="" Mode="" Description="A normal (non-admin) Navidrome user" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Navidrome password" Target="NAVIDROME_PASSWORD" Default="" Mode="" Description="That user's password" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Audiobookshelf URL" Target="ABS_URL" Default="http://192.168.1.10:13378" Mode="" Description="Audiobookshelf as Unraid sees it" Type="Variable" Display="always" Required="false" Mask="false">http://192.168.1.10:13378</Config>
+  <Config Name="Audiobookshelf token" Target="ABS_TOKEN" Default="" Mode="" Description="Audiobookshelf: Settings, API Keys, Add API key (pick a user who can see the books)" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Hand-off URL" Target="HANDOFF_URL" Default="" Mode="" Description="Later, for the Discord bot. Leave empty." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Hand-off secret" Target="HANDOFF_SECRET" Default="" Mode="" Description="Later, for the Discord bot. Leave empty." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+</Container>

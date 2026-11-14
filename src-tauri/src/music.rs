@@ -100,6 +100,20 @@ fn stream_url(state: &AppState, id: &str) -> String {
     servers::nd_url(&cfg, "stream", &format!("id={}", servers::enc(id)))
 }
 
+/// A short preview of a song for Your Year in Review, starting `at` seconds in.
+#[tauri::command]
+pub fn nd_snippet_url(state: State<'_, AppState>, id: String, at: u32, raw: Option<bool>) -> Result<String, String> {
+    let cfg = state.cfg();
+    if !cfg.nd_logged_in() {
+        return Err("ND_SESSION_EXPIRED".into());
+    }
+    // raw: the file as it is (the page seeks to `at` itself); otherwise an mp3 starting at `at`.
+    if raw.unwrap_or(false) {
+        return Ok(servers::nd_url(&cfg, "stream", &format!("id={}&format=raw", servers::enc(&id))));
+    }
+    Ok(servers::nd_url(&cfg, "stream", &format!("id={}&format=mp3&maxBitRate=192&timeOffset={at}", servers::enc(&id))))
+}
+
 /// Start playing `ids` from the first one. Replaces whatever was playing.
 #[tauri::command]
 pub fn music_play(app: AppHandle, state: State<'_, AppState>, ids: Vec<String>, volume: Option<f64>) -> Result<(), String> {

@@ -1,0 +1,119 @@
+name: Build Google TV app
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A newer push replaces a build that is still running (only one TV build at a time).
+concurrency:
+  group: tv-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-tv:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # GitHub's Linux machines come with the Android SDK; add the NDK (for the Rust part).
+      - name: Install Android NDK
+        run: |
+          SDKM=$(ls -d $ANDROID_HOME/cmdline-tools/*/bin | sort -V | tail -1)/sdkmanager
+          yes | $SDKM --licenses > /dev/null || true
+          $SDKM --install "ndk;${NDK_VERSION}" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 64-bit and 32-bit, since many TVs run 32-bit Android even on 64-bit chips.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      # The signing key: from the TV_KEYSTORE secret if one is set, otherwise made once
+      # and kept in the build cache, so each new build installs over the last one.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scrappy-tv-key
+          key: scrappy-tv-key-v1
+
+      - name: Signing key
+        env:
+          KS: ${{ secrets.TV_KEYSTORE }}
+          KP: ${{ secrets.TV_KEY_PASS }}
+        run: |
+          mkdir -p ~/.scrappy-tv-key
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > ~/.scrappy-tv-key/tv.keystore
+            echo "$KP" > ~/.scrappy-tv-key/pass
+          elif [ ! -f ~/.scrappy-tv-key/tv.keystore ]; then
+            openssl rand -hex 16 > ~/.scrappy-tv-key/pass
+            keytool -genkeypair -keystore ~/.scrappy-tv-key/tv.keystore -alias scrappy -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$(cat ~/.scrappy-tv-key/pass)" -keypass "$(cat ~/.scrappy-tv-key/pass)" -dname "CN=Scrappy"
+          fi
+          echo "TV_KEYSTORE=$HOME/.scrappy-tv-key/tv.keystore" >> "$GITHUB_ENV"
+          echo "::add-mask::$(cat ~/.scrappy-tv-key/pass)"
+          echo "TV_KEY_PASS=$(cat ~/.scrappy-tv-key/pass)" >> "$GITHUB_ENV"
+
+      # Each build gets a rising version (0.3.<build number>), so the TV can tell a newer
+      # build from the one installed and update itself from inside the app.
+      - name: Build
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then tag=tv; else tag=tv-preview; fi
+          version="0.3.${{ github.run_number }}"
+          echo "TV_TAG=$tag" >> "$GITHUB_ENV"
+          echo "TV_VERSION=$version" >> "$GITHUB_ENV"
+          export SCRAPPY_TV_CHANNEL=$tag
+          npm ci
+          npx tauri android build --apk --target aarch64 --target armv7 --config "{\"version\":\"$version\"}"
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name "*universal*release*.apk" | head -1)
+          echo "Built $apk"
+          cp "$apk" Scrappy-TV.apk
+
+      # The small file the TV reads to see if there is a newer build (what's new comes from tv-notes.txt).
+      - name: Update info for the TV
+        run: |
+          python3 - <<'PY'
+          import json, os
+          notes = [l.strip().lstrip('-*• ').strip() for l in open('tv-notes.txt', encoding='utf-8') if l.strip() and not l.startswith('#')]
+          tag = os.environ['TV_TAG']
+          json.dump({
+              'version': os.environ['TV_VERSION'],
+              'url': f'https://github.com/FilipinioPapi/Scrappy/releases/download/{tag}/Scrappy-TV.apk',
+              'size': os.path.getsize('Scrappy-TV.apk'),
+              'notes': notes[:5],
+          }, open('tv.json', 'w'), indent=1)
+          print(open('tv.json').read())
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scrappy-TV
+          path: Scrappy-TV.apk
+
+      # main -> "TV build"; any other branch -> "TV Preview build" (for testing before merging).
+      - name: Publish build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$TV_TAG
+          if [ "$tag" = "tv" ]; then title="Google TV build $TV_VERSION"; else title="Google TV Preview build $TV_VERSION (${{ github.ref_name }})"; fi
+          gh release delete $tag --yes --cleanup-tag 2>/dev/null || true
+          gh release create $tag Scrappy-TV.apk tv.json --title "$title" --notes "Version $TV_VERSION, built from ${{ github.ref_name }} at commit ${{ github.sha }}. First install: Scrappy-TV.apk with the Downloader app. After that the TV app updates itself." --prerelease --target ${{ github.sha }}
