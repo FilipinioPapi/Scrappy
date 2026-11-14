@@ -90,6 +90,7 @@ async fn latest() -> Result<Value, String> {
 /// - "download": fetches the new app, sending "tv-upd" events { got, total } as it goes
 /// - "cancel":   stops a download
 /// - "install":  hands the downloaded app to the TV's installer
+/// - "restart":  closes Scrappy and opens it again
 #[tauri::command]
 pub async fn tv_update(app: AppHandle, what: String) -> Result<Value, String> {
     let current = app.package_info().version.to_string();
@@ -131,6 +132,11 @@ pub async fn tv_update(app: AppHandle, what: String) -> Result<Value, String> {
             }
             let h = INSTALLER.get().ok_or("The TV's installer isn't ready.")?;
             h.run_mobile_plugin::<Value>("install", json!({ "path": path.to_string_lossy() })).map_err(|e| e.to_string())
+        }
+        // Settings: "Restart Scrappy" closes the app completely and opens it again.
+        "restart" => {
+            let h = INSTALLER.get().ok_or("The TV isn't ready to restart Scrappy.")?;
+            h.run_mobile_plugin::<Value>("restart", json!({})).map_err(|e| e.to_string())
         }
         _ => Err("Unknown update step.".into()),
     }

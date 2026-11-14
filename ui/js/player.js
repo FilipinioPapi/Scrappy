@@ -115,6 +115,7 @@ el.innerHTML = `
       <label>Aspect ratio<select data-set="aspect">${ASPECTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label>Quality<select data-set="quality">${QUALITIES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
     </div>
+    <div class="p-set-fix"><button type="button" class="btn secondary" data-act="reload">Reload video</button><span>Picture stuck? This starts the video again at the same spot.</span></div>
     <div class="p-set-2">
       <label>Skip back (−)<select data-set="skipBack">${SKIPS.map((v) => `<option value="${v}">${v} seconds</option>`).join('')}</select></label>
       <label>Skip forward (+)<select data-set="skipFwd">${SKIPS.map((v) => `<option value="${v}">${v} seconds</option>`).join('')}</select></label>
@@ -971,7 +972,8 @@ async function setFullscreen(on) {
   drawButtons();
 }
 const toggleFullscreen = () => setFullscreen(!S.fullscreen);
-const togglePause = () => cmd('cycle', 'pause');
+// On the TV the button answers at once (the TV's player is only asked how it's doing 4 times a second).
+const togglePause = () => { cmd('cycle', 'pause'); if (TVP && S.open && !S.starting) { S.pos = livePos(); markPos(); S.paused = !S.paused; drawButtons(); } };
 const seekBy = (s) => { const p = livePos(); cmd('seek', s, 'relative+exact'); S.pos = Math.max(0, p + s); markPos(); drawTime(); wake(); };
 const volMax = () => (on('volBoost') ? 150 : 100);
 const changeVolume = (d) => {
@@ -1060,6 +1062,14 @@ el.addEventListener('click', (e) => {
   e.stopPropagation();
   switch (b.dataset.act) {
     case 'exit': exitPlayer(); break;
+    case 'reload': {
+      // Start the same video again where it is (on the TV, on a brand new player).
+      if (!S.item) break;
+      const at = Math.max(0, (typeof tvTo === 'number' ? tvTo : livePos()) - 2);
+      toggleSettings(false); toast('Reloading the video…');
+      (async () => { if (TVP) await cmd('reset').catch(() => {}); S.starting = false; startPlayback(S.item.Id, { startSecs: at, keepItem: true }); })();
+      break;
+    }
     case 'pause': togglePause(); break;
     case 'rew': if (TVP) tvSeek(-1, false); else seekBy(-skipBack()); break;
     case 'fwd': if (TVP) tvSeek(1, false); else seekBy(skipFwd()); break;
@@ -1306,15 +1316,17 @@ function tvSeek(dir, held) {
   const step = tvRun < 4 ? base : tvRun < 10 ? Math.max(base, 30) : tvRun < 20 ? 60 : tvRun < 34 ? 120 : 300;
   const d = dur();
   tvTo = Math.max(0, Math.min(d > 20 ? d - 5 : Infinity, (tvTo ?? livePos()) + dir * step));
-  S.dragging = true; drawBar(tvTo); wake();
+  S.dragging = true; el.classList.add('scrubbing'); drawBar(tvTo); wake();
   clearTimeout(tvSeekT); clearTimeout(tvRelT);
   tvSeekT = setTimeout(() => {
     const t = tvTo;
     if (S.open && t != null) { cmd('seek', t.toFixed(2), 'absolute+exact'); S.pos = t; markPos(); }
     // Hold the bar on the new spot until the player has caught up.
-    tvRelT = setTimeout(() => { tvTo = null; S.dragging = false; if (S.open) drawTime(); }, 700);
+    tvRelT = setTimeout(() => { tvTo = null; S.dragging = false; el.classList.remove('scrubbing'); if (S.open) drawTime(); }, 700);
   }, 350);
 }
+// A pressed button dips for a moment, so every OK is seen to land.
+if (TVP) el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap'); setTimeout(() => b.classList.remove('tap'), 220); }, true);
 function tvKey(e) {
   const k = e.key; const a = document.activeElement;
   const inCtl = !!a && a !== el && el.contains(a);
@@ -1341,6 +1353,8 @@ function tvKey(e) {
   }
   if (k === 'Enter' && onSeek) { togglePause(); wake(); return true; }
   if (k === 'ArrowDown' && onSeek) { wake(); tvFocus('.p-play'); return true; }
+  // The last thing in the settings panel: the highlight stays in the panel (Back closes it).
+  if (S.settingsOpen && a.dataset.act === 'reload' && k !== 'ArrowUp' && k !== 'Enter') { wake(); return true; }
   // Along the row of buttons, Left and Right always go to the next button, however far away it is.
   const row = a.closest('.p-row');
   if (row && (k === 'ArrowLeft' || k === 'ArrowRight') && !S.settingsOpen && !S.epsOpen) {

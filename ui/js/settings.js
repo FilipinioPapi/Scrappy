@@ -59,6 +59,7 @@ function accountHtml(ctx) {
     seg('startTab', 'Start on', 'Which tab opens when Scrappy starts.', [['last', 'Last used'], ['#/home', 'Movies & TV'], ['#/music', 'Music'], ['#/audiobooks', 'Audiobooks']]),
     TV ? '' : sw('', 'Open Scrappy when Windows starts', 'Starts quietly in the tray, ready when you are.', { id: 'setAutostart', checked: false }),
     TV ? '' : sw('closeTray', 'Keep playing music when the window is closed', 'Closing the window hides Scrappy to the tray (by the clock) instead of quitting. Quit from the tray icon.'),
+    TV ? btn('Restart Scrappy', 'Closes Scrappy completely and opens it again. Use this if something is stuck. Nobody is signed out.', 'Restart', 'restartApp') : '',
     btn('Sign out of everything', `Removes all three accounts from this ${TV ? 'TV' : 'PC'}.`, 'Sign out of all', 'signoutAll'),
   ]);
 }
@@ -283,6 +284,10 @@ export async function settingsPage(root, ctx, secId) {
       await api.logout().catch(() => {});
       await ctx.refreshSession();
       location.hash = '#/login';
+    } else if (act === 'restartApp') {
+      toast('Restarting Scrappy…');
+      // If the TV can't do a full restart, starting the screens over is the next best thing.
+      try { await window.__TAURI__.core.invoke('tv_update', { what: 'restart' }); } catch { location.hash = '#/home'; location.reload(); }
     } else if (act === 'resetSubs') {
       let n = 0;
       try {

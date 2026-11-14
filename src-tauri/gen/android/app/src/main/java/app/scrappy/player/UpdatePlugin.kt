@@ -39,4 +39,23 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
       invoke.reject(e.message ?: e.toString())
     }
   }
+
+  /** Close Scrappy completely and open it again (Settings: "Restart Scrappy"). Sign-ins stay. */
+  @Command
+  fun restart(invoke: Invoke) {
+    try {
+      val pm = activity.packageManager
+      val launch = pm.getLeanbackLaunchIntentForPackage(activity.packageName) ?: pm.getLaunchIntentForPackage(activity.packageName)
+      val comp = launch?.component
+      if (comp == null) {
+        invoke.reject("Couldn't restart Scrappy.")
+        return
+      }
+      invoke.resolve()
+      activity.startActivity(Intent.makeRestartActivityTask(comp))
+      Runtime.getRuntime().exit(0)
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: e.toString())
+    }
+  }
 }

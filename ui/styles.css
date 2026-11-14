@@ -3749,3 +3749,23 @@ html.tv .who.full .who-p:focus, html.tv .who-pin .who-p:focus { box-shadow: none
 
 /* TV search: groups of results below the screen cost nothing until you reach them. */
 html.tv .tvs .sres { content-visibility: auto; contain-intrinsic-size: auto 620px; overflow-clip-margin: 28px; }
+
+/* ---------- TV player polish: snappy buttons, a time bar that follows the remote ---------- */
+html.tv #player .p-fill { box-shadow: none; }
+html.tv #player .p-btn, html.tv #player .p-pill, html.tv #player .p-speed, html.tv #player .p-play, html.tv #player .p-ep { transition: transform .12s ease-out, background-color .12s linear; }
+html.tv #player .p-row button:focus { transform: scale(1.08); }
+@keyframes tvTap { 0% { transform: scale(1.08); } 40% { transform: scale(.93); } 100% { transform: scale(1.08); } }
+html.tv #player button.tap { animation: tvTap .2s ease-out; }
+html.tv #player .p-track { transition: height .12s ease-out; }
+html.tv #player .p-cur { display: inline-block; transform-origin: left center; transition: transform .14s ease-out; }
+html.tv #player .p-seek:focus .p-knob, html.tv #player.scrubbing .p-knob { opacity: 1; transform: scale(1.3); }
+html.tv #player.scrubbing .p-track { height: 12px; border-radius: 6px; }
+html.tv #player.scrubbing .p-cur { transform: scale(1.22); }
+html.tv #player.scrubbing .p-fill { transition: width .09s linear; }
+html.tv #player.scrubbing .p-knob { transition: left .09s linear, opacity .12s, transform .16s ease-out; }
+
+/* Player settings: "Reload video" (TV only). */
+.p-set-fix { display: none; }
+html.tv #player .p-set-fix { display: flex; align-items: center; gap: 16px; }
+html.tv #player .p-set-fix .btn { flex: none; height: 52px; padding: 0 22px; font-size: 18px; border-radius: 12px; }
+html.tv #player .p-set-fix span { font-size: 15px; color: var(--muted); line-height: 1.3; }

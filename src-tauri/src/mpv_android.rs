@@ -116,6 +116,7 @@ impl Player {
             }
             ["cycle", "pause"] => control("toggle", json!({})),
             ["stop"] => control("stop", json!({})),
+            ["reset"] => control("reset", json!({})),
             ["quit"] => {
                 let _ = control("stop", json!({}));
                 self.0.lock().unwrap().alive = false;

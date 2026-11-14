@@ -253,6 +253,14 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
           p.clearMediaItems()
           view?.visibility = android.view.View.GONE
         }
+        // "Reload video": throw the TV's player away, so the next film starts on a brand new one.
+        "reset" -> {
+          val v = view
+          player = null
+          view = null
+          try { p.release() } catch (e: Exception) { }
+          if (v != null) { v.player = null; (v.parent as? ViewGroup)?.removeView(v) }
+        }
       }
       null
     }

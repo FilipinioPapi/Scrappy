@@ -1,5 +1,5 @@
 Player: skipping never jams the film. Presses add up into one jump, and holding speeds up.
-Player: if a film ever stalls it picks itself up from the same spot.
-Player: Left and Right walk across every button, through to subtitles, speed and settings.
-Opening a title: Home fades away the moment you press, and only the poster glides across.
-Mark watched from the Hold OK menu ticks the tile in place. The screen no longer reloads.
+Player: if a film ever stalls it picks itself up. Its settings also have "Reload video".
+Player: Left and Right walk across every button. Buttons answer the moment you press.
+Settings has "Restart Scrappy" for when anything is stuck. Nobody is signed out.
+Mark watched ticks the tile in place, and opening a title fades Home out under the poster.
