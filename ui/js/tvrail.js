@@ -26,11 +26,18 @@ document.body.appendChild(rail);
 let views = [];
 // Whoever is watching: their picture sits at the top, and pressing it opens "Who's watching?".
 let me = { name: '', pic: '' };
-window.__TAURI__.core.invoke('get_session').then((s) => {
-  if (!s?.loggedIn && !s?.userName) return;
-  me = { name: s.userName || s.servers?.navidrome?.user || s.servers?.audiobookshelf?.user || '', pic: s.servers?.emby?.signedIn && s.server && s.userId ? `${s.server}/Users/${encodeURIComponent(s.userId)}/Images/Primary?maxWidth=120&quality=90` : '' };
-  draw();
-}).catch(() => {});
+// Asked again on every screen change, so it is right straight after signing in or switching.
+function loadMe() {
+  window.__TAURI__.core.invoke('get_session').then((s) => {
+    const name = s?.loggedIn ? (s.servers?.emby?.signedIn && s.userName) || s.servers?.navidrome?.user || s.servers?.audiobookshelf?.user || s.userName || '' : '';
+    const pic = s?.servers?.emby?.signedIn && s.server && s.userId ? `${s.server}/Users/${encodeURIComponent(s.userId)}/Images/Primary?maxWidth=120&quality=90` : '';
+    if (name === me.name && pic === me.pic) return;
+    const had = inRail(document.activeElement) ? document.activeElement.dataset.k : null;
+    me = { name, pic }; draw();
+    if (had) rail.querySelector(`.tr-i[data-k="${CSS.escape(had)}"]`)?.focus({ preventScroll: true });
+  }).catch(() => {});
+}
+loadMe();
 
 const item = (key, name, icon, href) => `<a class="tr-i" href="${href}" data-k="${esc(key)}">${svg(ICON[icon] || ICON.folder)}<span>${esc(name)}</span></a>`;
 function draw() {
@@ -73,7 +80,7 @@ async function loadViews() {
 
 draw();
 rail.addEventListener('focusin', (e) => e.target.scrollIntoView?.({ block: 'nearest' }));
-addEventListener('hashchange', () => { mark(); if (!views.length) loadViews(); });
+addEventListener('hashchange', () => { mark(); loadMe(); if (!views.length) loadViews(); });
 // Picking the screen you're already on just closes the rail.
 rail.addEventListener('click', (e) => { const a = e.target.closest('.tr-i'); if (!a) return; if (a.dataset.k === 'me') { e.preventDefault(); import('./tvwho.js').then((m) => m.who({ side: true })).catch(() => {}); return; } if (a.getAttribute('href') === (location.hash || '#/home')) { e.preventDefault(); window.dispatchEvent(new Event('tv:leave-rail')); } else window.dispatchEvent(new Event('tv:rail-go')); });
 setTimeout(loadViews, 600);

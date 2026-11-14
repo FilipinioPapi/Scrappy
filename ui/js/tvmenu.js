@@ -3,7 +3,7 @@
 // Up/Down move, OK picks, Back closes. Resolves with the picked index, or null.
 import { esc } from './components.js';
 
-export function tvPick(title, options, selected = -1, note = '') {
+export function tvPick(title, options, selected = -1, note = '', startAt = -1) {
   return new Promise((done) => {
     const from = document.activeElement;
     const box = document.createElement('div');
@@ -14,7 +14,7 @@ export function tvPick(title, options, selected = -1, note = '') {
     addEventListener('keydown', onKey, true);
     box.addEventListener('click', (e) => { const o = e.target.closest('.tvm-opt'); if (o) close(Number(o.dataset.i)); else if (e.target === box) close(null); });
     document.body.appendChild(box);
-    const first = box.querySelector('.tvm-opt.sel') || box.querySelector('.tvm-opt');
+    const first = (startAt >= 0 && box.querySelectorAll('.tvm-opt')[startAt]) || box.querySelector('.tvm-opt.sel') || box.querySelector('.tvm-opt');
     first?.focus({ preventScroll: true }); first?.scrollIntoView({ block: 'center' });
   });
 }

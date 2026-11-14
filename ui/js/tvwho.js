@@ -81,12 +81,12 @@ async function addPerson() {
 }
 
 // "Manage people": PINs, removing someone, and whether Scrappy asks when it opens.
-async function manage(data) {
+async function manage(data, startAt = -1) {
   const ask = get(ASK) !== '0';
   const opts = [...data.people.map((p) => p.name + (p.hasPin ? '  (PIN on)' : '')), `Ask who's watching when Scrappy opens: ${ask ? 'On' : 'Off'}`];
-  const i = await tvPick('People on this TV', opts);
+  const i = await tvPick('People on this TV', opts, -1, '', startAt);
   if (i == null) return;
-  if (i === data.people.length) { set(ASK, ask ? '0' : '1'); return manage(data); }
+  if (i === data.people.length) { set(ASK, ask ? '0' : '1'); return manage(data, i); }
   const p = data.people[i];
   const acts = p.hasPin ? ['Change PIN', 'Turn PIN off', `Remove ${p.name} from this TV`] : ['Set a PIN', `Remove ${p.name} from this TV`];
   const a = await tvPick(p.name, acts, -1, p.hasPin ? 'PIN on' : 'No PIN');
