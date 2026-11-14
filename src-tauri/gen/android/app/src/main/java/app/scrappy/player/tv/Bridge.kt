@@ -30,11 +30,25 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
 
   init {
     view.visibility = View.GONE
-    val parent = (web.parent as? ViewGroup) ?: act.findViewById(android.R.id.content)
-    parent.addView(view, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    // The web view is put on screen (setContentView) only after this runs, which would throw away
+    // anything added now: the native view joins it once it is attached, underneath it.
+    web.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+      override fun onViewAttachedToWindow(v: View) { attach() }
+      override fun onViewDetachedFromWindow(v: View) {}
+    })
+    if (web.isAttachedToWindow) attach()
+    if (android.os.Build.VERSION.SDK_INT >= 26) { view.defaultFocusHighlightEnabled = false; web.defaultFocusHighlightEnabled = false }
     web.setBackgroundColor(android.graphics.Color.TRANSPARENT)
     web.addJavascriptInterface(this, "ScrappyNative")
     view.home().onGenreLib = { id -> eval("window.__tvNative && window.__tvNative.genreLib(${js(id)})") }
+  }
+
+  /** Put the native view directly under the web view, in the same parent. */
+  private fun attach() {
+    val parent = web.parent as? ViewGroup ?: return
+    if (view.parent === parent) return
+    (view.parent as? ViewGroup)?.removeView(view)
+    parent.addView(view, parent.indexOfChild(web).coerceAtLeast(0), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
   }
 
   private fun eval(s: String) = act.runOnUiThread { web.evaluateJavascript(s, null) }
@@ -57,7 +71,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
 
   @JavascriptInterface fun route(hash: String): Boolean {
     if (!view.isNative(hash)) return false
-    act.runOnUiThread { if (view.route(hash)) { active = true; apply() } }
+    act.runOnUiThread { attach(); if (view.route(hash)) { active = true; apply() } }
     return true
   }
 
