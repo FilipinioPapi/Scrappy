@@ -59,7 +59,6 @@ function accountHtml(ctx) {
     seg('startTab', 'Start on', 'Which tab opens when Scrappy starts.', [['last', 'Last used'], ['#/home', 'Movies & TV'], ['#/music', 'Music'], ['#/audiobooks', 'Audiobooks']]),
     TV ? '' : sw('', 'Open Scrappy when Windows starts', 'Starts quietly in the tray, ready when you are.', { id: 'setAutostart', checked: false }),
     TV ? '' : sw('closeTray', 'Keep playing music when the window is closed', 'Closing the window hides Scrappy to the tray (by the clock) instead of quitting. Quit from the tray icon.'),
-    TV ? btn('Restart Scrappy', 'Closes Scrappy completely and opens it again. Use this if something is stuck. Nobody is signed out.', 'Restart', 'restartApp') : '',
     btn('Sign out of everything', `Removes all three accounts from this ${TV ? 'TV' : 'PC'}.`, 'Sign out of all', 'signoutAll'),
   ]);
 }
@@ -120,6 +119,10 @@ const updatesHtml = () => `<div class="set-card" id="updSettings">
 const KEYS = [['Space', 'Play / pause'], ['← →', 'Skip back / forward (Shift: 1 minute)'], ['↑ ↓', 'Volume'], ['F', 'Full screen'], ['C', 'Subtitles on / off'], ['M', 'Mute'], ['N', 'Next episode'], ['E', 'Episodes'], ['B', 'Bookmark (audiobooks)'], ['Ctrl + / Ctrl −', 'App size'], ['Backspace', 'Back']];
 const aboutHtml = () => card('SCRAPPY', [
   row(`Version ${esc(updInfo().current || '')}`, 'Scrappy Media Center for Emby, Navidrome and Audiobookshelf.', '<a class="btn small secondary" href="#/settings/updates">Updates</a>'),
+  // TV (Jayden's pick, E2): the things worth finding here, in plain words.
+  TV ? btn("What's new", 'What changed in the latest update.', 'Read', 'tvNews') : '',
+  TV ? btn('Remote tips', 'The handy things the remote can do in Scrappy.', 'Show', 'tvTips') : '',
+  TV ? btn('Restart Scrappy', 'Closes Scrappy completely and opens it again. Use this if something is stuck. Nobody is signed out.', 'Restart', 'restartApp') : '',
 ]) + (TV ? '' : card('KEYBOARD SHORTCUTS', [`<div class="set-keys">${KEYS.map(([k, d]) => `<kbd>${esc(k)}</kbd><span>${esc(d)}</span>`).join('')}</div>`]));
 
 // ---------- Admin: Server health ----------
@@ -285,6 +288,22 @@ export async function settingsPage(root, ctx, secId) {
       await api.logout().catch(() => {});
       await ctx.refreshSession();
       location.hash = '#/login';
+    } else if (act === 'tvNews') {
+      const { tvInfo } = await import('./tvmenu.js');
+      let r = null;
+      try { r = await window.__TAURI__.core.invoke('tv_update', { what: 'check' }); } catch {}
+      const notes = (Array.isArray(r?.notes) ? r.notes : String(r?.notes || '').split('\n')).map((l) => String(l).trim()).filter(Boolean);
+      if (!notes.length) { toast("Couldn't fetch the list of changes just now.", true); return; }
+      await tvInfo(r.available ? `New in ${r.version} (not installed yet)` : `New in ${r.version || r.current}`, notes);
+    } else if (act === 'tvTips') {
+      const { tvInfo } = await import('./tvmenu.js');
+      await tvInfo('Remote tips', [
+        'Hold OK on any poster for a quick menu.',
+        'Press Left at the edge of a screen to open the side bar.',
+        'On Movies and TV Shows, press Up from the top row for Sort, Show and Genre. Press Right at the edge for A to Z.',
+        'While something plays, Left and Right skip and OK pauses. Back closes what is open, then leaves.',
+        'Switch person from your picture at the top of the side bar.',
+      ]);
     } else if (act === 'restartApp') {
       toast('Restarting Scrappy…');
       // If the TV can't do a full restart, starting the screens over is the next best thing.

@@ -3812,3 +3812,15 @@ html.tv .genre-title { font-family: inherit; font-weight: 800; font-size: 20px; 
    (the same rule as the A to Z strip), so only one thing ever looks "selected". */
 html.tv .season-tabs .season-tab:focus { background: #fff !important; color: #120C0C !important; outline: none; box-shadow: none; }
 html.tv .season-tabs:focus-within .season-tab.active:not(:focus) { background: none !important; color: #fff; box-shadow: inset 0 0 0 2px var(--red); }
+/* E2: a short thing to read on the TV (What's new, Remote tips). */
+html.tv .tvm-card.tvm-info { width: 860px; max-width: 860px; }
+.tvm-info ul { margin: 0 14px 18px; padding: 0 0 0 22px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.tvm-info li { font-size: 21px; line-height: 1.35; color: #E9DADB; }
+.tvm-info .tvm-ok { align-self: flex-end; justify-content: center; min-width: 140px; background: #2C1C1D; }
+/* F3: on the TV, cast and crew are round faces; someone with no photo shows their initial on a
+   colour (the same colours as "Who's watching?"). */
+html.tv .row .card.person .art { aspect-ratio: 1 / 1; border-radius: 50%; }
+html.tv .card.person .person-ph { font: 400 54px/1 var(--display); color: #fff; padding: 0; }
+html.tv .person-ph.pc1 { background: linear-gradient(135deg, #f08a3c, #b13a1e); } html.tv .person-ph.pc2 { background: linear-gradient(135deg, #4d9de0, #2b4a8a); }
+html.tv .person-ph.pc3 { background: linear-gradient(135deg, #59c27a, #1f6b4a); } html.tv .person-ph.pc4 { background: linear-gradient(135deg, #b06fd8, #5a2b86); }
+html.tv .person-ph.pc5 { background: linear-gradient(135deg, #e0607e, #8a2b48); } html.tv .person-ph.pc6 { background: linear-gradient(135deg, #d8b84a, #86601f); }

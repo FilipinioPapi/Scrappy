@@ -1346,15 +1346,19 @@ function tvSeek(dir, held) {
 }
 // A pressed button dips for a moment, so every OK is seen to land.
 if (TVP) el.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap'); setTimeout(() => b.classList.remove('tap'), 220); }, true);
+let tvPanelBack = false;
 function tvKey(e) {
   const k = e.key; const a = document.activeElement;
   const inCtl = !!a && a !== el && el.contains(a);
   const onSeek = inCtl && a.classList.contains('p-seek');
   const card = $('.p-upnext.show') || (S.stillOpen ? $('.p-still') : null);
+  // Leaving with a panel open takes two presses of Back (Jayden's pick, G2): the first closes the
+  // panel, the next one leaves. With no panel open, Back hides the controls first, as before.
+  const fromPanel = tvPanelBack; tvPanelBack = false;
   if (k === 'Escape') {
-    if (S.settingsOpen) { toggleSettings(false); tvFocus('.p-cog'); }
-    else if (S.epsOpen) { toggleEps(false); tvFocus('.p-epsbtn'); }
-    else if (!el.classList.contains('idle') && !S.paused && !card) { clearTimeout(idleTimer); setIdle(true); }
+    if (S.settingsOpen) { toggleSettings(false); tvFocus('.p-cog'); tvPanelBack = true; }
+    else if (S.epsOpen) { toggleEps(false); tvFocus('.p-epsbtn'); tvPanelBack = true; }
+    else if (!fromPanel && !el.classList.contains('idle') && !S.paused && !card) { clearTimeout(idleTimer); setIdle(true); }
     else exitPlayer();
     return true;
   }

@@ -21,3 +21,19 @@ export function tvPick(title, options, selected = -1, note = '', startAt = -1) {
     first?.focus({ preventScroll: true }); first?.scrollIntoView({ block: 'center' });
   });
 }
+
+// A short thing to read (what's new, tips): a title, a few lines and one OK button. Back or OK closes it.
+export function tvInfo(title, lines) {
+  return new Promise((done) => {
+    const from = document.activeElement;
+    const box = document.createElement('div');
+    box.className = 'tvm'; box.setAttribute('role', 'dialog');
+    box.innerHTML = `<div class="tvm-card tvm-info"><h4>${esc(title)}</h4><ul>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul><button type="button" class="tvm-opt tvm-ok"><span>OK</span></button></div>`;
+    const close = () => { removeEventListener('keydown', onKey, true); box.remove(); if (from?.isConnected) from.focus({ preventScroll: true }); done(); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+    addEventListener('keydown', onKey, true);
+    box.addEventListener('click', (e) => { if (e.target.closest('.tvm-ok') || e.target === box) close(); });
+    document.body.appendChild(box);
+    box.querySelector('.tvm-ok').focus({ preventScroll: true });
+  });
+}
