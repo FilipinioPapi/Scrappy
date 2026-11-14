@@ -3830,3 +3830,8 @@ html.tv .person-ph.pc5 { background: linear-gradient(135deg, #e0607e, #8a2b48); 
 html.tv .tvs-bar .tvs-pick { flex: none; box-shadow: inset 0 0 0 2px rgba(255,255,255,.22); }
 html.tv .tvs-bar .tvs-pick::after { content: '▾'; margin-left: 8px; opacity: .7; }
 html.tv .tvs-person .person-ph { display: grid; place-items: center; font: 400 44px/1 var(--display); color: #fff; padding: 0; }
+
+/* Google TV, native screens (tvnative.js): the app draws Home and the library grids itself;
+   the page steps aside and only shows what sits on top (menus, Who's watching, messages). */
+html.native, html.native body { background: transparent !important; }
+html.native #view, html.native #tvrail, html.native .view-ghost { display: none !important; }

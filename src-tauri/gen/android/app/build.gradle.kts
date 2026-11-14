@@ -74,6 +74,15 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    // Screen previews of the native TV screens run as plain unit tests (Robolectric, real drawing).
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { t ->
+            t.maxHeapSize = "3g"
+            System.getenv("PREVIEW_OUT")?.let { t.environment("PREVIEW_OUT", it) }
+            System.getenv("ROBOLECTRIC_REPO")?.let { t.systemProperty("robolectric.dependency.repo.url", it) }
+        }
+    }
 }
 
 kotlin {
@@ -101,6 +110,7 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.18")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")
 }

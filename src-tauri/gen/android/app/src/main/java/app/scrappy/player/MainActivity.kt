@@ -1,5 +1,6 @@
 package app.scrappy.player
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -15,6 +16,7 @@ class MainActivity : TauriActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
+    nativeSwitch(intent)
     super.onCreate(savedInstanceState)
     // Don't let the TV dim or start the screensaver while Scrappy is open.
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -22,10 +24,22 @@ class MainActivity : TauriActivity() {
 
   private var web: WebView? = null
   private var holdSent = false
+  /** Native screens (Home, library grids). Off unless switched on for testing: am start ... --ez native true|false */
+  private var native: app.scrappy.player.tv.Bridge? = null
+
+  private fun nativeSwitch(i: Intent?) {
+    if (i?.hasExtra("native") == true) app.scrappy.player.tv.Bridge.set(this, i.getBooleanExtra("native", false))
+  }
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    nativeSwitch(intent)
+  }
 
   // Holding OK on the remote: tell the page once per press, so the quick menu opens on every remote
   // (some TVs don't pass the "still held" presses on to the page).
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    // A native screen is up with nothing from the web on top: the remote drives it directly.
+    native?.let { n -> if (n.takesKeys() && n.view.onKey(event)) return true }
     val ok = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
     if (ok) {
       if (event.action == KeyEvent.ACTION_DOWN) {
@@ -41,6 +55,7 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     web = webView
+    if (app.scrappy.player.tv.Bridge.isOn(this)) native = try { app.scrappy.player.tv.Bridge(this, webView) } catch (e: Throwable) { android.util.Log.e("ScrappyNative", "start", e); null }
     // The page draws its own menus; the built-in press-and-hold menu stays out of the way.
     webView.setOnLongClickListener { true }
     // No scroll bar on a TV: the page moves with the highlight, and the bar only got in the way.

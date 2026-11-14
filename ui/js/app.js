@@ -9,6 +9,9 @@ import { mountSearch, setSearchSession, searchPage } from './search.js';
 import { requestsPage, mountRequests } from './requests.js';
 import './menu.js';
 if (/Android/.test(navigator.userAgent)) import('./tv.js');
+// Google TV: screens drawn natively by the app itself (Home and the library grids), when switched on.
+const NATIVE = (() => { try { return !!window.ScrappyNative?.isOn(); } catch { return false; } })();
+if (NATIVE) import('./tvnative.js');
 import './topfit.js';
 import './updates.js';
 import { toast } from './components.js';
@@ -257,6 +260,19 @@ async function routeNow(opts = {}) {
   // A tab whose server isn't signed in shows a sign-in prompt for it.
   const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || { music: 'navidrome', abs: 'audiobookshelf' }[statsKind] || (['login', 'servers', 'search', 'settings'].includes(name) ? '' : 'emby');
   const notSigned = need && !session.servers?.[need]?.signedIn;
+  // Google TV, native screens: the app draws this screen itself; the web page steps out of the way.
+  if (NATIVE) {
+    if (!notSigned && name !== 'login' && window.ScrappyNative.route(hash)) {
+      document.documentElement.classList.add('native');
+      dropGhost(); leaveCtx(); restoreRun++; shownPage = null; lastRouteName = name;
+      viewEl.replaceChildren();
+      if (['home', ''].includes(name)) setPref('lastTab', '#/home');
+      setTimeout(hideIntro, 0);
+      return;
+    }
+    document.documentElement.classList.remove('native');
+    window.ScrappyNative.leave();
+  }
 
   topbar.hidden = name === 'login' || name === 'servers';
   // The bottom player bar stays on the audio tabs (Music, Audiobooks); on Movies & TV it slides away

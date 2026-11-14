@@ -1,0 +1,192 @@
+package app.scrappy.player.tv
+
+import android.content.Context
+import android.graphics.Canvas
+import android.os.SystemClock
+import android.view.KeyEvent
+import android.view.View
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.sign
+
+/** What the native screens ask of the rest of the app (the web side keeps history, the player, menus). */
+interface Host {
+  fun go(hash: String)
+  fun back()
+  fun play(id: String)
+  fun playSeries(id: String)
+  fun hold(id: String, inResume: Boolean)
+  fun editHome(rowsJson: String)
+  fun who()
+  fun log(msg: String) {}
+  fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit)
+  fun saveSort(key: String, i: Int)
+}
+
+/** One glide per scroller, the same feel as the web screens (tv.js glideTo), in 1080p units. */
+class Glide(var pos: Float = 0f) {
+  var to = pos; private var v = 0f; var moving = false; private set
+  fun set(target: Float, instant: Boolean = false) {
+    to = target
+    if (instant) { pos = target; moving = false; v = 0f; return }
+    if (!moving && abs(pos - to) >= 1f) { moving = true; v = 0f }
+  }
+  fun shift(d: Float) { pos += d; to += d }
+  /** Advance by dt ms. Returns true while still moving. */
+  fun step(dt: Float): Boolean {
+    if (!moving) return false
+    val far = abs(to - pos)
+    var d = (to - pos) * (1f - exp(-dt / (if (far > 427f) 130f else 85f)))
+    val cap = v + 0.733f * dt
+    if (abs(d) > cap) d = sign(d) * cap
+    v = abs(d)
+    pos += d
+    if (abs(to - pos) < 0.8f) { pos = to; moving = false; v = 0f }
+    return moving
+  }
+}
+
+/** A native screen drawn inside TvView (Home, a library grid). Coordinates are 1080p units. */
+abstract class Screen(val tv: TvView) {
+  /** Draw; return true while something is still animating. */
+  abstract fun draw(c: Canvas, now: Long, dt: Float): Boolean
+  /** Arrow / OK presses. Returns true if handled. Left at the start opens the rail (return false). */
+  abstract fun key(k: Int): Boolean
+  open fun ok() {}
+  open fun hold() {}
+  open fun show(fresh: Boolean) {}
+  open fun hide() {}
+  /** The vertical glide still to go, for pacing held presses. */
+  open fun behind(): Float = 0f
+  /** Data changed elsewhere (watched, favourite, after playing): fetch again. */
+  open fun stale() {}
+  open val railKey: String = "home"
+}
+
+/** The single native view: draws the current native screen and the side rail, takes the remote's keys. */
+class TvView(ctx: Context, val host: Host) : View(ctx) {
+  var screen: Screen? = null; private set
+  val rail = Rail(this)
+  private var last = 0L
+  /** Holding a direction or tapping fast: pictures appear at once, no fades (tv-fast on the web). */
+  var fast = false; private set
+  private var lastArrow = 0L
+  private var lastMove = 0L
+  private var moveCost = 0f
+  var routeHash = ""
+
+  init {
+    Ui.init(ctx)
+    Net.init(ctx)
+    Img.init(ctx)
+    Img.onLoaded = { invalidate() }
+    setBackgroundColor(Ui.BG)
+    isFocusable = false
+  }
+
+  private val screens = HashMap<String, Screen>()
+  fun home(): Home = screens.getOrPut("home") { Home(this) } as Home
+  fun grid(id: String, genre: String): Grid = screens.getOrPut("lib/$id/$genre") { Grid(this, id, genre) } as Grid
+
+  /** Show a native screen for this address, or return false if it is not one of ours. */
+  fun route(hash: String): Boolean {
+    val s = screenFor(hash) ?: return false
+    routeHash = hash
+    if (Net.reload()) { screens.clear(); Img.clearMemory(); rail.reset() }
+    val target = screenFor(hash)!!
+    val fresh = target !== screen
+    screen?.let { if (it !== target) it.hide() }
+    screen = target
+    rail.open = false
+    target.show(fresh)
+    rail.mark(target.railKey)
+    invalidate()
+    return true
+  }
+
+  private fun screenFor(hash: String): Screen? {
+    val h = hash.substringBefore('?')
+    if (h == "" || h == "#" || h == "#/" || h == "#/home") return home()
+    val p = h.split('/')
+    if (p.size >= 3 && p[1] == "library" && p[2].isNotEmpty()) return grid(java.net.URLDecoder.decode(p[2], "UTF-8"), if (p.size > 3) java.net.URLDecoder.decode(p[3], "UTF-8") else "")
+    return null
+  }
+
+  fun isNative(hash: String): Boolean {
+    val h = hash.substringBefore('?')
+    if (h == "" || h == "#" || h == "#/" || h == "#/home") return true
+    val p = h.split('/')
+    return p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()
+  }
+
+  fun leave() { screen?.hide(); screen = null; rail.open = false }
+
+  fun stale() { for (s in screens.values) s.stale(); invalidate() }
+
+  override fun onDraw(c: Canvas) {
+    val now = SystemClock.uptimeMillis()
+    val dt = if (last == 0L) 16f else (now - last).coerceIn(1, 64).toFloat()
+    last = now
+    if (fast && now - lastArrow > 420) fast = false
+    c.save()
+    c.scale(width / Ui.W, height / Ui.H)
+    var anim = screen?.draw(c, now, dt) ?: false
+    anim = rail.draw(c, now, dt) || anim
+    c.restore()
+    if (anim || fast) postInvalidateOnAnimation() else last = 0L
+  }
+
+  private var okDown = 0L
+  private var holdFired = false
+  private val holdRun = Runnable { if (okDown != 0L && !holdFired) { holdFired = true; if (!rail.open) screen?.hold() } }
+
+  /** Keys from the activity while a native screen is showing and nothing from the web is on top. */
+  fun onKey(e: KeyEvent): Boolean {
+    val s = screen ?: return false
+    val code = e.keyCode
+    when (code) {
+      KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+        if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
+          okDown = e.downTime; holdFired = false
+          removeCallbacks(holdRun); postDelayed(holdRun, 600)
+        } else if (e.action == KeyEvent.ACTION_DOWN && !holdFired && e.eventTime - e.downTime >= 550) {
+          removeCallbacks(holdRun); holdRun.run()
+        } else if (e.action == KeyEvent.ACTION_UP) {
+          removeCallbacks(holdRun)
+          if (okDown != 0L && !holdFired) { if (rail.open) rail.ok() else s.ok() }
+          okDown = 0L
+        }
+        invalidate()
+        return true
+      }
+      KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+        if (e.action != KeyEvent.ACTION_DOWN) return true
+        val now = SystemClock.uptimeMillis()
+        val repeat = e.repeatCount > 0
+        if (repeat || now - lastArrow < 220) fast = true
+        lastArrow = now
+        // Presses that are already old when they arrive are let go, so the screen never trails your finger.
+        if (repeat && now - e.eventTime > 260) return true
+        val vert = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
+        // A held button is paced; a press of its own always counts.
+        val gap = maxOf(if (vert) 125f else 85f, minOf(moveCost * 1.1f, 300f))
+        if (repeat && now - lastMove < gap) return true
+        if (vert && repeat && !rail.open && s.behind() > 540f) return true
+        lastMove = now
+        val t0 = now
+        post { moveCost = (SystemClock.uptimeMillis() - t0).toFloat().let { if (moveCost == 0f) it else moveCost * 0.6f + it * 0.4f } }
+        if (rail.open) rail.key(code)
+        else if (!s.key(code) && code == KeyEvent.KEYCODE_DPAD_LEFT) rail.openFrom()
+        invalidate()
+        return true
+      }
+      KeyEvent.KEYCODE_BACK -> {
+        if (e.action == KeyEvent.ACTION_UP) {
+          if (rail.open) { rail.open = false; invalidate() } else host.back()
+        }
+        return true
+      }
+    }
+    return false
+  }
+}
