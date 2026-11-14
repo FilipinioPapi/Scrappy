@@ -463,6 +463,9 @@ function fireHold() {
   openHold(el);
 }
 window.__tvHold = fireHold;
+// Scrappy Native: when the web view gets the remote back from a native screen, the TV puts the
+// highlight on the first thing in the page; this moves it to where it belongs on the screen.
+window.__tvFocusFirst = () => { const el = first(pageScope()); if (el) el.focus({ preventScroll: true }); };
 addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   // A fresh press after a pause always starts over (in case the TV never reported the release).

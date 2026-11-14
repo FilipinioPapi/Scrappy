@@ -63,7 +63,10 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     web.visibility = if (webShown) View.VISIBLE else View.INVISIBLE
     // Only when it has lost it: asking a focused WebView for focus again makes it jump the page's
     // highlight to the first thing on the page (that put a stray white ring across the top).
-    if ((webKeys || !active) && !web.hasFocus()) web.requestFocus()
+    if ((webKeys || !active) && !web.hasFocus()) {
+      web.requestFocus()
+      eval("window.__tvNative && window.__tvNative.refocus()")
+    }
     view.invalidate()
   }
 

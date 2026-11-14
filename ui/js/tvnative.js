@@ -91,7 +91,22 @@ async function pick(req, title, options, cur) {
   try { N.picked(req, i == null ? -1 : i); } catch {}
 }
 
+// The web view just got the remote back (a native screen was showing). Android moves the page's
+// highlight to its first element when that happens; put it back where it belongs.
+function refocus() {
+  const fix = () => {
+    if (root.classList.contains('native') && !document.querySelector(LAYERS)) return;
+    const a = document.activeElement;
+    const layer = [...document.querySelectorAll(LAYERS)].pop();
+    if (layer) { if (!layer.contains(a)) layer.querySelector('button, [tabindex], a, input')?.focus({ preventScroll: true }); return; }
+    const view = document.getElementById('view');
+    if (!a || a === document.body || !view?.contains(a)) window.__tvFocusFirst?.();
+  };
+  setTimeout(fix, 60); setTimeout(fix, 300);
+}
+
 window.__tvNative = {
+  refocus,
   play: (id) => playItem(id),
   playSeries: (id) => playSeries(id),
   hold,
