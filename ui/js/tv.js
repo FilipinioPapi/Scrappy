@@ -54,6 +54,7 @@ function candidates(scope, near) {
 // One step inside a grid of posters or along a row, worked out from the neighbours alone.
 let lastArrow = 0, fastT = 0;
 let pend = null, pendRaf = 0;
+let lastMove = 0, moveCost = 0, costT = 0;
 function flushPend() { cancelAnimationFrame(pendRaf); pendRaf = 0; const el = pend; pend = null; if (el && el.isConnected) go(el); }
 function quick(cur, k) {
   const par = cur.parentElement; if (!par || !cur.classList.contains('card')) return null;
@@ -255,6 +256,17 @@ addEventListener('keydown', (e) => {
   // A held button on a slow TV can deliver presses faster than the screen can follow. Presses that
   // are already old when they arrive are let go, so the screen never trails your finger by seconds.
   if (e.repeat && e.isTrusted && performance.now() - e.timeStamp > 260) return;
+  // Speed limit. Moving faster than the TV can draw only piles up work: posters fall behind and the
+  // page lurches. Each move is timed (press to the next drawn frame), and the next press is let go
+  // if it arrives sooner than the TV took for the last one. A fast TV runs at the top speed below;
+  // a slow one settles at whatever pace it can hold smoothly.
+  { const now = performance.now(), vert = k === 'ArrowUp' || k === 'ArrowDown';
+    const base = e.repeat ? (vert ? 125 : 85) : 55;
+    const gap = Math.max(base, Math.min(moveCost * 1.1, e.repeat ? 300 : 180));
+    if (now - lastMove < gap) return;
+    lastMove = now;
+    requestAnimationFrame(() => requestAnimationFrame(() => { const c = performance.now() - now; moveCost = moveCost ? moveCost * 0.6 + c * 0.4 : c; }));
+    clearTimeout(costT); costT = setTimeout(() => { moveCost = 0; }, 900); }
   // Several presses inside one frame only move the target; the highlight and the page move once.
   const from = pend && pend.isConnected ? pend : cur;
   if (from && from.classList.contains('card') && !from.closest(LAYERS) && document.getElementById('view')?.contains(from)) {

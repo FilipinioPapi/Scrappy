@@ -1,4 +1,5 @@
 The scroll bar on the right edge is gone.
 Genres: tiles and their artwork now arrive together instead of popping in.
 Genres: genres with fewer than 5 titles are hidden.
+Holding a direction now has a top speed matched to what the TV can draw smoothly.
 Genres artwork is prepared quietly in the background after Home loads.
