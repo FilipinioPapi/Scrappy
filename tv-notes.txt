@@ -1,5 +1,5 @@
-Opening a film from a grid: the title page starts building sooner, for a shorter dark pause after the poster lands.
-Pick lists (Sort by, subtitles, audio) end on a whole row and widen for long names instead of cutting a choice in half.
+Opening a film from a grid: the title page appears sooner and the poster stays put until the page is drawn (no dark blink).
+Pick lists (Sort by, subtitles, audio) end on a whole row, widen for long names, and long ones now scroll to every choice.
 On a show page, Up from the season chips goes to Play, not the heart.
 Styled subtitles (ASS) show with their own fonts, colours and positions, and lift clear of the control bar.
 Player freeze fix: Scrappy decodes Dolby and DTS itself; Settings, Playing has a switch to send them untouched to a soundbar.

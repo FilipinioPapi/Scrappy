@@ -188,7 +188,8 @@ function warm(row) {
 function go(el) {
   el.focus({ preventScroll: true });
   // Cards that sit on top of the page (update, menus) never move the page underneath.
-  if (el.closest(LAYERS)) return;
+  // (A long pick list scrolls inside its own card to keep the highlighted choice in view.)
+  if (el.closest(LAYERS)) { if (el.closest('.tvm-list')) el.scrollIntoView({ block: 'nearest', behavior: 'instant' }); return; }
   const row = el.closest('.row, .mrow');
   const hero = el.closest('[data-row="hero"], .hero');
   if (hero || el.closest('.tvd .detail-main')) { glideTo(window, '', 0); return; }

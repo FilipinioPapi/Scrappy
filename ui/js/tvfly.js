@@ -55,6 +55,10 @@ view.addEventListener('click', (e) => {
     if (fly !== d) return;
     const p = view.querySelector('.detail-poster .art');
     if (!p || !p.offsetWidth || document.querySelector('.view-ghost')) { if (performance.now() - t0 > 2600) drop(); else setTimeout(settle, 60); return; }
+    // The page is in place but the TV may not have drawn it yet: wait until it has really put
+    // frames of it on the screen before the cover and the flying poster let go.
+    if (!d._drawn) { d._drawn = 1; requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => { d._drawn = 2; settle(); }))); return; }
+    if (d._drawn !== 2) return;
     const real = unit(p); landed = real;
     // The page is there: show it now. The flying poster stays on top as the page's poster until
     // the page's own (sharper) copy has arrived, so nothing waits on that picture.
