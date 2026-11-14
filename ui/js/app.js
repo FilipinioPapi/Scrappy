@@ -16,6 +16,7 @@ import { pref, setPref, on, onPref } from './prefs.js';
 import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView, genresView, favoritesView } from './views.js';
 import { tvShell } from './tvside.js';
 import { artPageStart } from './art.js';
+const MOD_AT = performance.now(); // when the app's own code starts to run
 
 const viewEl = document.getElementById('view');
 const ON_TV = document.documentElement.classList.contains('tv');
@@ -530,6 +531,21 @@ if (ON_TV) {
     Promise.all([api.session(), import('./tvwho.js')]).then(([s, m]) => m.whoAtStart(s, ok)).catch(ok);
   });
   window.__whoReady.then(() => route());
+  // Start-up timing for the TV's log (numbers and file names only): where the time before
+  // "Who's watching?" goes, so the slow part can be found on the real TV.
+  const t = { mod: Math.round(MOD_AT) };
+  api.session().then(() => { t.session = Math.round(performance.now()); }, () => {});
+  window.__whoReady.then(() => { t.who = Math.round(performance.now()); });
+  window.addEventListener('scrappy:ready', () => { t.ready = Math.round(performance.now()); setTimeout(() => {
+    try {
+      const n = performance.getEntriesByType('navigation')[0] || {}, r = (v) => Math.round(v || 0);
+      const paint = performance.getEntriesByType('paint').map((e) => `${e.name}=${r(e.startTime)}`).join(' ');
+      const res = performance.getEntriesByType('resource').filter((e) => /\.(js|css|woff2|png|gif)(\?|$)/.test(e.name)).map((e) => `${e.name.split('/').pop().split('?')[0].slice(0, 24)}:${r(e.startTime)}-${r(e.responseEnd)}`);
+      const lines = [`marks ${JSON.stringify(t)} nav resp=${r(n.responseEnd)} interactive=${r(n.domInteractive)} dcl=${r(n.domContentLoadedEventEnd)} load=${r(n.loadEventEnd)} ${paint} files=${res.length}`];
+      for (let i = 0; i < res.length; i += 28) lines.push('res ' + res.slice(i, i + 28).join(' '));
+      lines.slice(0, 8).reduce((p, l) => p.then(() => window.__TAURI__.core.invoke('tv_update', { what: 'note:' + l })).catch(() => {}), Promise.resolve());
+    } catch {}
+  }, 1500); }, { once: true });
 } else route();
 
 // The Scrappy logo goes to the home screen of whichever tab you're on.

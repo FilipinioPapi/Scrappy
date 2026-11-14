@@ -53,6 +53,13 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve(JSObject())
   }
 
+  /** A timing note from the page, written to the TV's log (tag ScrappyPlayer). */
+  @Command
+  fun note(invoke: Invoke) {
+    android.util.Log.i("ScrappyPlayer", "timing " + invoke.getArgs().optString("text", "").take(900))
+    invoke.resolve(JSObject())
+  }
+
   /** Close Scrappy completely and open it again (Settings: "Restart Scrappy"). Sign-ins stay. */
   @Command
   fun restart(invoke: Invoke) {
