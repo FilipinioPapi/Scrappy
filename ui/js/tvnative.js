@@ -1,7 +1,7 @@
-// Google TV: the bridge to the screens the app draws natively (Home and the library grids).
+// Google TV: the bridge to the screens the app draws natively (Home, the library grids, film and show pages).
 // The web side keeps history, the player, menus and every screen that isn't native yet.
 // Native asks for things through window.__tvNative; the web tells native what is on top of it.
-import { playItem, playSeries } from './components.js';
+import { playItem, playSeries, toast } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows } from './homeedit.js';
 
@@ -34,6 +34,18 @@ function sendPrefs() {
 sendPrefs();
 addEventListener('scrappy:pref', sendPrefs);
 addEventListener('hashchange', sendPrefs);
+
+// For testing on the TV (adb logcat -s ScrappyNative): which keys the page gets, and its focus.
+const desc = (el) => (el ? `${el.tagName}.${String(el.className || '').slice(0, 30)}` : 'none');
+const note = (m) => { try { N.note(m); } catch {} };
+addEventListener('keydown', (e) => {
+  if (!e.key.startsWith('Arrow') && e.key !== 'Enter') return;
+  const before = desc(document.activeElement);
+  setTimeout(() => note(`key ${e.key} rep=${e.repeat} on=${before} -> ${desc(document.activeElement)} prevented=${e.defaultPrevented} focus=${document.hasFocus()} vis=${document.visibilityState} native=${root.classList.contains('native')}`), 50);
+}, true);
+addEventListener('focus', () => note('window focus'));
+addEventListener('blur', () => note('window blur'));
+document.addEventListener('visibilitychange', () => note('visibility ' + document.visibilityState));
 
 // Something changed what the screens should show (watched, favorites, a refresh, after playing).
 ['scrappy:refresh', 'scrappy:stale', 'scrappy:memclear', 'scrappy:rowcache-clear'].forEach((n) => addEventListener(n, () => { try { N.stale(); } catch {} }));
@@ -113,8 +125,10 @@ function refocus() {
 
 window.__tvNative = {
   refocus,
-  play: (id) => playItem(id),
-  playSeries: (id) => playSeries(id),
+  play: (id, fromStart) => playItem(id, !!fromStart),
+  playSeries: (id, fromStart) => playSeries(id, !!fromStart),
+  toast: (msg, err) => toast(msg, !!err),
+  subtitles: (id) => import('./menu.js').then((m) => m.subtitlesDialog(id)).catch(() => {}),
   hold,
   editHome: (rows) => editHome(rows),
   who: () => import('./tvwho.js').then((m) => m.who({ side: true })).catch(() => {}),

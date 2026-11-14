@@ -108,6 +108,17 @@ object Icons {
     c.restore()
   }
 
+  /** Draw any 24 x 24 path `size` units wide with its top-left corner at x, y. */
+  fun drawPath(c: Canvas, path: Path, x: Float, y: Float, size: Float, p: Paint) {
+    val k = size / 24f
+    val sw = p.strokeWidth
+    c.save(); c.translate(x, y); c.scale(k, k)
+    if (p.style != Paint.Style.FILL) p.strokeWidth = sw / k
+    c.drawPath(path, p)
+    p.strokeWidth = sw
+    c.restore()
+  }
+
   // Only M, L, C and Z with absolute numbers (the icons are converted to that when they are added).
   private fun parse(d: String): Path {
     val p = Path()

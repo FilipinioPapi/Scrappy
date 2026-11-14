@@ -60,6 +60,19 @@ class PreviewTest {
             .apply { if (m == 1) { put("ParentLogoItemId", "Series$i"); put("ParentLogoImageTag", "lg") } else if (m == 2) { put("ParentThumbItemId", "Series$i"); put("ParentThumbImageTag", "th") } })
         }
       }).toString()
+      p.contains("Series50/Seasons") -> JSONObject().put("Items", JSONArray().apply { for (n in 1..36) put(JSONObject().put("Id", "Season$n").put("Name", "$n. Arc name $n").put("Type", "Season").put("IndexNumber", n).put("ChildCount", 6).put("UserData", JSONObject())) }).toString()
+      p.contains("/Episodes?") -> JSONObject().put("Items", JSONArray().apply { for (i in 0 until 8) put(item(i + 2, "Episode").put("Id", "Episode${i + 1}").put("IndexNumber", i + 1)
+        .put("UserData", JSONObject().put("Played", i < 3).put("PlaybackPositionTicks", if (i == 3) 20000000000L else 0L).put("PlayedPercentage", if (i == 3) 33 else 0))) }).toString()
+      Regex("/Users/[^/]+/Items/(it\\d+|Series50|Episode9\\d)(\\?|$)").containsMatchIn(p) -> {
+        val id = Regex("/Items/([^/?]+)").find(p)!!.groupValues[1]
+        val n = id.filter { it.isDigit() }.toInt()
+        item(n, if (id.startsWith("Series")) "Series" else if (id.startsWith("Episode")) "Episode" else "Movie").put("Id", id).put("ChildCount", 3)
+          .put("People", JSONArray().apply { for (i in 0 until 8) put(JSONObject().put("Id", "p$i").put("Name", "Actor $i").put("Role", "Role $i").put("Type", "Actor").apply { if (i % 3 == 0) put("PrimaryImageTag", "x") }) })
+          .put("MediaSources", JSONArray().put(JSONObject().put("Id", "ms").put("MediaStreams", JSONArray()
+            .put(JSONObject().put("Type", "Video").put("Width", 3840).put("Height", 2160))
+            .put(JSONObject().put("Type", "Audio").put("Language", "eng").put("Codec", "eac3").put("Channels", 6).put("Index", 1).put("DisplayTitle", "eng · EAC3"))
+            .put(JSONObject().put("Type", "Subtitle").put("Language", "eng").put("Index", 2))))).toString()
+      }
       p.contains("/Shows/NextUp") -> list(12, "Episode").toString()
       p.contains("/Similar") -> list(24).toString()
       p.contains("/Items/Latest") -> JSONArray().apply { for (i in 0 until 20) put(item(i + 3, if (p.contains("v2")) "Series" else "Movie")) }.toString()
@@ -132,6 +145,15 @@ class PreviewTest {
     override fun who() { calls.add("who") }
     override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title") }
     override fun saveSort(key: String, i: Int) {}
+    override fun playFrom(id: String, fromStart: Boolean) {}
+    override fun playSeriesFrom(id: String, fromStart: Boolean) {}
+    override fun toast(msg: String, error: Boolean) {}
+    override fun changed() {}
+    override fun local(key: String, done: (String?) -> Unit) { done(null) }
+    override fun setLocal(key: String, value: String) {}
+    override fun replace(hash: String, go: Boolean) {}
+    override fun reroute() {}
+    override fun subtitles(id: String) {}
   }
 
   private lateinit var tv: TvView
@@ -192,6 +214,17 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_DPAD_DOWN, 6); pump(1500); shot("home-genres")
     press(KeyEvent.KEYCODE_DPAD_DOWN, 8); pump(1500); shot("home-end")
     File(out, "home-calls.txt").writeText(host.calls.joinToString("\n") + "\n---\n" + synchronized(log) { log.joinToString("\n") })
+  }
+
+  @Test fun detail() {
+    start()
+    for ((id, n) in listOf("it4" to "movie", "Series50" to "show")) {
+      tv.route("#/item/$id")
+      pump(3000)
+      shot("item-$n")
+      for (i in 1..4) { press(KeyEvent.KEYCODE_DPAD_DOWN); pump(500); if (i == 1 || i % 2 == 0) shot("item-$n-d$i", 1600) }
+    }
+    File(out, "detail-calls.txt").writeText(host.calls.joinToString("\n") + "\n---\n" + synchronized(log) { log.joinToString("\n") })
   }
 
   @Test fun grid() {

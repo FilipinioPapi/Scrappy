@@ -21,6 +21,20 @@ interface Host {
   fun log(msg: String) {}
   fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit)
   fun saveSort(key: String, i: Int)
+  fun playFrom(id: String, fromStart: Boolean)
+  fun playSeriesFrom(id: String, fromStart: Boolean)
+  fun toast(msg: String, error: Boolean)
+  /** Watched / favourites changed: everything that shows them fetches again. */
+  fun changed()
+  /** A value the web side keeps (localStorage). */
+  fun local(key: String, done: (String?) -> Unit)
+  fun setLocal(key: String, value: String)
+  /** Swap the address without a new history step (go = true: open it too). */
+  fun replace(hash: String, go: Boolean)
+  /** This address turned out not to be a native screen: let the web side draw it. */
+  fun reroute()
+  /** Find more subtitles for this video (the web side's dialog). */
+  fun subtitles(id: String)
 }
 
 /** One glide per scroller, the same feel as the web screens (tv.js glideTo), in 1080p units. */
@@ -87,9 +101,25 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     if (android.os.Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
   }
 
-  private val screens = HashMap<String, Screen>()
+  companion object {
+    /** Item id -> Emby type, as far as the native screens know (decides which pages are native). */
+    val kinds = HashMap<String, String>()
+    private val NATIVE_TYPES = setOf("Movie", "Series", "Season")
+  }
+
+  private val screens = LinkedHashMap<String, Screen>(16, 0.75f, true)
   fun home(): Home = screens.getOrPut("home") { Home(this) } as Home
   fun grid(id: String, genre: String): Grid = screens.getOrPut("lib/$id/$genre") { Grid(this, id, genre) } as Grid
+  fun detail(id: String): Detail {
+    val d = screens.getOrPut("item/$id") { Detail(this, id) } as Detail
+    // Keep the last few title pages for Back; older ones are let go (memory is short on a TV).
+    val items = screens.keys.filter { it.startsWith("item/") }
+    if (items.size > 6) for (k in items.take(items.size - 6)) if (screens[k] !== screen && screens[k] !== d) screens.remove(k)
+    return d
+  }
+
+  /** Open a poster: its page (native when it is a film or show), noting what kind of item it is. */
+  fun open(c: Card) { if (c.type.isNotEmpty()) kinds[c.id] = c.type; host.go(c.href) }
 
   /** Show a native screen for this address, or return false if it is not one of ours. */
   fun route(hash: String): Boolean {
@@ -112,6 +142,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     if (h == "" || h == "#" || h == "#/" || h == "#/home") return home()
     val p = h.split('/')
     if (p.size >= 3 && p[1] == "library" && p[2].isNotEmpty()) return grid(java.net.URLDecoder.decode(p[2], "UTF-8"), if (p.size > 3) java.net.URLDecoder.decode(p[3], "UTF-8") else "")
+    if (isItem(p)) return detail(java.net.URLDecoder.decode(p[2], "UTF-8"))
     return null
   }
 
@@ -119,7 +150,13 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     val h = hash.substringBefore('?')
     if (h == "" || h == "#" || h == "#/" || h == "#/home") return true
     val p = h.split('/')
-    return p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()
+    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p)
+  }
+
+  private fun isItem(p: List<String>): Boolean {
+    if (p.size !in 3..4 || p[1] != "item" || p[2].isEmpty()) return false
+    val k = kinds[java.net.URLDecoder.decode(p[2], "UTF-8")]
+    return k == null || k in NATIVE_TYPES
   }
 
   fun leave() { screen?.hide(); screen = null; rail.open = false }

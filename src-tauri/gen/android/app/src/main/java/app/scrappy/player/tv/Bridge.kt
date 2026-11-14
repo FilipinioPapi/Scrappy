@@ -88,6 +88,9 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
 
   @JavascriptInterface fun isOn(): Boolean = isOn(act)
 
+  /** Notes from the page for testing (adb logcat -s ScrappyNative). */
+  @JavascriptInterface fun note(msg: String) { Log.i("ScrappyNative", "page: $msg") }
+
   @JavascriptInterface fun route(hash: String): Boolean {
     if (!view.isNative(hash)) return false
     act.runOnUiThread { attach(); if (view.route(hash)) { active = true; apply() } }
@@ -134,4 +137,21 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     eval("window.__tvNative && window.__tvNative.pick($n, ${js(title)}, ${JSONArray(options)}, $cur)")
   }
   override fun saveSort(key: String, i: Int) = eval("window.__tvNative && window.__tvNative.sort(${js(key)}, $i)")
+  override fun playFrom(id: String, fromStart: Boolean) = eval("window.__tvNative && window.__tvNative.play(${js(id)}, $fromStart)")
+  override fun playSeriesFrom(id: String, fromStart: Boolean) = eval("window.__tvNative && window.__tvNative.playSeries(${js(id)}, $fromStart)")
+  override fun toast(msg: String, error: Boolean) = eval("window.__tvNative && window.__tvNative.toast(${js(msg)}, $error)")
+  override fun changed() = eval("window.dispatchEvent(new Event('scrappy:stale'))")
+  override fun local(key: String, done: (String?) -> Unit) {
+    act.runOnUiThread {
+      web.evaluateJavascript("(function(){try{return localStorage.getItem(${js(key)})}catch(e){return null}})()") { v ->
+        val s = try { if (v == null || v == "null") null else org.json.JSONTokener(v).nextValue() as? String } catch (_: Throwable) { null }
+        done(s)
+      }
+    }
+  }
+  override fun setLocal(key: String, value: String) = eval("try{localStorage.setItem(${js(key)}, ${js(value)})}catch(e){}")
+  override fun replace(hash: String, go: Boolean) = eval(
+    if (go) "location.replace(${js(hash)})" else "history.replaceState(history.state, '', ${js(hash)}); window.__curHash = location.hash")
+  override fun subtitles(id: String) = eval("window.__tvNative && window.__tvNative.subtitles(${js(id)})")
+  override fun reroute() = eval("window.dispatchEvent(new HashChangeEvent('hashchange'))")
 }

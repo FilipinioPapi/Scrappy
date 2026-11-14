@@ -1,4 +1,4 @@
-import { api, quiet, setImgServer } from './api.js';
+import { api, quiet, setImgServer, kindOf } from './api.js';
 import './player.js';
 import './mplayer.js';
 import { musicView } from './music.js';
@@ -262,7 +262,10 @@ async function routeNow(opts = {}) {
   const notSigned = need && !session.servers?.[need]?.signedIn;
   // Google TV, native screens: the app draws this screen itself; the web page steps out of the way.
   if (NATIVE) {
-    if (!notSigned && name !== 'login' && window.ScrappyNative.route(hash)) {
+    // Film and show pages are native; any other item (an episode, a collection...) stays a web page.
+    const kind = name === 'item' && arg ? kindOf(decodeURIComponent(arg)) : '';
+    const webItem = !!kind && !['Movie', 'Series', 'Season'].includes(kind);
+    if (!notSigned && name !== 'login' && !webItem && window.ScrappyNative.route(hash)) {
       document.documentElement.classList.add('native');
       dropGhost(); leaveCtx(); restoreRun++; shownPage = null; lastRouteName = name;
       viewEl.replaceChildren();

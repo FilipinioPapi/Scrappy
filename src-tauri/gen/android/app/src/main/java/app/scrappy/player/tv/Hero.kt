@@ -217,6 +217,7 @@ class Hero(private val home: Home) {
     val it = p.it
     if (col == 1) {
       val id = if (it.optString("Type") == "Episode" && it.optString("SeriesId").isNotEmpty()) it.optString("SeriesId") else it.optString("Id")
+      TvView.kinds[id] = if (id == it.optString("Id")) it.optString("Type") else "Series"
       tv.host.go("#/item/" + Card.enc(id)); return
     }
     if (it.optString("Type") == "Series") tv.host.playSeries(it.optString("Id")) else tv.host.play(it.optString("Id"))

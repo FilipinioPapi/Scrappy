@@ -76,6 +76,22 @@ object Net {
     } finally { c.disconnect() }
   }
 
+  /** Blocking POST / DELETE (watched, favourites). Throws on failure. */
+  fun send(method: String, path: String, body: String?) {
+    val s = session
+    if (!s.ok) throw IllegalStateException("Not signed in")
+    val c = URL(url(path)).openConnection() as HttpURLConnection
+    c.connectTimeout = 8000; c.readTimeout = 30000
+    c.requestMethod = method
+    c.setRequestProperty("X-Emby-Token", s.token)
+    try {
+      if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
+      val code = c.responseCode
+      if (code !in 200..299) throw IllegalStateException("HTTP $code")
+      try { c.inputStream.use { it.readBytes() } } catch (_: Throwable) {}
+    } finally { c.disconnect() }
+  }
+
   /** The last saved copy, or null. */
   fun cachedNow(path: String): Any? = try {
     val f = cacheFile(path); if (f.exists()) parse(f.readText()) else null
