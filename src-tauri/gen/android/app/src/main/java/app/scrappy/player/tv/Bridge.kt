@@ -61,7 +61,9 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     // With nothing on top, the web view is put away entirely, so it costs nothing while you browse.
     val webShown = !active || webVis || playing
     web.visibility = if (webShown) View.VISIBLE else View.INVISIBLE
-    if (webKeys || !active) web.requestFocus()
+    // Only when it has lost it: asking a focused WebView for focus again makes it jump the page's
+    // highlight to the first thing on the page (that put a stray white ring across the top).
+    if ((webKeys || !active) && !web.hasFocus()) web.requestFocus()
     view.invalidate()
   }
 
