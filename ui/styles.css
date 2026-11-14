@@ -3687,3 +3687,6 @@ html.tv .view-ghost > div { animation: tvLeave .22s ease-out .04s forwards; }
    stretched), and the real picture fades in over it. */
 .card .art .ph.lo { background-size: cover; background-position: center; padding: 0; }
 html.tv:not(.tv-fast) .card .art img { transition: opacity .26s ease; }
+
+/* TV: the poster that carries over when a title opens (tvfly.js). */
+.tv-fly { position: fixed; z-index: 9; border-radius: var(--radius); background: var(--bg-2) center / cover no-repeat; transform-origin: 0 0; will-change: transform; pointer-events: none; }

@@ -1,5 +1,5 @@
+New loading look: posters start as their own blurred colours, then sharpen in.
+Opening a title: the poster you pressed glides into the page, and Back sends it home.
+Scrolling has a top speed matched to what the TV can draw, held or rapidly pressed.
+Genres: tiles arrive with their artwork, and genres with fewer than 5 titles are hidden.
 The scroll bar on the right edge is gone.
-Genres: tiles and their artwork now arrive together instead of popping in.
-Genres: genres with fewer than 5 titles are hidden.
-Holding or rapidly pressing a direction now has a top speed matched to what the TV can draw smoothly.
-Genres artwork is prepared quietly in the background after Home loads.
