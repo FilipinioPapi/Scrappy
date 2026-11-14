@@ -137,7 +137,14 @@ export async function who({ side = false, must = false, onShow = null } = {}) {
           close(); done(b.dataset.do || data.people[Number(b.dataset.i)]);
         });
         (box.querySelector('.who-p.cur') || box.querySelector('.who-p')).focus({ preventScroll: true });
-        if (onShow) { const f = onShow; onShow = null; f(); }
+        // The opening screen lifts once the faces have their photos (or after a short wait), so
+        // they never show as letters first and then swap to pictures.
+        if (onShow) {
+          const f = onShow; onShow = null;
+          const ims = [...box.querySelectorAll('.who-face img')].filter((im) => !im.complete);
+          if (!ims.length) f();
+          else { let n = ims.length, went = false; const go = () => { if (!went) { went = true; f(); } }; const one = () => { if (--n <= 0) go(); }; ims.forEach((im) => { im.addEventListener('load', one, { once: true }); im.addEventListener('error', one, { once: true }); }); setTimeout(go, 700); }
+        }
       });
       if (picked == null) return;
       if (picked === 'add') { await addPerson(); return; }

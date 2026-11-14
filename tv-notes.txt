@@ -1,4 +1,4 @@
-Faster start: the logo appears sooner and "Who's watching?" comes up as soon as the faces are ready, instead of waiting for Home to build behind it.
+Faster start: "Who's watching?" comes up as soon as the faces and their photos are ready, instead of waiting for Home to build behind it.
 Opening a film from a grid: the title page appears sooner and the poster stays put until the page is drawn (no dark blink).
 Pick lists (Sort by, subtitles, audio) end on a whole row, widen for long names, and long ones now scroll to every choice.
 On a show page, Up from the season chips goes to Play, not the heart.
