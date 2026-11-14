@@ -32,7 +32,7 @@ class Search(tv: TvView) : Screen(tv) {
   private var secs: List<Sec> = emptyList()
   private var failed: List<String> = emptyList()
   private var recents: List<String> = emptyList()
-  private var focus = -1 // -1 = the box
+  private var focus = -1 // -1 = the box, -2 = its clear button
   private var spots: List<Spot> = emptyList()
   private var contentBottom = 0f
   private var focusAfter = false
@@ -182,7 +182,8 @@ class Search(tv: TvView) : Screen(tv) {
   override fun key(k: Int): Boolean {
     if (focus < 0) {
       when (k) {
-        KeyEvent.KEYCODE_DPAD_LEFT -> return false
+        KeyEvent.KEYCODE_DPAD_LEFT -> { if (focus == -2) focus = -1 else return false }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> if (text.isNotEmpty()) focus = -2
         KeyEvent.KEYCODE_DPAD_DOWN -> if (spots.isNotEmpty()) { focus = 0; aim() }
       }
       return true
@@ -199,7 +200,7 @@ class Search(tv: TvView) : Screen(tv) {
         val down = k == KeyEvent.KEYCODE_DPAD_DOWN
         val cx = cur.x + cur.w / 2f
         val cands = spots.indices.filter { i -> if (down) spots[i].y > cur.y + 1f else spots[i].y < cur.y - 1f }
-        if (cands.isEmpty()) { if (!down) focus = -1 }
+        if (cands.isEmpty()) { if (!down) { focus = -1; aim() } }
         else {
           val lineY = if (down) cands.minOf { i -> spots[i].y } else cands.maxOf { i -> spots[i].y }
           focus = cands.filter { i -> abs(spots[i].y - lineY) <= 1f }.minByOrNull { i -> abs(spots[i].x + spots[i].w / 2f - cx) } ?: focus
@@ -211,6 +212,7 @@ class Search(tv: TvView) : Screen(tv) {
   }
 
   override fun ok() {
+    if (focus == -2) { text = ""; focus = -1; run(""); return }
     if (focus < 0) { openKeyboard(); return }
     val s = spots.getOrNull(focus) ?: return
     if (s.sec < 0) { val q = recents.getOrNull(s.k) ?: return; text = q; run(q); return }
@@ -257,6 +259,8 @@ class Search(tv: TvView) : Screen(tv) {
   private val inputP = Ui.text(Ui.f400, 37.33f, Ui.WHITE)
   private val holdP = Ui.text(Ui.f400, 37.33f, 0xFF8E7F7E.toInt())
   private val caretP = Ui.fill(Ui.WHITE)
+  private val clearOn = Ui.fill(Ui.WHITE)
+  private val clearX = Ui.stroke(0xFFB9A9A7.toInt(), 3.33f)
   private val h2 = Ui.text(Ui.f800, 26.67f, Ui.TEXT, -0.2f)
   private val countP = Ui.text(Ui.f400, 18.67f, Ui.MUTED)
   private val chipBg = Ui.fill(0xFF1E1415.toInt())
@@ -283,16 +287,23 @@ class Search(tv: TvView) : Screen(tv) {
     c.drawColor(Ui.BG)
     c.save(); c.translate(0f, -sy.pos)
     // The box.
-    val on = focus < 0
+    val on = focus == -1
     r.set(LEFT, BOX_T, LEFT + WIDTH, BOX_T + BOX_H)
     c.drawRoundRect(r, 26.67f, 26.67f, if (on) boxBgOn else boxBg)
     r.inset(1.33f, 1.33f); c.drawRoundRect(r, 25.33f, 25.33f, if (on) boxLineOn else boxLine)
     Icons.draw(c, "search", 186f, BOX_T + 30.5f, 40f, iconP)
     if (text.isEmpty()) Ui.line(c, "Search movies, shows, people", 247f, BOX_T, BOX_H, holdP)
-    else Ui.line(c, Ui.fit(text, inputP, 1590f), 247f, BOX_T, BOX_H, inputP)
+    else {
+      Ui.line(c, Ui.fit(text, inputP, 1540f), 247f, BOX_T, BOX_H, inputP)
+      // Clear button (the web box's ×).
+      val cx = LEFT + WIDTH - 52f; val cy = BOX_T + BOX_H / 2f
+      if (focus == -2) c.drawCircle(cx, cy, 24f, clearOn)
+      clearX.color = if (focus == -2) Ui.BG else 0xFFB9A9A7.toInt()
+      c.drawLine(cx - 9f, cy - 9f, cx + 9f, cy + 9f, clearX); c.drawLine(cx + 9f, cy - 9f, cx - 9f, cy + 9f, clearX)
+    }
     if (typing) {
       val blink = (SystemClock.uptimeMillis() / 530) % 2 == 0L
-      if (blink) { val x = 247f + minOf(1590f, inputP.measureText(text)) + 3f; c.drawRect(x, BOX_T + 30f, x + 2.67f, BOX_T + BOX_H - 30f, caretP) }
+      if (blink) { val x = 247f + minOf(1540f, inputP.measureText(text)) + 3f; c.drawRect(x, BOX_T + 30f, x + 2.67f, BOX_T + BOX_H - 30f, caretP) }
       anim = true
     }
     when {

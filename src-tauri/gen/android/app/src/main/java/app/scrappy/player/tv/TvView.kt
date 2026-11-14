@@ -85,6 +85,8 @@ abstract class Screen(val tv: TvView) {
 /** The single native view: draws the current native screen and the side rail, takes the remote's keys. */
 class TvView(ctx: Context, val host: Host) : View(ctx) {
   var screen: Screen? = null; private set
+  // Fonts first: the side rail's paints are made right below and keep whatever font exists then.
+  init { Ui.init(ctx) }
   val rail = Rail(this)
   private var last = 0L
   /** Holding a direction or tapping fast: pictures appear at once, no fades (tv-fast on the web). */

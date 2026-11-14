@@ -158,7 +158,7 @@ class Genres(tv: TvView) : Screen(tv) {
       KeyEvent.KEYCODE_DPAD_LEFT -> { if (focus % 4 == 0) return false; focus-- }
       KeyEvent.KEYCODE_DPAD_RIGHT -> if (focus % 4 < 3 && focus + 1 < tiles.size) focus++
       KeyEvent.KEYCODE_DPAD_DOWN -> if (focus + 4 < tiles.size) focus += 4 else if (focus / 4 < (tiles.size - 1) / 4) focus = tiles.size - 1
-      KeyEvent.KEYCODE_DPAD_UP -> if (focus >= 4) focus -= 4 else if (libs.size > 1) { tab = nearestTab(149f + focus * PX + TW / 2f); focus = -1 }
+      KeyEvent.KEYCODE_DPAD_UP -> if (focus >= 4) focus -= 4 else if (libs.size > 1) { tab = libs.indexOfFirst { l -> l.optString("Id") == cur }.coerceAtLeast(0); focus = -1 }
     }
     aim()
     return true

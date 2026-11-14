@@ -121,8 +121,7 @@ class Person(tv: TvView, val personId: String) : Screen(tv) {
     val loc = o.optJSONArray("ProductionLocations")?.optString(0).orEmpty()
     val facts = listOf(born, loc).filter { s -> s.isNotEmpty() }.joinToString(" · ")
     val bio = o.optString("Overview")
-    val bl = if (bio.isEmpty()) null else bioL ?: StaticLayout.Builder.obtain(bio, 0, bio.length, bioP, 1147).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END)
-      .setLineSpacing(0f, 32.9f / (bioP.fontMetrics.descent - bioP.fontMetrics.ascent)).setIncludePad(false).build().also { bioL = it }
+    val bl = if (bio.isEmpty()) null else bioL ?: Ui.clamp(bio, bioP, 1147, 3, 32.9f).also { bioL = it }
     val h = 80f + (if (facts.isNotEmpty()) 32f else 0f) + (if (bl != null) 13.33f + bl.height else 0f)
     var y = 159f - h / 2f
     Ui.line(c, Ui.fit(o.optString("Name"), nameP, 1400f), 427f, y, 80f, nameP); y += 80f

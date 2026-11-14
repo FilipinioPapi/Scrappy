@@ -348,8 +348,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       val tl = titleL ?: StaticLayout.Builder.obtain(name, 0, name.length, titleBig, 1200).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END)
         .setLineSpacing(0f, 96f / (titleBig.fontMetrics.descent - titleBig.fontMetrics.ascent)).setIncludePad(false).build().also { titleL = it }
       val ov = o.optString("Overview")
-      overL = overL ?: if (ov.isEmpty()) null else StaticLayout.Builder.obtain(ov, 0, ov.length, overBig, 853).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END)
-        .setLineSpacing(0f, 33.3f / (overBig.fontMetrics.descent - overBig.fontMetrics.ascent)).setIncludePad(false).build()
+      overL = overL ?: if (ov.isEmpty()) null else Ui.clamp(ov, overBig, 853, 3, 33.3f)
       // Laid out from the bottom up (the column sits on the page's bottom edge, like the web page).
       val logoH = if (logoUrl() != null) 200f else tl.height.toFloat()
       var y = 0f
@@ -369,8 +368,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       val tl = titleL ?: StaticLayout.Builder.obtain(name, 0, name.length, titleShow, 1300).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END)
         .setLineSpacing(0f, 73f / (titleShow.fontMetrics.descent - titleShow.fontMetrics.ascent)).setIncludePad(false).build().also { titleL = it }
       val ov = o.optString("Overview")
-      overL = overL ?: if (ov.isEmpty()) null else StaticLayout.Builder.obtain(ov, 0, ov.length, overShow, 960).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END)
-        .setLineSpacing(0f, 29.3f / (overShow.fontMetrics.descent - overShow.fontMetrics.ascent)).setIncludePad(false).build()
+      overL = overL ?: if (ov.isEmpty()) null else Ui.clamp(ov, overShow, 960, 2, 29.3f)
       var y = 113f
       titleTop = y; y += (if (logoUrl() != null) 128f else tl.height.toFloat()) + 9f
       metaTop = y; y += 32f
@@ -579,7 +577,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       'T' -> {
         val k = col - (if (hasPick) 1 else 0)
         if (k >= 0 && k < tabW.size) {
-          val vis = 1870f - TABS_X
+          val vis = 1835f - TABS_X
           val l = tabLeft(k); val r = l + tabW[k]
           var to = tabsX.to
           if (l - to < 75f) to = l - 75f
@@ -914,7 +912,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       }
       if (t.isEmpty()) Ui.line(c, seasons[0].optString("Name").ifEmpty { "Episodes" }, TABS_X, barTop, 61f, oneP)
       else {
-        c.save(); c.clipRect(TABS_X - 8f, barTop - 8f, 1870f, barTop + 69f)
+        c.save(); c.clipRect(TABS_X - 8f, barTop - 8f, 1835f, barTop + 69f)
         var x = TABS_X - tabsX.pos
         for ((k, tab) in t.withIndex()) {
           val w = tabW.getOrElse(k) { 0f }

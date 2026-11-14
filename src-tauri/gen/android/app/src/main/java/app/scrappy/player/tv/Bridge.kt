@@ -180,9 +180,11 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
       val parent = web.parent as? ViewGroup ?: return@runOnUiThread
       val b = box ?: KeyBox(act).also { k ->
         k.alpha = 0f; k.isSingleLine = true; k.isFocusableInTouchMode = true
-        k.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
-        k.inputType = android.text.InputType.TYPE_CLASS_TEXT
-        parent.addView(k, 0, FrameLayout.LayoutParams(2, 2))
+        k.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+        k.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
+        // Where the search box is drawn, so the TV keyboard sits the same way it does for the web box.
+        val sc = (if (view.width > 0) view.width else parent.width) / 1920f
+        parent.addView(k, 0, FrameLayout.LayoutParams((1739 * sc).toInt(), (101 * sc).toInt()).apply { leftMargin = (149 * sc).toInt(); topMargin = (64 * sc).toInt() })
         box = k
       }
       watcher?.let { b.removeTextChangedListener(it) }

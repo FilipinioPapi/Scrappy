@@ -65,6 +65,24 @@ object Ui {
     c.drawText(s, x, top + (lineH - (fm.descent - fm.ascent)) / 2f - fm.ascent, p)
   }
 
+  /** A block of text cut to maxLines, ending on a whole word with "…" (like the web pages' clamp). */
+  fun clamp(text: String, p: android.text.TextPaint, width: Int, maxLines: Int, lineH: Float): android.text.StaticLayout {
+    val mult = lineH / (p.fontMetrics.descent - p.fontMetrics.ascent)
+    fun build(t: CharSequence, lines: Int) = android.text.StaticLayout.Builder.obtain(t, 0, t.length, p, width).setMaxLines(lines)
+      .setEllipsize(android.text.TextUtils.TruncateAt.END).setLineSpacing(0f, mult).setIncludePad(false).build()
+    val full = build(text, Int.MAX_VALUE)
+    if (full.lineCount <= maxLines) return build(text, maxLines)
+    var end = full.getLineEnd(maxLines - 1)
+    var cut = text.substring(0, end).trimEnd()
+    while (true) {
+      val sp = cut.lastIndexOf(' ')
+      val t = (if (sp > 0) cut.substring(0, sp) else cut).trimEnd(',', ';', ':', ' ', '-') + "…"
+      val l = build(t, Int.MAX_VALUE)
+      if (l.lineCount <= maxLines || sp <= 0) return build(t, maxLines)
+      cut = cut.substring(0, sp)
+    }
+  }
+
   /** 0..1 eased (ease-out cubic). */
   fun ease(t: Float): Float { val u = 1f - t.coerceIn(0f, 1f); return 1f - u * u * u }
   fun mix(a: Float, b: Float, t: Float) = a + (b - a) * t
