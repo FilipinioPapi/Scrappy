@@ -59,6 +59,12 @@
   </header>
   <main id="view"></main>
   <div id="toasts"></div>
-  <script type="module" src="js/app.js"></script>
+  <!-- The TV draws the opening screen first and only then starts loading the app's code, so the
+       logo is up straight away instead of after a dark pause. The PC starts as before. -->
+  <script type="module">
+    const go = () => import('./js/app.js');
+    if (document.documentElement.classList.contains('tv')) { let d = false; const once = () => { if (!d) { d = true; go(); } }; requestAnimationFrame(() => requestAnimationFrame(once)); setTimeout(once, 400); }
+    else go();
+  </script>
 </body>
 </html>

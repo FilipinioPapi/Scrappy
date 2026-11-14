@@ -530,7 +530,14 @@ if (ON_TV) {
     setTimeout(ok, 4000);
     Promise.all([api.session(), import('./tvwho.js')]).then(([s, m]) => m.whoAtStart(s, ok)).catch(ok);
   });
-  window.__whoReady.then(() => route());
+  // With the faces up, they are drawn and the opening screen fades away FIRST; only then is Home
+  // built underneath. (Building Home straight away kept the TV too busy to show the faces, so
+  // the opening screen sat there for a second or two longer than it needed to.)
+  window.__whoReady.then(() => {
+    if (!document.querySelector('.who-full')) { route(); return; }
+    let went = false; const goOn = () => { if (went) return; went = true; hideIntro(); setTimeout(route, 380); };
+    requestAnimationFrame(() => requestAnimationFrame(goOn)); setTimeout(goOn, 600);
+  });
   // Start-up timing for the TV's log (numbers and file names only): where the time before
   // "Who's watching?" goes, so the slow part can be found on the real TV.
   const t = { mod: Math.round(MOD_AT) };
