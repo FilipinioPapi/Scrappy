@@ -2,4 +2,4 @@ Styled subtitles: fan subs and anime (ASS) now show with their own fonts, colour
 Player freeze fix: Scrappy decodes Dolby and DTS itself, so skipping can no longer jam the TV's sound.
 Settings, Playing has a switch to send Dolby and DTS untouched to a soundbar again.
 New opening: logo and "Scrappy Media Center" fade in once with a thin red line, then straight to "Who's watching?".
-The side bar folds away the moment you pick a screen, and Genres no longer shows a blank page while it builds.
+The side bar folds away the moment you pick a screen, and Genres and Movies no longer show a blank page while they build.

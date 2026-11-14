@@ -978,7 +978,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
         <span class="spacer"></span>
         ${TV ? `<div class="tvchips" id="tvchips">${chipsHtml()}</div>` : `<select id="sort">${SORTS.map((s, i) => `<option value="${i}" ${i === sortIdx ? 'selected' : ''}>${s[2]}</option>`).join('')}</select>`}
       </div>
-      <div class="grid" id="grid"></div>
+      <div class="grid" id="grid"${TV ? ' data-hold' : ''}></div>
       <div class="sentinel" id="sentinel"></div>
       ${TV ? `<div class="tvaz" id="tvaz">${'#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l) => `<button type="button" data-l="${l}">${l}</button>`).join('')}</div>` : ''}
     </section>`;
@@ -1019,6 +1019,8 @@ export async function libraryView(root, ctx, id, genreId = '') {
           if (myGen !== gen) return;
           // TV: a refresh redraws the posters; the highlight stays on the poster it was on.
           const was = TV ? [...grid.querySelectorAll('.card')].indexOf(document.activeElement) : -1;
+          // (TV: the screen you came from stays up until the first posters are in, not just the heading.)
+          grid.removeAttribute('data-hold');
           grid.innerHTML = '';
           const items = apply(data);
           grid.insertAdjacentHTML('beforeend', items.map((it) => card(it)).join(''));
@@ -1028,7 +1030,7 @@ export async function libraryView(root, ctx, id, genreId = '') {
             if (was >= 0) cs[Math.min(was, cs.length - 1)]?.focus({ preventScroll: true });
             else if (!touched) cs[0]?.focus({ preventScroll: true });
           }
-        }, () => ctx.alive() && myGen === gen);
+        }, () => ctx.alive() && myGen === gen).finally(() => grid.removeAttribute('data-hold'));
         if (myGen === gen) start = rendered;
       } else {
         const data = await api.get(path);

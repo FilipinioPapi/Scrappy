@@ -151,7 +151,8 @@ function holdOldPage(entry) {
   const ready = () => !viewEl.querySelector('[data-hold]') && [...viewEl.children].some((c) => !c.classList.contains('loading') && c.textContent.trim().length + c.querySelectorAll('img,canvas').length > 0 && !c.matches('.mshell:not(:has(.mmain > :not(.loading)))'));
   ghostObs = new MutationObserver(() => { if (ready()) dropGhost(); });
   ghostObs.observe(viewEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-hold'] });
-  ghostTimer = setTimeout(dropGhost, 1200);
+  // (The TV builds a first visit more slowly: the old page may stay a little longer there.)
+  ghostTimer = setTimeout(dropGhost, ON_TV ? 2200 : 1200);
 }
 
 // Back/forward put you where you were on that page: each history entry gets a key and
