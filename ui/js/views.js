@@ -523,7 +523,9 @@ const heroChecked = new Map(); // backdrop url -> true/false (only definite answ
 
 // Banner and page backdrops always ask for 4K (Jayden's pick: big TVs). Emby never sends more
 // than the original, so art that's smaller than 4K comes at its full size.
-const bigW = () => 3840;
+// (Google TV draws the app at 1920x1080 and the TV scales that up, so 1920 looks the same there
+// and is a quarter of the picture to download, decode and keep in memory.)
+const bigW = () => (document.documentElement.classList.contains('tv') ? 1920 : 3840);
 function heroBackdrop(it) {
   if (it.BackdropImageTags?.length) return { id: it.Id, tag: it.BackdropImageTags[0] };
   if (it.ParentBackdropImageTags?.length && it.ParentBackdropItemId) return { id: it.ParentBackdropItemId, tag: it.ParentBackdropImageTags[0] };
