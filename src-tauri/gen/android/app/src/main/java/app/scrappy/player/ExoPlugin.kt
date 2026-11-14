@@ -22,6 +22,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -122,6 +123,25 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     }
     goodTicks = 0
     if (stuckSince == 0L) { stuckSince = now; return }
+    // "Ready" and told to play, yet the clock stands still: the sound output has jammed (the
+    // picture waits for the sound). Nudging does nothing for that, so after 5 seconds the film
+    // goes straight onto a brand new player.
+    val jammed = st == Player.STATE_READY && readySeq == loadSeq
+    if (jammed && now - stuckSince >= 5_000 && kicks < 3) {
+      stuckSince = now
+      kicks = maxOf(kicks, 1) + 1
+      PlayerLog.add("SOUND JAM (ready but not moving at ${pos / 1000}s): new player, try ${kicks - 1}")
+      val item = lastItem
+      if (item != null) {
+        drop(p)
+        val np = ensure()
+        np.setMediaItem(item, pos)
+        np.prepare()
+        np.playWhenReady = true
+        view?.visibility = android.view.View.VISIBLE
+      }
+      return
+    }
     if (now - stuckSince < 15_000) return
     stuckSince = now
     kicks++
@@ -172,6 +192,15 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     val renderers = DefaultRenderersFactory(activity)
       .setEnableDecoderFallback(true)
       .forceDisableMediaCodecAsynchronousQueueing()
+      // Sound is decoded by Android's own decoders first. The TV chip's sound decoder was found
+      // stuck in the TV's log during the freezes ("outputThreadLoop: Maybe stuck"), jamming the
+      // TV's sound output and holding the picture still with it. The chip's decoder stays as a
+      // fallback for formats Android can't decode itself.
+      .setMediaCodecSelector(MediaCodecSelector { mimeType, secure, tunneling ->
+        val all = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling)
+        if (!mimeType.startsWith("audio/")) all
+        else all.sortedBy { if (it.softwareOnly || it.name.startsWith("c2.android.") || it.name.startsWith("OMX.google.")) 0 else 1 }
+      })
     videoDecoder = ""; audioDecoder = ""; dropped = 0
     val p = ExoPlayer.Builder(activity, renderers)
       .setSeekBackIncrementMs(10_000)

@@ -1,5 +1,4 @@
-Player: holding Left or Right now scrubs at a calmer pace that builds up gently.
-Player: the TV's decoder is driven a safer way, aimed at the freeze after skipping.
-Player: black bars are pure black now, so they blend into the TV.
-Player settings: "Player details" shows what the player is doing if a film is stuck.
-A stuck film is restarted on a brand new player by itself after about 45 seconds.
+Player freeze: the TV's own sound decoder was jamming after skipping and holding the picture still.
+Scrappy now uses Android's built-in sound decoder first, which avoids the part that jammed.
+If the sound still jams, the film moves to a fresh player by itself after about 5 seconds.
+If a film ever stays stuck in every app, turning the TV off and on at the wall clears it.
