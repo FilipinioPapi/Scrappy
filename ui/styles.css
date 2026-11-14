@@ -890,6 +890,20 @@ select.pick:hover { border-color: var(--red-border); }
 .intro-foot .k { font-size: 9px; font-weight: 800; letter-spacing: 2.2px; color: #8F7778; }
 .intro-foot .n { display: flex; align-items: flex-end; font-family: var(--display); font-size: 17px; line-height: 1; margin-top: 3px; padding-top: 2px; color: var(--text); text-shadow: 0 2px 0 #000; }
 .intro-foot .bt { font-family: "Inter", sans-serif; font-size: 7px; font-weight: 800; letter-spacing: .6px; line-height: 1; color: #fff; background: var(--red); border-radius: 3px; padding: 2px 3px 1.5px; margin: 0 0 2px 5px; text-shadow: none; }
+.intro-bar { display: none; }
+/* Google TV opening (approved mock "Scrappy TV Opening", option A): the logo, name and "MEDIA CENTER"
+   arrive in one soft fade and a thin red line fills. Only transform and opacity move, so the TV's
+   graphics chip animates it by itself while the app is still loading. */
+html.tv #intro { transition: opacity .3s ease; }
+html.tv #intro.out { transform: none; }
+html.tv .intro-mid { animation: introTv .5s ease-out both; }
+html.tv .intro-dog, html.tv .intro-name, html.tv .intro-sub { animation: none; }
+html.tv .intro-dog { filter: none; }
+html.tv .intro-dots, html.tv .intro-foot { display: none; }
+html.tv .intro-bar { display: block; width: 154px; height: 3px; border-radius: 3px; background: #3a1c1e; margin: 25px auto 0; overflow: hidden; }
+html.tv .intro-bar b { display: block; height: 100%; background: var(--red); transform-origin: left; transform: scaleX(0); animation: introTvBar 2.4s cubic-bezier(.3,.6,.3,1) .2s both; }
+@keyframes introTv { from { opacity: 0; transform: scale(.97); } }
+@keyframes introTvBar { to { transform: scaleX(1); } }
 
 /* ---------- Banner: keep its space while it loads ---------- */
 .hero-wait { background: linear-gradient(90deg, #1a1213, #241819, #1a1213); background-size: 200% 100%; animation: heroShimmer 1.4s linear infinite; }

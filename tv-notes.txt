@@ -1,5 +1,5 @@
-Opening Scrappy now goes straight to "Who's watching?" instead of flashing the app first.
+New opening: the logo and "Scrappy Media Center" fade in once and a thin red line fills, with no bouncing.
+Opening Scrappy goes straight to "Who's watching?" instead of flashing the app first.
 Player freeze: the TV chip's own Dolby/DTS sound decoder was jamming after skipping. Scrappy no longer uses it.
 A soundbar still gets Dolby and DTS untouched, surround and Atmos included.
-If the sound still jams, the film moves to a fresh player after about 5 seconds and decodes the sound itself.
 If a film ever stays stuck in every app, a full TV restart (Settings, System, Restart) clears it.
