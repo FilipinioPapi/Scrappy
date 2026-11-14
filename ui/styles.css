@@ -3739,3 +3739,8 @@ html.tv .who-p:focus, html.tv .who-pad button:focus { outline: none; }
 html.tv .who.full .who-p:focus, html.tv .who-pin .who-p:focus { box-shadow: none; background: none; }
 .who-pin .who-face.lock::after { display: none; }
 .who-face.add { font-family: Inter, system-ui, sans-serif; font-weight: 300; }
+
+/* Mark watched in place: the tick pops in, nothing else moves. */
+@keyframes popIn { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+.pop-in { animation: popIn .28s cubic-bezier(.2,.8,.2,1) both; }
+.watched.pop-in { display: inline-block; }

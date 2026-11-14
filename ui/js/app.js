@@ -225,7 +225,7 @@ function takeKept(nk, hash) {
   const e = KEEP.get(k); KEEP.delete(k); fillKept(e);
   return { ...e, back };
 }
-['scrappy:memclear', 'scrappy:refresh', 'scrappy:rowcache-clear', 'scrappy:art-clear'].forEach((n) => window.addEventListener(n, clearKept));
+['scrappy:memclear', 'scrappy:refresh', 'scrappy:stale', 'scrappy:rowcache-clear', 'scrappy:art-clear'].forEach((n) => window.addEventListener(n, clearKept));
 
 // (On the TV each page change notes how long it took, so slow screens can be found from the TV's log.)
 async function route(opts = {}) {

@@ -404,10 +404,10 @@ function openHold(el) {
   if (!el || !el.isConnected || root.classList.contains('playing') || document.querySelector('.ctx-menu:not([hidden])')) return;
   const r = el.getBoundingClientRect();
   el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
-  let n = 0, seen = false;
+  let n = 0, seen = false; const at = location.hash;
   const t = setInterval(() => {
     const menu = document.querySelector('.ctx-menu:not([hidden])');
-    if (!menu) { if (seen || ++n > 40) { clearInterval(t); if (seen && el.isConnected && (document.activeElement === document.body || !shown(document.activeElement))) el.focus({ preventScroll: true }); } return; }
+    if (!menu) { if (seen || ++n > 40) { clearInterval(t); if (seen && el.isConnected && location.hash === at && !root.classList.contains('playing') && (document.activeElement === document.body || !shown(document.activeElement) || !document.querySelector(LAYERS))) el.focus({ preventScroll: true }); } return; }
     seen = true;
     if (!held && !menu.contains(document.activeElement)) candidates(menu)[0]?.focus({ preventScroll: true });
   }, 100);

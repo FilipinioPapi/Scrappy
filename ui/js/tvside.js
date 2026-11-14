@@ -100,7 +100,7 @@ export function noteCollection(it) {
 }
 window.addEventListener('scrappy:rowcache-clear', () => { recents = []; raw = []; recentsAt = 0; views = null; });
 // After watching something, the list catches up next time a Movies & TV page opens.
-window.addEventListener('scrappy:refresh', () => { recentsAt = 0; });
+['scrappy:refresh', 'scrappy:stale'].forEach((n) => window.addEventListener(n, () => { recentsAt = 0; }));
 
 /** Make sure the Movies & TV shell is on screen and return the page area inside it. */
 export function tvShell(viewEl) {
