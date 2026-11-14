@@ -295,7 +295,7 @@ function loadRows(root, ctx, views) {
     if (!slot) return;
     slot.innerHTML = items.length
       ? `<section class="section" data-cw><div class="section-head"><h2>Continue Watching</h2></div>
-          <div class="row">${items.map((i) => card(i, { shape: 'wide', clickPlay: true })).join('')}</div></section>`
+          <div class="row">${items.map((i) => card(i, { shape: 'wide', clickPlay: true, seriesArt: true })).join('')}</div></section>`
       : '';
   }, ctx.alive).catch(() => {});
 

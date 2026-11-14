@@ -33,8 +33,13 @@ const PLAYABLE = new Set(['Movie', 'Episode', 'Video', 'MusicVideo', 'Trailer'])
 export const isPlayable = (it) => PLAYABLE.has(it.Type) || (it.MediaType === 'Video' && !it.IsFolder);
 
 // Choose the best picture for a card shape.
-function pickImage(it, shape) {
+function pickImage(it, shape, seriesArt = false) {
   const t = it.ImageTags || {};
+  // Continue Watching: an episode shows its show's picture (wide art, else backdrop), not a frame from the episode.
+  if (seriesArt && it.Type === 'Episode' && shape === 'wide') {
+    if (it.ParentThumbItemId && it.ParentThumbImageTag) return img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, 500);
+    if (it.ParentBackdropItemId && it.ParentBackdropImageTags?.length) return img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags[0], 500, 0);
+  }
   if (shape === 'wide') {
     if (it.Type === 'Episode' && t.Primary) return img(it.Id, 'Primary', t.Primary, 500);
     if (t.Thumb) return img(it.Id, 'Thumb', t.Thumb, 500);
@@ -58,7 +63,7 @@ export function shapeFor(it) {
 
 export function card(it, opts = {}) {
   const shape = opts.shape || shapeFor(it);
-  const src = pickImage(it, shape);
+  const src = pickImage(it, shape, opts.seriesArt);
   const ud = it.UserData || {};
   let title = it.Name;
   let sub = opts.subtitle ?? '';
