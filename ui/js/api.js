@@ -30,6 +30,21 @@ export const api = {
   absSend: (method, path, body = null) => invoke('abs_send', { method, path, body }),
 };
 
+// Marking something watched also forgets where you stopped, so it offers "Play again"
+// instead of Resume (Emby keeps the old spot otherwise). A show, season or collection
+// clears every part-watched episode or movie inside it.
+export async function clearProgress(it) {
+  const wipe = (id) => api.post(`/Users/{userId}/Items/${id}/UserData`, { PlaybackPositionTicks: 0, Played: true }).catch(() => {});
+  if (!it.IsFolder && !['Series', 'Season', 'BoxSet'].includes(it.Type)) {
+    if (it.UserData?.PlaybackPositionTicks > 0 || !it.UserData) await wipe(it.Id);
+    return;
+  }
+  try {
+    const d = await api.get(`/Users/{userId}/Items/Resume?ParentId=${it.Id}&Limit=100&Recursive=true`);
+    await Promise.all((d?.Items || []).map((x) => wipe(x.Id)));
+  } catch {}
+}
+
 // Show the saved copy instantly (if any), then refresh from the server and
 // re-render only if something changed. `render(data, fromCache)`.
 export async function load(path, render, isAlive = () => true) {

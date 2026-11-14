@@ -1,4 +1,4 @@
-import { api, load, quiet, img, imgAny, IMG_BASE } from './api.js';
+import { api, load, quiet, img, imgAny, IMG_BASE, clearProgress } from './api.js';
 import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
@@ -725,7 +725,7 @@ function renderHero(slot, ctx, picks, seriesInfo) {
     const it = p.it;
     const ser = it.Type === 'Episode' ? seriesInfo[it.SeriesId] : null;
     const ud = it.UserData || {};
-    const resumable = ud.PlaybackPositionTicks > 0 && it.RunTimeTicks;
+    const resumable = ud.PlaybackPositionTicks > 0 && it.RunTimeTicks && !ud.Played;
     const title = ser?.Name || it.SeriesName || it.Name;
     const meta = it.Type === 'Episode'
       ? [epCode(it), it.Name, resumable ? `${runtime(it.RunTimeTicks - ud.PlaybackPositionTicks)} left` : ''].filter(Boolean).join(' · ')
@@ -733,6 +733,7 @@ function renderHero(slot, ctx, picks, seriesInfo) {
     const overview = (ser?.Overview || it.Overview || '');
     const play = it.Type === 'Series'
       ? `<button class="btn big" data-play-series="${esc(it.Id)}">${PLAY_ICON} <span class="lbl">Play</span></button>`
+      : ud.Played ? `<button class="btn big" data-play="${esc(it.Id)}" data-from-start="1">${PLAY_ICON} Play again</button>`
       : `<button class="btn big" data-play="${esc(it.Id)}">${PLAY_ICON} ${resumable ? 'Resume' : 'Play'}</button>`;
     return `
       <div class="hero-bg"><img src="${esc(p.url)}" alt=""></div>
@@ -1137,6 +1138,24 @@ function iconButtonsHtml(it) {
     <button class="icon-toggle cog" data-manage aria-label="Manage">${ICON_COG}<span class="tip">Manage</span></button>`;
 }
 
+// Movie or episode: Resume + Play from start while part-way, "Play again" once watched, else Play.
+function playButtonsHtml(it) {
+  const ud = it.UserData || {};
+  if (ud.Played) return `<button class="btn" data-play="${esc(it.Id)}" data-from-start="1">${PLAY_ICON} Play again</button>`;
+  if (ud.PlaybackPositionTicks > 0) return `<button class="btn" data-play="${esc(it.Id)}">${PLAY_ICON} Resume</button>
+         <button class="btn secondary" data-play="${esc(it.Id)}" data-from-start="1">Play from start</button>`;
+  return `<button class="btn" data-play="${esc(it.Id)}">${PLAY_ICON} Play</button>`;
+}
+// After the watched tick changes on a movie or episode page: swap the play buttons and
+// drop the progress bar in place, without reloading the page.
+function redrawPlayButtons(scope, it) {
+  const box = scope.querySelector('.detail-buttons');
+  if (!box || !isPlayable(it)) return;
+  box.querySelectorAll(':scope > [data-play]').forEach((b) => b.remove());
+  box.insertAdjacentHTML('afterbegin', playButtonsHtml(it));
+  if (it.UserData?.Played || !(it.UserData?.PlaybackPositionTicks > 0)) scope.querySelector('.resume-bar')?.remove();
+}
+
 function wireIconButtons(scope, it) {
   const cog = scope.querySelector('[data-manage]');
   if (cog) {
@@ -1156,6 +1175,11 @@ function wireIconButtons(scope, it) {
     b.classList.toggle('on', on); setTip(on); b.disabled = true;
     try {
       await (on ? api.post(path) : api.del(path));
+      if (kind === 'played') {
+        if (on) await clearProgress(it);
+        it.UserData = { ...(it.UserData || {}), Played: on, ...(on ? { PlaybackPositionTicks: 0 } : {}) };
+        redrawPlayButtons(scope, it);
+      }
       toast(kind === 'played' ? (on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`) : (on ? `Added ${it.Name} to Favorites` : `Removed ${it.Name} from Favorites`));
       // Only the episode list updates (in place, no reload of the page).
       if (kind === 'played') document.getElementById('epList')?._soft?.();
@@ -1209,13 +1233,10 @@ function renderItem(root, ctx, it, seasonId = '') {
   else if (it.SeriesPrimaryImageTag) poster = img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, 600);
 
   const kicker = isEp ? esc(epCode(it)) : '';
-  const resumable = isPlayable(it) && ud.PlaybackPositionTicks > 0;
+  const resumable = isPlayable(it) && ud.PlaybackPositionTicks > 0 && !ud.Played;
   let buttons = '';
   if (isPlayable(it)) {
-    buttons = resumable
-      ? `<button class="btn" data-play="${esc(it.Id)}">${PLAY_ICON} Resume</button>
-         <button class="btn secondary" data-play="${esc(it.Id)}" data-from-start="1">Play from start</button>`
-      : `<button class="btn" data-play="${esc(it.Id)}">${PLAY_ICON} Play</button>`;
+    buttons = playButtonsHtml(it);
   } else if (isSeries) {
     buttons = `<button class="btn" data-play-series="${esc(it.Id)}">${PLAY_ICON} <span class="lbl">Play</span></button>
       <button class="btn secondary" data-play-series="${esc(it.Id)}" data-from-start="1" hidden>Play from start</button>`;

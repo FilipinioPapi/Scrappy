@@ -1,6 +1,6 @@
 // Right-click menu for posters and cards, plus the "Manage" windows
 // (edit metadata, images, subtitles, identify, refresh, delete).
-import { api, img } from './api.js';
+import { api, img, clearProgress } from './api.js';
 import { esc, toast, playItem, playSeries, isPlayable } from './components.js';
 
 const ICON = {
@@ -159,7 +159,8 @@ function render(it, inResume, pol, cardEl, mode = 'full') {
   const ud = it.UserData || {};
   const { canEdit, canDelete, canSubs } = rights(pol, it);
   const playable = isPlayable(it) || ['Series', 'Season', 'BoxSet'].includes(it.Type);
-  const resumable = isPlayable(it) && ud.PlaybackPositionTicks > 0;
+  const resumable = isPlayable(it) && ud.PlaybackPositionTicks > 0 && !ud.Played;
+  const again = isPlayable(it) && !!ud.Played;
   const hasVideo = isPlayable(it);
   const canIdentify = ['Movie', 'Series'].includes(it.Type);
   const thumb = it.ImageTags?.Primary ? img(it.Id, 'Primary', it.ImageTags.Primary, 120)
@@ -198,7 +199,7 @@ function render(it, inResume, pol, cardEl, mode = 'full') {
       <div class="ctx-thumb">${thumb ? `<img src="${esc(thumb)}" alt="">` : ''}</div>
       <div class="ctx-names"><b>${esc(it.Name)}</b><span>${esc(String(sub))}</span></div>
     </div>
-    ${playable ? row('play', ICON.play, resumable ? 'Resume' : 'Play', 'primary') : ''}
+    ${playable ? (again ? row('restart', ICON.play, 'Play again', 'primary') : row('play', ICON.play, resumable ? 'Resume' : 'Play', 'primary')) : ''}
     ${resumable ? row('restart', ICON.restart, 'Play from start') : ''}
     ${row('fav', ICON.heart(ud.IsFavorite), ud.IsFavorite ? 'Remove from Favorites' : 'Add to Favorites', ud.IsFavorite ? 'on' : '')}
     ${row('played', ICON.check, ud.Played ? 'Mark Unwatched' : 'Mark Watched', ud.Played ? 'on' : '')}
@@ -244,6 +245,7 @@ const ACTIONS = {
     const on = !it.UserData?.Played;
     try {
       await (on ? api.post(`/Users/{userId}/PlayedItems/${it.Id}`) : api.del(`/Users/{userId}/PlayedItems/${it.Id}`));
+      if (on) await clearProgress(it);
       toast(on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`);
       refreshPage();
     } catch (e) { toast(String(e), true); }
