@@ -55,6 +55,9 @@ view.addEventListener('click', (e) => {
     const p = view.querySelector('.detail-poster .art');
     if (!p || !p.offsetWidth || document.querySelector('.view-ghost')) { if (performance.now() - t0 > 2600) drop(); else setTimeout(settle, 60); return; }
     const real = unit(p); landed = real;
+    // The page is there: show it now. The flying poster stays on top as the page's poster until
+    // the page's own (sharper) copy has arrived, so nothing waits on that picture.
+    unveil(130);
     try { localStorage.setItem(KEY, JSON.stringify(real)); } catch {}
     const pim = p.querySelector('img');
     const done = () => { if (fly === d) drop(); };
