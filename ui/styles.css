@@ -3773,3 +3773,7 @@ html.tv #player .p-set-fix span { font-size: 15px; color: var(--muted); line-hei
 /* TV show page: Row / Grid lives with the buttons under the title now. */
 html.tv .tvs-bar .tvs-seg { display: none; }
 html.tv .tvs-bar { padding-right: 0; }
+
+/* "Player details": a plain readout over the video, for a photo when something is stuck. */
+.p-details { position: absolute; left: 40px; top: 110px; z-index: 6; max-width: 62%; max-height: 62%; overflow: hidden; margin: 0; padding: 16px 20px; border-radius: 14px; background: rgba(0,0,0,.78); color: #fff; font: 500 15px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; pointer-events: none; }
+html.tv #player .p-set-fix { flex-wrap: wrap; }

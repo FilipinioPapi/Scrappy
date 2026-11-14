@@ -1,5 +1,5 @@
-Player: skipping never jams the film. Presses add up into one jump, and holding speeds up.
-Player: if a film ever stalls it picks itself up. Its settings also have "Reload video".
-Player: Left and Right walk across every button. Buttons answer the moment you press.
-Settings has "Restart Scrappy" for when anything is stuck. Nobody is signed out.
-Mark watched ticks the tile in place, and opening a title fades Home out under the poster.
+Player: holding Left or Right now scrubs at a calmer pace that builds up gently.
+Player: the TV's decoder is driven a safer way, aimed at the freeze after skipping.
+Player: black bars are pure black now, so they blend into the TV.
+Player settings: "Player details" shows what the player is doing if a film is stuck.
+A stuck film is restarted on a brand new player by itself after about 45 seconds.

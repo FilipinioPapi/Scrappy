@@ -138,6 +138,11 @@ pub async fn tv_update(app: AppHandle, what: String) -> Result<Value, String> {
             let h = INSTALLER.get().ok_or("The TV isn't ready to restart Scrappy.")?;
             h.run_mobile_plugin::<Value>("restart", json!({})).map_err(|e| e.to_string())
         }
+        // "Player details" in the player's settings.
+        "playerlog" => {
+            let h = INSTALLER.get().ok_or("Not ready.")?;
+            h.run_mobile_plugin::<Value>("playerlog", json!({})).map_err(|e| e.to_string())
+        }
         _ => Err("Unknown update step.".into()),
     }
 }

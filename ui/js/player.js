@@ -115,7 +115,7 @@ el.innerHTML = `
       <label>Aspect ratio<select data-set="aspect">${ASPECTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
       <label>Quality<select data-set="quality">${QUALITIES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
     </div>
-    <div class="p-set-fix"><button type="button" class="btn secondary" data-act="reload">Reload video</button><span>Picture stuck? This starts the video again at the same spot.</span></div>
+    <div class="p-set-fix"><button type="button" class="btn secondary" data-act="reload">Reload video</button><button type="button" class="btn secondary" data-act="details">Player details</button><span>Picture stuck? Reload starts it again at the same spot.</span></div>
     <div class="p-set-2">
       <label>Skip back (−)<select data-set="skipBack">${SKIPS.map((v) => `<option value="${v}">${v} seconds</option>`).join('')}</select></label>
       <label>Skip forward (+)<select data-set="skipFwd">${SKIPS.map((v) => `<option value="${v}">${v} seconds</option>`).join('')}</select></label>
@@ -1062,6 +1062,16 @@ el.addEventListener('click', (e) => {
   e.stopPropagation();
   switch (b.dataset.act) {
     case 'exit': exitPlayer(); break;
+    case 'details': {
+      // What the TV's player is doing, on screen (for a photo when something is stuck).
+      toggleSettings(false);
+      let box = el.querySelector('.p-details');
+      if (box) { clearInterval(box._t); box.remove(); break; }
+      box = document.createElement('pre'); box.className = 'p-details'; el.appendChild(box);
+      const fill = async () => { try { const r = await invoke('tv_update', { what: 'playerlog' }); box.textContent = `Player details (open the cog and press Player details again to close)\n${S.playMethod || ''}  ${S.item?.Name || ''}\n\n${r?.text || ''}`; } catch (e2) { box.textContent = String(e2); } };
+      fill(); box._t = setInterval(() => { if (!box.isConnected || !S.open) { clearInterval(box._t); box.remove(); } else fill(); }, 1000);
+      break;
+    }
     case 'reload': {
       // Start the same video again where it is (on the TV, on a brand new player).
       if (!S.item) break;
@@ -1308,12 +1318,19 @@ const tvFocus = (sel) => { const n = typeof sel === 'string' ? $(sel) : sel; if 
 // Skipping with the remote: presses add up on the time bar and the film makes ONE jump when you
 // stop (a jump per press jams the TV's player). Keep going and the steps grow, so a long film
 // can be crossed in a few seconds.
-let tvTo = null, tvSeekT = 0, tvRelT = 0, tvRun = 0, tvLastSkip = 0;
+let tvTo = null, tvSeekT = 0, tvRelT = 0, tvHoldAt = 0, tvLastSkip = 0;
 function tvSeek(dir, held) {
   const now = performance.now();
-  tvRun = held || now - tvLastSkip < 500 ? tvRun + 1 : 0; tvLastSkip = now;
   const base = dir < 0 ? skipBack() : skipFwd();
-  const step = tvRun < 4 ? base : tvRun < 10 ? Math.max(base, 30) : tvRun < 20 ? 60 : tvRun < 34 ? 120 : 300;
+  let step = base;
+  if (held && now - tvLastSkip < 600) {
+    // Holding: a steady pace in film time per second of holding, whatever the remote's repeat rate.
+    // It starts gently and picks up the longer you hold.
+    const heldFor = (now - tvHoldAt) / 1000;
+    const pace = heldFor < 2 ? 20 : heldFor < 5 ? 45 : heldFor < 9 ? 90 : 180;   // film seconds per second
+    step = pace * Math.min(0.15, (now - tvLastSkip) / 1000);
+  } else tvHoldAt = now;
+  tvLastSkip = now;
   const d = dur();
   tvTo = Math.max(0, Math.min(d > 20 ? d - 5 : Infinity, (tvTo ?? livePos()) + dir * step));
   S.dragging = true; el.classList.add('scrubbing'); drawBar(tvTo); wake();
@@ -1354,7 +1371,10 @@ function tvKey(e) {
   if (k === 'Enter' && onSeek) { togglePause(); wake(); return true; }
   if (k === 'ArrowDown' && onSeek) { wake(); tvFocus('.p-play'); return true; }
   // The last thing in the settings panel: the highlight stays in the panel (Back closes it).
-  if (S.settingsOpen && a.dataset.act === 'reload' && k !== 'ArrowUp' && k !== 'Enter') { wake(); return true; }
+  if (S.settingsOpen && (a.dataset.act === 'reload' || a.dataset.act === 'details') && k !== 'ArrowUp' && k !== 'Enter') {
+    if (k === 'ArrowRight' && a.dataset.act === 'reload') tvFocus('[data-act=details]'); else if (k === 'ArrowLeft' && a.dataset.act === 'details') tvFocus('[data-act=reload]');
+    wake(); return true;
+  }
   // Along the row of buttons, Left and Right always go to the next button, however far away it is.
   const row = a.closest('.p-row');
   if (row && (k === 'ArrowLeft' || k === 'ArrowRight') && !S.settingsOpen && !S.epsOpen) {

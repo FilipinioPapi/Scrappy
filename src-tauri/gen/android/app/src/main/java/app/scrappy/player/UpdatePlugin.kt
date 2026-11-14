@@ -40,6 +40,12 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  /** "Player details": what the video player has been doing lately. */
+  @Command
+  fun playerlog(invoke: Invoke) {
+    invoke.resolve(JSObject().put("text", PlayerLog.text()))
+  }
+
   /** Close Scrappy completely and open it again (Settings: "Restart Scrappy"). Sign-ins stay. */
   @Command
   fun restart(invoke: Invoke) {

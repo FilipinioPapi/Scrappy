@@ -21,6 +21,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -58,6 +59,10 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
   private var lastPos = -1L
   private var stuckSince = 0L
   private var watching = false
+  private var lastItem: MediaItem? = null
+  private var videoDecoder = ""
+  private var audioDecoder = ""
+  private var dropped = 0
   private val watchdog = object : Runnable {
     override fun run() {
       try { checkStuck() } catch (e: Exception) { }
@@ -65,13 +70,48 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  private fun stateName(s: Int) = when (s) {
+    Player.STATE_IDLE -> "idle"
+    Player.STATE_BUFFERING -> "loading"
+    Player.STATE_READY -> "ready"
+    Player.STATE_ENDED -> "ended"
+    else -> "?"
+  }
+
+  /** How the player is right now, for "Player details". */
+  private fun describe(p: ExoPlayer) {
+    val v = p.videoFormat
+    val a = p.audioFormat
+    val uri = p.currentMediaItem?.localConfiguration?.uri?.toString() ?: ""
+    val how = if (uri.contains(".m3u8")) "converted by Emby (HLS)" else if (uri.contains("Static=true")) "direct from the file" else "other"
+    PlayerLog.live = listOf(
+      "State: ${stateName(p.playbackState)}  wants to play: ${p.playWhenReady}  playing: ${p.isPlaying}  loading data: ${p.isLoading}  held back: ${p.playbackSuppressionReason}",
+      "At ${p.currentPosition / 1000}s, loaded up to ${p.bufferedPosition / 1000}s of ${if (p.duration == C.TIME_UNSET) "?" else (p.duration / 1000).toString()}s",
+      "Stream: $how",
+      "Picture: ${v?.sampleMimeType ?: "-"} ${v?.width ?: 0}x${v?.height ?: 0} ${v?.codecs ?: ""}  decoder: $videoDecoder  dropped frames: $dropped",
+      "Sound: ${a?.sampleMimeType ?: "-"} ${a?.channelCount ?: 0}ch  decoder: ${audioDecoder.ifEmpty { "passed to the TV" }}",
+      "Recoveries: retries $retries, nudges $kicks" + (error?.let { "  ERROR: $it" } ?: "")
+    ).joinToString("\n")
+  }
+
+  /** Let go of a player completely (its decoders too). */
+  private fun drop(p: ExoPlayer) {
+    val v = view
+    player = null
+    view = null
+    try { p.release() } catch (e: Exception) { }
+    if (v != null) { v.player = null; (v.parent as? ViewGroup)?.removeView(v) }
+    PlayerLog.add("player thrown away")
+  }
+
   /** Meant to be playing but the picture has not moved: nudge it, then reload it at the same spot. */
   private fun checkStuck() {
     val p = player ?: return
-    if (p.currentMediaItem == null || !p.playWhenReady || error != null) { stuckSince = 0L; return }
-    val now = SystemClock.elapsedRealtime()
     val pos = p.currentPosition
     val st = p.playbackState
+    describe(p)
+    if (p.currentMediaItem == null || !p.playWhenReady || error != null) { stuckSince = 0L; return }
+    val now = SystemClock.elapsedRealtime()
     val moving = (st == Player.STATE_READY && pos != lastPos) || st == Player.STATE_ENDED
     lastPos = pos
     if (moving) {
@@ -85,11 +125,24 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     if (now - stuckSince < 15_000) return
     stuckSince = now
     kicks++
+    PlayerLog.add("STUCK 15s (state ${stateName(st)}, at ${pos / 1000}s): step $kicks")
     when {
       st == Player.STATE_IDLE -> p.prepare()
       // (A film that never got going at all is loaded again straight away.)
       kicks == 1 && readySeq == loadSeq -> p.seekTo(pos)
-      kicks <= 3 -> { p.stop(); p.prepare() }
+      kicks == 2 -> { p.stop(); p.prepare() }
+      // Still nothing: throw the player away and start the film again on a brand new one.
+      kicks == 3 -> {
+        val item = lastItem
+        if (item == null) { p.stop(); p.prepare() } else {
+          drop(p)
+          val np = ensure()
+          np.setMediaItem(item, pos)
+          np.prepare()
+          np.playWhenReady = true
+          view?.visibility = android.view.View.VISIBLE
+        }
+      }
       // Nothing helped: say so and leave the player, so it is never a dead end. Resume picks it up.
       else -> error = "Playback stopped responding. Choose Resume to carry on from the same spot."
     }
@@ -114,8 +167,12 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
 
   private fun ensure(): ExoPlayer {
     player?.let { return it }
+    // The TV's decoders are driven the plain, older way. The newer way (on by default from
+    // Android 12) can leave a TV chip's decoder stuck after a jump in the film.
     val renderers = DefaultRenderersFactory(activity)
       .setEnableDecoderFallback(true)
+      .forceDisableMediaCodecAsynchronousQueueing()
+    videoDecoder = ""; audioDecoder = ""; dropped = 0
     val p = ExoPlayer.Builder(activity, renderers)
       .setSeekBackIncrementMs(10_000)
       .setSeekForwardIncrementMs(30_000)
@@ -125,10 +182,12 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     p.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
     p.addListener(object : Player.Listener {
       override fun onPlaybackStateChanged(state: Int) {
+        PlayerLog.add("state: ${stateName(state)} at ${p.currentPosition / 1000}s")
         if (state == Player.STATE_READY && readySeq != loadSeq) readySeq = loadSeq
         if (state == Player.STATE_ENDED) ended = true
       }
       override fun onPlayerError(e: PlaybackException) {
+        PlayerLog.add("ERROR ${e.errorCodeName}: ${e.cause?.javaClass?.simpleName ?: ""} ${e.cause?.message ?: e.message ?: ""}")
         // Most errors in the middle of a film are a passing hiccup: carry on from the same spot
         // a few times before giving up. (A file the TV can't play at all fails before it is ready.)
         if (readySeq == loadSeq && retries < 3 && p.currentMediaItem != null) {
@@ -141,9 +200,30 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
         error = "The TV couldn't play this (${e.errorCodeName})."
       }
     })
+    p.addAnalyticsListener(object : AnalyticsListener {
+      override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+        videoDecoder = decoderName
+        PlayerLog.add("picture decoder: $decoderName (${initializationDurationMs} ms)")
+      }
+      override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+        audioDecoder = decoderName
+        PlayerLog.add("sound decoder: $decoderName")
+      }
+      override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+        dropped += droppedFrames
+      }
+      override fun onVideoCodecError(eventTime: AnalyticsListener.EventTime, videoCodecError: Exception) {
+        PlayerLog.add("picture decoder error: ${videoCodecError.message ?: videoCodecError.toString()}")
+      }
+      override fun onAudioSinkError(eventTime: AnalyticsListener.EventTime, audioSinkError: Exception) {
+        PlayerLog.add("sound output error: ${audioSinkError.message ?: audioSinkError.toString()}")
+      }
+    })
     val v = PlayerView(activity)
     v.useController = false
     v.setShutterBackgroundColor(Color.BLACK)
+    // Pure black around the picture, so the bars of a wide film melt into the TV's frame.
+    v.setBackgroundColor(Color.BLACK)
     v.setKeepContentOnPlayerReset(false)
     v.isFocusable = false
     v.isFocusableInTouchMode = false
@@ -204,6 +284,8 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
         }
       }
       val item = MediaItem.Builder().setUri(url).setSubtitleConfigurations(configs).build()
+      lastItem = item
+      PlayerLog.add("OPEN at ${start.toInt()}s, ${configs.size} subtitle files, " + (if (url.contains(".m3u8")) "converted by Emby" else "direct"))
       loadSeq++
       ended = false
       error = null
@@ -236,6 +318,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
         "seek" -> {
           val t = a.optDouble("value", 0.0)
           val target = if (a.optBoolean("relative", false)) p.currentPosition + (t * 1000).toLong() else (t * 1000).toLong()
+          PlayerLog.add("jump to ${target / 1000}s (from ${p.currentPosition / 1000}s)")
           p.seekTo(target.coerceAtLeast(0))
           wake(p)
         }
@@ -255,13 +338,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
           view?.visibility = android.view.View.GONE
         }
         // "Reload video": throw the TV's player away, so the next film starts on a brand new one.
-        "reset" -> {
-          val v = view
-          player = null
-          view = null
-          try { p.release() } catch (e: Exception) { }
-          if (v != null) { v.player = null; (v.parent as? ViewGroup)?.removeView(v) }
-        }
+        "reset" -> drop(p)
       }
       null
     }
