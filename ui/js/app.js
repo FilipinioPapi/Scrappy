@@ -1,4 +1,4 @@
-import { api, quiet } from './api.js';
+import { api, quiet, setImgServer } from './api.js';
 import './player.js';
 import './mplayer.js';
 import { musicView } from './music.js';
@@ -6,11 +6,19 @@ import { booksView } from './books.js';
 import './music2.js';
 import './nowplaying.js';
 import { mountSearch, setSearchSession, searchPage } from './search.js';
+import { requestsPage, mountRequests } from './requests.js';
 import './menu.js';
+if (/Android/.test(navigator.userAgent)) import('./tv.js');
+import './topfit.js';
+import './updates.js';
 import { toast } from './components.js';
-import { loginView, firstTab, homeView, libraryView, itemView, personView, searchView, comingSoonView, connectView } from './views.js';
+import { pref, setPref, on, onPref } from './prefs.js';
+import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView, genresView, favoritesView } from './views.js';
+import { tvShell } from './tvside.js';
+import { artPageStart } from './art.js';
 
 const viewEl = document.getElementById('view');
+const ON_TV = document.documentElement.classList.contains('tv');
 
 // Opening intro: stays until the first page is ready (the home banner, or any
 // other page), at least 1.2s so it doesn't flash, and never past ~2.5s.
@@ -24,7 +32,8 @@ function hideIntro() {
   setTimeout(() => {
     el.classList.add('out');
     setTimeout(() => el.remove(), 500);
-  }, Math.max(0, 1200 - (performance.now() - introStart)));
+  // (On the TV it leaves the moment the first page is ready: Jayden's pick, the app is slower to start there.)
+  }, document.documentElement.classList.contains('tv') ? 0 : Math.max(0, 1200 - (performance.now() - introStart)));
 }
 window.addEventListener('scrappy:ready', hideIntro, { once: true });
 setTimeout(hideIntro, 2000);
@@ -35,30 +44,41 @@ let leaveHandlers = [];
 let enterTimer;
 
 async function refreshSession() {
+  clearKept();
   session = await api.session();
+  setImgServer(session.loggedIn ? session.server : '');
   setSearchSession(session);
   const sv = session.servers || {};
   const rows = [['emby', 'Emby'], ['navidrome', 'Navidrome'], ['audiobookshelf', 'Audiobookshelf']]
     .filter(([k]) => sv[k]?.signedIn)
     .map(([k, n]) => `<div class="menu-srv"><b>${n}</b>${escapeText(sv[k].user)}</div>`).join('');
-  document.getElementById('userInfo').innerHTML = rows || 'Not signed in';
+  const ui = document.getElementById('userInfo'); if (ui) ui.innerHTML = rows || 'Not signed in';
   // Only servers you're signed in to get a tab.
   const tabFor = { home: 'emby', music: 'navidrome', audiobooks: 'audiobookshelf' };
   // Every tab always shows; a tab whose server isn't signed in offers a sign-in instead.
   document.querySelectorAll('.tabs a').forEach((a) => (a.classList.toggle('off', !sv[tabFor[a.dataset.tab]]?.signedIn)));
   const pill = document.querySelector('.tab-pill'); if (pill) pill.classList.remove('ready');
+  mountRequests(session).catch(() => {});
 }
 const escapeText = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
+// Each page gets a context. Its leave handlers run when you move away; on the TV a page can be
+// kept and brought back by Back, and then its return handlers run (timers and watchers start again).
+let curCtx = null;
+function leaveCtx() {
+  const c = curCtx; curCtx = null;
+  if (c) c._leave.forEach((f) => { try { f(); } catch {} });
+}
 function makeCtx() {
   const my = ++routeId;
-  leaveHandlers.forEach((f) => { try { f(); } catch {} });
-  leaveHandlers = [];
-  return {
+  leaveCtx();
+  const c = {
+    _leave: [], _return: [],
     session,
     refreshSession,
-    alive: () => my === routeId,
-    onLeave: (f) => leaveHandlers.push(f),
+    alive: () => curCtx === c || c._kept > Date.now(),
+    onLeave: (f) => c._leave.push(f),
+    onReturn: (f) => c._return.push(f),
     fail(e, soft = false) {
       const msg = String(e);
       const expired = { SESSION_EXPIRED: 'emby', 'Not logged in.': 'emby', ND_SESSION_EXPIRED: 'navidrome', ABS_SESSION_EXPIRED: 'audiobookshelf' }[msg];
@@ -68,32 +88,168 @@ function makeCtx() {
         return;
       }
       if (soft) toast(msg, true);
-      else if (my === routeId) viewEl.innerHTML = `<div class="empty">${escapeText(msg)}<br><br><button class="btn secondary" onclick="location.reload()">Try again</button></div>`;
+      else if (curCtx === c) viewEl.innerHTML = `<div class="empty">${escapeText(msg)}<br><br><button class="btn secondary" onclick="location.reload()">Try again</button></div>`;
     },
   };
+  curCtx = c;
+  return c;
 }
 
 // The red pill behind the active top tab slides to whichever tab is picked.
 function moveTabPill() {
+  if (ON_TV) return;
   const nav = document.querySelector('.tabs'); if (!nav || nav.closest('[hidden]')) return;
   let pill = nav.querySelector('.tab-pill');
   if (!pill) { pill = document.createElement('span'); pill.className = 'tab-pill'; nav.prepend(pill); nav.classList.add('has-pill'); }
+  if (document.body.classList.contains('tab-stats')) { pill.classList.add('gone'); return; }
+  pill.classList.remove('gone');
   const on = nav.querySelector('a.active'); if (!on || !on.offsetWidth) { requestAnimationFrame(moveTabPill); return; }
   pill.style.left = on.offsetLeft + 'px'; pill.style.width = on.offsetWidth + 'px';
   if (!pill.classList.contains('ready')) requestAnimationFrame(() => pill.classList.add('ready'));
 }
 window.addEventListener('resize', moveTabPill);
 
+// Keep the page you're leaving on screen until the next one has drawn something
+// real, instead of flashing an empty page or a spinner in between.
+let ghost = null, ghostObs = null, ghostTimer = 0;
+function dropGhost() {
+  clearTimeout(ghostTimer); ghostObs?.disconnect(); ghostObs = null;
+  const g = ghost; ghost = null;
+  if (g && window.__perf && !window.__perf.shown) window.__perf.shown = Math.round(performance.now() - window.__perf.t0);
+  if (g) { g.classList.add('out'); setTimeout(() => { fillKept(g._entry); g.remove(); }, 180); }
+}
+// A kept page (Google TV) is itself the picture that stays up while the next page draws; afterwards it goes on the shelf.
+function fillKept(e) { if (e?.src) { e.frag.append(...e.src.childNodes); e.src = null; } }
+function holdOldPage(entry) {
+  dropGhost();
+  if (!viewEl.firstElementChild || viewEl.querySelector(':scope > .loading') || (!entry && viewEl.getElementsByTagName('*').length > 5000)) { if (entry) entry.frag.append(...viewEl.childNodes); return; }
+  const r0 = viewEl.getBoundingClientRect();
+  // The TV draws the page scaled down, and measurements come back in scaled sizes: turn them back
+  // into the page's own units, or the held picture shows up shrunken and in the wrong place.
+  const k = r0.width > 0 ? viewEl.offsetWidth / r0.width : 1;
+  const r = { left: r0.left * k, top: r0.top * k, width: r0.width * k };
+  const g = document.createElement('div');
+  g.className = 'view-ghost'; g.setAttribute('aria-hidden', 'true');
+  g.style.cssText = `left:${r.left}px;top:${Math.max(r.top, 0)}px;width:${r.width}px;bottom:0`;
+  const inner = document.createElement('div');
+  inner.style.transform = `translateY(${Math.min(r.top, 0)}px)`;
+  if (entry) { inner.append(...viewEl.childNodes); entry.src = inner; g._entry = entry; }
+  else {
+    inner.append(...[...viewEl.childNodes].map((n) => n.cloneNode(true)));
+    // A picture only: no ids, so nothing else in the app can find or update the copy.
+    inner.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+    inner.querySelectorAll('[data-hold]').forEach((e) => e.removeAttribute('data-hold'));
+  }
+  g.inert = true;
+  g.appendChild(inner);
+  document.body.appendChild(g);
+  ghost = g;
+  // Real content = anything that isn't just the loading spinner.
+  // (and isn't still waiting a moment for its pictures: see art.js).
+  const ready = () => !viewEl.querySelector('[data-hold]') && [...viewEl.children].some((c) => !c.classList.contains('loading') && c.textContent.trim().length + c.querySelectorAll('img,canvas').length > 0 && !c.matches('.mshell:not(:has(.mmain > :not(.loading)))'));
+  ghostObs = new MutationObserver(() => { if (ready()) dropGhost(); });
+  ghostObs.observe(viewEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-hold'] });
+  ghostTimer = setTimeout(dropGhost, 1200);
+}
+
+// Back/forward put you where you were on that page: each history entry gets a key and
+// its scroll position is remembered; going back to it scrolls there once it has drawn.
+try { history.scrollRestoration = 'manual'; } catch {}
+const SCROLL = new Map();
+let scrollKey = null, restoreRun = 0;
+function navKey() {
+  const st = history.state;
+  if (st && st.sk) return { k: st.sk, seen: true };
+  const k = Math.random().toString(36).slice(2);
+  try { history.replaceState({ ...(st || {}), sk: k }, ''); } catch {}
+  return { k, seen: false };
+}
+// (Noted a moment after the page stops moving, and again just before leaving it: reading the
+// position on every frame of a scroll made a slow TV recalculate the page each time.)
+let scrollNoteT = 0;
+const noteScroll = () => { if (scrollKey) SCROLL.set(scrollKey, window.scrollY); };
+window.addEventListener('scroll', () => { clearTimeout(scrollNoteT); scrollNoteT = setTimeout(noteScroll, 140); }, { passive: true });
+function restoreScroll(y) {
+  const run = ++restoreRun, t0 = performance.now();
+  const stop = () => { restoreRun++; window.removeEventListener('wheel', stop); window.removeEventListener('keydown', stop); };
+  window.addEventListener('wheel', stop, { once: true, passive: true }); window.addEventListener('keydown', stop, { once: true });
+  const tick = () => {
+    if (run !== restoreRun) return;
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    if (max >= y - 2) { window.scrollTo(0, y); stop(); return; }
+    if (performance.now() - t0 > 2500) { window.scrollTo(0, Math.max(0, max)); stop(); return; }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 let lastRouteName = '';
+
+// ---------- Google TV: kept pages ----------
+// The page you leave is set aside whole (its posters, its scroll spot, its highlight) instead of
+// being thrown away, so coming back to it costs nothing: no reload, no redraw, no pop-in.
+// Anything that changes what a page should show (watching, favorites, a refresh) empties the shelf.
+const KEEPABLE = new Set(['home', 'library', 'item', 'person', 'genres', 'favorites']);
+const KEEP = new Map(); // history key -> { hash, frag, y, focus, ctx, at }
+let shownPage = null;
+function dropKept(k) { const e = KEEP.get(k); if (e) { e.ctx._kept = 0; KEEP.delete(k); } }
+function clearKept() { [...KEEP.keys()].forEach(dropKept); }
+// The last thing highlighted inside the page, so leaving by the side bar still remembers the spot.
+let lastInView = null;
+if (ON_TV) document.addEventListener('focusin', (e) => { if (viewEl?.contains(e.target)) lastInView = e.target; });
+function keepPage() {
+  const from = shownPage; shownPage = null;
+  if (!from || from.ctx !== curCtx || !viewEl.firstElementChild || viewEl.querySelector('.loading, .empty > .btn')) return null;
+  const ae = document.activeElement;
+  // Rows the browser has been skipping (off screen) forget their height once the page is lifted
+  // out, and would come back a different size, which shoves the page around on the way back in.
+  // Pin every row to the height it has right now.
+  for (const r of viewEl.querySelectorAll('.tvmain > [data-row], .genre-row')) { const h = r.offsetHeight; if (h > 0) r.style.containIntrinsicSize = `auto ${h}px`; }
+  const e = { hash: from.hash, y: window.scrollY, focus: ae && viewEl.contains(ae) ? ae : (lastInView && viewEl.contains(lastInView) ? lastInView : null), ctx: from.ctx, at: Date.now(), frag: document.createDocumentFragment() };
+  // Where the highlighted thing sits on the screen, so Back can put it in exactly the same spot.
+  e.top = e.focus ? e.focus.getBoundingClientRect().top : null;
+  // It may finish what it was loading for a few seconds, then it rests.
+  from.ctx._kept = Date.now() + 5000;
+  dropKept(from.k); KEEP.set(from.k, e);
+  while (KEEP.size > 8) dropKept(KEEP.keys().next().value);
+  return e;
+}
+function takeKept(nk, hash) {
+  const fresh = (e) => e && e.hash === hash && Date.now() - e.at < 600000;
+  let k = nk.seen && fresh(KEEP.get(nk.k)) ? nk.k : null, back = !!k;
+  // Back from a side-rail screen lands on Home as you left it.
+  if (window.__tvHomeBack) { window.__tvHomeBack = 0; back = true; }
+  // Not a Back, but a screen that is still on the shelf (Home from the side bar): show it from the top.
+  if (!k && !hash.startsWith('#/item') && !hash.startsWith('#/person')) for (const [kk, e] of KEEP) if (fresh(e)) k = kk;
+  if (!k) return null;
+  const e = KEEP.get(k); KEEP.delete(k); fillKept(e);
+  return { ...e, back };
+}
+['scrappy:memclear', 'scrappy:refresh', 'scrappy:stale', 'scrappy:rowcache-clear', 'scrappy:art-clear'].forEach((n) => window.addEventListener(n, clearKept));
+
+// (On the TV each page change notes how long it took, so slow screens can be found from the TV's log.)
 async function route(opts = {}) {
+  const t0 = performance.now(), h = location.hash || '#/home';
+  try { return await routeNow(opts); }
+  finally { if (ON_TV) { window.__perf = { h, t0, code: Math.round(performance.now() - t0) }; requestAnimationFrame(() => requestAnimationFrame(() => { if (window.__perf?.t0 === t0) window.__perf.drawn = Math.round(performance.now() - t0); })); } }
+}
+async function routeNow(opts = {}) {
+  clearTimeout(scrollNoteT); noteScroll();
+  // Remember where you came from, so Back buttons on pages can return there.
+  if (location.hash !== window.__curHash) { window.__prevHash = window.__curHash || ''; window.__curHash = location.hash; }
   if (!session) await refreshSession();
   const hash = location.hash || '#/home';
-  const [, name, arg, arg2] = hash.split('/');
+  const [, rawName, arg, arg2] = hash.split('/');
+  // "#/search?q=…" and "#/requests?scope=all": the page name is the part before the "?".
+  const name = (rawName || '').split('?')[0];
+  // Stats are their own section now: the old per-tab addresses move there.
+  if ((name === 'music' || name === 'audiobooks') && (arg || '').split('?')[0] === 'stats') { location.replace(`#/stats/${name}`); return; }
+  const statsKind = name === 'stats' ? ({ music: 'music', audiobooks: 'abs' }[arg] || 'tv') : '';
 
   if (!session.loggedIn && name !== 'login') { location.hash = '#/login'; return; }
   if (session.loggedIn && name === 'login') { location.hash = firstTab(session); return; }
   // A tab whose server isn't signed in shows a sign-in prompt for it.
-  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || (['login', 'servers', 'search'].includes(name) ? '' : 'emby');
+  const need = { music: 'navidrome', audiobooks: 'audiobookshelf' }[name] || { music: 'navidrome', abs: 'audiobookshelf' }[statsKind] || (['login', 'servers', 'search', 'settings'].includes(name) ? '' : 'emby');
   const notSigned = need && !session.servers?.[need]?.signedIn;
 
   topbar.hidden = name === 'login' || name === 'servers';
@@ -101,64 +257,95 @@ async function route(opts = {}) {
   // and the small player shows in the top bar instead.
   const audioTab = name === 'music' || name === 'audiobooks';
   const swapped = document.body.classList.contains('tab-music') !== audioTab && !!lastRouteName;
+  // Moving between Stats categories keeps the page and only swaps the numbers.
+  const statsSwitch = !!statsKind && lastRouteName === 'stats' && !!viewEl.querySelector(':scope > .stx-page > .stx');
+  if (!statsKind) window.__statsPer = '';
   lastRouteName = name;
   document.body.classList.toggle('tab-music', audioTab);
+  // Stats act as their own section: no side bars, no bottom bar, no tab lit up.
+  // Requests act the same way.
+  document.body.classList.toggle('tab-stats', !!statsKind || name === 'requests' || name === 'settings');
+  document.getElementById('userBtn')?.classList.toggle('on', name === 'settings');
+  // Remember the tab for "Start on: Last used".
+  if (['home', 'music', 'audiobooks'].includes(name) && !arg) setPref('lastTab', '#/' + name);
   document.querySelectorAll('.tabs a').forEach((a) =>
-    a.classList.toggle('active', a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
+    a.classList.toggle('active', !statsKind && name !== 'requests' && name !== 'settings' && a.dataset.tab === (['music', 'audiobooks'].includes(name) ? name : 'home')));
   moveTabPill();
-  document.getElementById('userMenu').hidden = true;
 
+  const nk = navKey(); const backTo = nk.seen && !opts.keepScroll ? SCROLL.get(nk.k) : undefined;
+  // Google TV: Back (or picking a screen you were just on) brings the kept page straight back.
+  const kept = ON_TV && !opts.keepScroll && !notSigned ? takeKept(nk, hash) : null;
+  const entry = ON_TV && !opts.keepScroll ? keepPage() : null;
+  if (!opts.keepScroll && !statsSwitch && !kept) holdOldPage(entry);
+  else if (entry) entry.frag.append(...viewEl.childNodes);
+  if (kept) {
+    dropGhost(); leaveCtx(); restoreRun++;
+    clearTimeout(enterTimer); viewEl.classList.remove('entering', 'tabswap'); viewEl.classList.add('quiet');
+    viewEl.replaceChildren(kept.frag);
+    curCtx = kept.ctx; kept.ctx._kept = 0;
+    kept.ctx._return.forEach((f) => { try { f(); } catch {} });
+    scrollKey = nk.k; window.scrollTo(0, kept.back ? kept.y : 0); SCROLL.set(nk.k, kept.back ? kept.y : 0);
+    // Back drops you exactly where you were, in one step: no slide, no catching up.
+    window.__tvStill = performance.now() + 500;
+    if (kept.back && kept.focus?.isConnected) {
+      if (kept.top != null) { const d = kept.focus.getBoundingClientRect().top - kept.top; if (Math.abs(d) > 1) { window.scrollBy(0, d); SCROLL.set(nk.k, window.scrollY); } }
+      kept.focus.focus({ preventScroll: true });
+    }
+    shownPage = { k: nk.k, hash, ctx: kept.ctx };
+    hideIntro();
+    return;
+  }
+  restoreRun++; scrollKey = null;
   const ctx = makeCtx();
   if (opts.keepScroll) quiet();
   const id = arg ? decodeURIComponent(arg) : '';
-  if (!opts.keepScroll) {
+  if (!opts.keepScroll && !statsSwitch) {
     window.scrollTo(0, 0);
     viewEl.classList.remove('quiet');
+    artPageStart();
+    if (backTo > 0) restoreScroll(backTo);
     // Quick fade-in for the new page; dropped soon after so later refreshes don't replay it.
     viewEl.classList.remove('entering', 'tabswap');
-    void viewEl.offsetWidth;
-    // Moving between the audio tabs and Movies & TV gets a softer, slightly longer cross-fade.
-    viewEl.classList.add('entering'); viewEl.classList.toggle('tabswap', swapped);
-    clearTimeout(enterTimer);
-    enterTimer = setTimeout(() => viewEl.classList.remove('entering', 'tabswap'), 900);
+    // (The TV has no page entrance, so it skips this and the layout pass it forces.)
+    if (!ON_TV) {
+      void viewEl.offsetWidth;
+      // Moving between the audio tabs and Movies & TV gets a softer, slightly longer cross-fade.
+      viewEl.classList.add('entering'); viewEl.classList.toggle('tabswap', swapped);
+      clearTimeout(enterTimer);
+      enterTimer = setTimeout(() => viewEl.classList.remove('entering', 'tabswap'), 900);
+    }
   }
+  scrollKey = nk.k;
+  shownPage = ON_TV && !notSigned && KEEPABLE.has(name || 'home') ? { k: nk.k, hash, ctx } : null;
   // Home says when its banner is ready; every other page is ready once drawn.
   if (!['home', undefined, ''].includes(name)) setTimeout(hideIntro, 0);
   if (notSigned) return connectView(viewEl, need);
   switch (name) {
     case 'login': return loginView(viewEl, ctx);
     case 'servers': return loginView(viewEl, ctx, id);
-    case 'library': return libraryView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
-    case 'item': return itemView(viewEl, ctx, id, arg2 ? decodeURIComponent(arg2) : '');
-    case 'person': return personView(viewEl, ctx, id);
+    case 'library': return libraryView(tvShell(viewEl), ctx, id, arg2 ? decodeURIComponent(arg2) : '');
+    case 'item': return itemView(tvShell(viewEl), ctx, id, arg2 ? decodeURIComponent(arg2) : '');
+    case 'person': return personView(tvShell(viewEl), ctx, id);
+    case 'genres': return genresView(tvShell(viewEl), ctx);
+    case 'favorites': return favoritesView(tvShell(viewEl), ctx);
     case 'search': return searchPage(viewEl, ctx);
+    case 'requests': return requestsPage(viewEl, ctx, (arg || '').split('?')[0], arg2 ? decodeURIComponent(arg2.split('?')[0]) : '');
     case 'music': return musicView(viewEl, ctx);
     case 'audiobooks': return booksView(viewEl, ctx);
-    case 'stats': viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, 'tv', ctx.alive));
-    default: return homeView(viewEl, ctx);
+    case 'settings': return import('./settings.js').then((m) => m.settingsPage(viewEl, ctx, id));
+    case 'stats': if (!statsSwitch) viewEl.innerHTML = '<div class="stx-page"></div>'; return import('./stats.js').then((m) => m.statsPage(viewEl.firstChild, statsKind, ctx.alive));
+    default: return homeView(tvShell(viewEl), ctx);
   }
 }
 
-// Account menu
+// The cog opens the Settings page; pressing it again goes back to where you were.
+let beforeSettings = '';
 document.getElementById('userBtn').addEventListener('click', (e) => {
   e.stopPropagation();
-  const m = document.getElementById('userMenu');
-  m.hidden = !m.hidden;
   document.getElementById('refMenu').hidden = true;
-});
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.user-menu')) document.getElementById('userMenu').hidden = true;
-});
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-  await api.logout().catch(() => {});
-  await refreshSession();
-  location.hash = '#/login';
-});
-document.getElementById('serversBtn').addEventListener('click', () => { location.hash = '#/servers'; });
-document.getElementById('clearCacheBtn').addEventListener('click', async () => {
-  await api.clearCache();
-  document.getElementById('userMenu').hidden = true;
-  toast('Image and library cache cleared.');
+  if ((location.hash || '').startsWith('#/settings')) { location.hash = beforeSettings || '#/home'; beforeSettings = ''; return; }
+  beforeSettings = location.hash || '#/home';
+  location.hash = '#/settings';
 });
 
 // ---------- Refresh button: click = Quick Scan, right-click = Quick Scan / Deep Scan ----------
@@ -169,7 +356,7 @@ const SECTIONS = {
   music: { name: 'Music', server: 'Navidrome', what: 'album art', deep: 'Asks Navidrome to look through its music folder for new or changed files, then refreshes. About a minute.' },
   audiobooks: { name: 'Audiobooks', server: 'Audiobookshelf', what: 'covers', deep: 'Asks Audiobookshelf to look through its folders for new or changed files, then refreshes. A few minutes.' },
 };
-const curSection = () => { const n = (location.hash || '#/home').split('/')[1]; return n === 'music' || n === 'audiobooks' ? n : 'home'; };
+const curSection = () => { const [, n, a] = (location.hash || '#/home').split('/'); const k = n === 'stats' ? a : n; return k === 'music' || k === 'audiobooks' ? k : 'home'; };
 const lastRefresh = {};
 const adminCache = {};
 async function isAdmin(sec) {
@@ -186,7 +373,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let scanning = false;
 async function quickScan(sec = curSection(), quietToast = false) {
   if (scanning) return;
-  scanning = true; refreshBtn.classList.add('spin'); refMenu.hidden = true;
+  scanning = true; refreshBtn.classList.add('scanning'); refMenu.hidden = true;
   try {
     const [covers] = await Promise.all([
       api.refreshCovers(sec).catch(() => 0),
@@ -198,12 +385,12 @@ async function quickScan(sec = curSection(), quietToast = false) {
     lastRefresh[sec] = Date.now();
     if (!quietToast) toast(`${SECTIONS[sec].name} is up to date${covers ? ` · ${covers} new ${covers === 1 ? 'picture' : 'pictures'}` : ''}`);
   } catch (e) { toast(String(e), true); }
-  finally { scanning = false; refreshBtn.classList.remove('spin'); }
+  finally { scanning = false; refreshBtn.classList.remove('scanning'); }
 }
 async function deepScan(sec = curSection()) {
   if (scanning) return;
   const S = SECTIONS[sec];
-  scanning = true; refreshBtn.classList.add('spin'); refMenu.hidden = true;
+  scanning = true; refreshBtn.classList.add('scanning'); refMenu.hidden = true;
   toast(`Asking ${S.server} to scan for new files…`);
   const started = Date.now(), until = started + 15 * 60 * 1000;
   try {
@@ -235,12 +422,11 @@ async function deepScan(sec = curSection()) {
     toast(`${S.server} scan finished · ${S.name} is up to date`);
   } catch (e) {
     toast(`${S.server} scan didn't start: ${String(e).replace(/^Error:\s*/, '')}`, true);
-  } finally { scanning = false; refreshBtn.classList.remove('spin'); }
+  } finally { scanning = false; refreshBtn.classList.remove('scanning'); }
 }
 const ago = (t) => { if (!t) return 'not yet this session'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m === 1 ? '1 min ago' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
 async function openRefMenu() {
   const sec = curSection(), S = SECTIONS[sec];
-  document.getElementById('userMenu').hidden = true;
   const draw = (admin) => {
     refMenu.innerHTML = `<div class="rm-h">${S.name}${lastRefresh[sec] ? ' · refreshed ' + ago(lastRefresh[sec]) : ''}</div>
       <button type="button" class="rm-i" data-act="quick"><span class="ic">${refreshBtn.querySelector('svg').outerHTML}</span><span><span class="t">Quick Scan</span><span class="d">Reloads this tab from ${S.server} and grabs any changed ${S.what}. A few seconds.</span></span></button>
@@ -257,7 +443,7 @@ refreshBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPr
 // ---------- Stats button: click = this tab's stats, right-click = pick any of the three ----------
 const statsBtn = document.getElementById('topStatsBtn');
 const statsMenu = document.getElementById('statsMenu');
-const STATS_ROUTES = { home: '#/stats', music: '#/music/stats', audiobooks: '#/audiobooks/stats' };
+const STATS_ROUTES = { home: '#/stats', music: '#/stats/music', audiobooks: '#/stats/audiobooks' };
 const onStats = () => Object.values(STATS_ROUTES).includes((location.hash || '').split('?')[0]);
 let beforeStats = '';
 const SEC_ICON = {
@@ -278,7 +464,7 @@ statsBtn.addEventListener('click', (e) => {
 statsBtn.addEventListener('contextmenu', (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!statsMenu.hidden) { statsMenu.hidden = true; return; }
-  refMenu.hidden = true; document.getElementById('userMenu').hidden = true;
+  refMenu.hidden = true;
   const here = curSection(), cur = (location.hash || '').split('?')[0];
   statsMenu.innerHTML = `<div class="rm-h">Open stats</div>` + Object.keys(STATS_ROUTES).map((k) => `<button type="button" class="rm-i sm${cur === STATS_ROUTES[k] ? ' cur' : ''}" data-sec="${k}"><span class="ic">${SEC_ICON[k]}</span><span class="t">${SECTIONS[k].name} stats</span>${k === here ? '<span class="here">this tab</span>' : ''}</button>`).join('');
   statsMenu.hidden = false;
@@ -306,14 +492,17 @@ window.addEventListener('mouseup', (e) => { if (e.button === 3) history.back(); 
 
 // Player events from Rust
 
-// Settings in the account menu (full settings page comes in step 5).
-const autoplayToggle = document.getElementById('autoplayToggle');
-const windowModeToggle = document.getElementById('windowModeToggle');
-autoplayToggle.checked = localStorage.getItem('autoplay') !== 'off';
-windowModeToggle.checked = localStorage.getItem('playerMode') === 'window';
-autoplayToggle.addEventListener('change', () => localStorage.setItem('autoplay', autoplayToggle.checked ? 'on' : 'off'));
-windowModeToggle.addEventListener('change', () => localStorage.setItem('playerMode', windowModeToggle.checked ? 'window' : 'embedded'));
-document.querySelector('.menu').addEventListener('click', (e) => { if (e.target.closest('label')) e.stopPropagation(); });
+// ---------- Settings that act on the whole app ----------
+// Closing the window keeps music playing in the tray (Rust needs to know).
+const tray = () => window.__TAURI__.core.invoke('set_close_to_tray', { on: on('closeTray') }).catch(() => {});
+tray(); onPref('closeTray', tray);
+// Reduce motion / intro splash: classes on <html> (index.html sets them before anything draws).
+const looks = () => { document.documentElement.classList.toggle('calm', on('reduceMotion')); document.documentElement.classList.toggle('no-intro', !on('introSplash')); };
+looks(); onPref(['reduceMotion', 'introSplash'], looks);
+// Year in Review early (admins): redraw Stats if it's open.
+onPref('yirEarly', () => { if (/stats/.test(location.hash)) route({ keepScroll: true }); });
+// Image cache size limit: trim once at start (quietly).
+if (Number(pref('cacheMax'))) setTimeout(() => window.__TAURI__.core.invoke('cache_trim', { maxMb: Number(pref('cacheMax')) }).catch(() => {}), 15000);
 
 // After playback, refresh the page so Continue Watching and progress bars update.
 window.addEventListener('scrappy:refresh', () => {
@@ -323,6 +512,11 @@ window.addEventListener('scrappy:refresh', () => {
 
 window.addEventListener('hashchange', () => route());
 mountSearch();
+// Settings: which tab opens at start (unless an update restart already chose the page).
+if (!location.hash) {
+  const st = pref('startTab'), want = st === 'last' ? pref('lastTab') : st;
+  if (['#/home', '#/music', '#/audiobooks'].includes(want) && want !== '#/home') history.replaceState(history.state, '', want);
+}
 route();
 
 // The Scrappy logo goes to the home screen of whichever tab you're on.
@@ -363,7 +557,19 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === '-' || e.key === '_') { e.preventDefault(); e.stopPropagation(); stepZoom(-1); }
   else if (e.key === '0') { e.preventDefault(); e.stopPropagation(); applyZoom(1, true); }
 }, true);
-window.addEventListener('wheel', (e) => { if (e.ctrlKey) { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); } }, { passive: false });
+window.addEventListener('scrappy:zoom', (e) => {
+  const z = e.detail;
+  if (z > zoomNow && !roomFor(z)) { toast('Make the window bigger to use that size.'); return; }
+  applyZoom(z, false);
+});
+// Ctrl + wheel zooms. The wheel listener is only attached while Ctrl is held: a blocking
+// wheel listener on the whole window makes every normal scroll wait for the page.
+const zoomWheel = (e) => { if (e.ctrlKey) { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); } };
+let zoomArmed = false;
+const armZoom = (on) => { if (on === zoomArmed) return; zoomArmed = on; window[on ? 'addEventListener' : 'removeEventListener']('wheel', zoomWheel, { passive: false }); };
+window.addEventListener('keydown', (e) => { if (e.key === 'Control') armZoom(true); });
+window.addEventListener('keyup', (e) => { if (e.key === 'Control') armZoom(false); });
+window.addEventListener('blur', () => armZoom(false));
 // If the window is made smaller than the zoom level allows, step the zoom back down.
 window.addEventListener('resize', () => {
   if (zoomNow <= 1 || innerWidth >= MIN_W && innerHeight >= MIN_H) return;

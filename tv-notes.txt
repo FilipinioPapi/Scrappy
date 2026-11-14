@@ -1,0 +1,4 @@
+Player freeze: the TV's own sound decoder was jamming after skipping and holding the picture still.
+Scrappy now uses Android's built-in sound decoder first, which avoids the part that jammed.
+If the sound still jams, the film moves to a fresh player by itself after about 5 seconds.
+If a film ever stays stuck in every app, turning the TV off and on at the wall clears it.

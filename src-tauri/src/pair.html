@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scrappy sign-in</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#120C0C;color:#F6E9E9;font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:22px 16px 60px}
+.w{max-width:460px;margin:0 auto}h1{margin:0;color:#EC282E;font-size:30px;letter-spacing:1px;font-weight:900}
+.sub{color:#BFA7A8;margin:4px 0 18px}.c{background:#1E1415;border-radius:16px;padding:16px;margin-top:12px}
+.c h2{margin:0 0 4px;font-size:20px}.c small{color:#BFA7A8}
+.ok{background:rgba(80,200,120,.12);color:#7FD69B;font-weight:700}
+input{width:100%;height:50px;border-radius:12px;border:1px solid #3A2526;background:#2C1C1D;color:#fff;font:inherit;padding:0 14px;margin-top:10px}
+input:focus{outline:2px solid #EDA7AA}
+button{width:100%;height:52px;border:0;border-radius:12px;background:#EC282E;color:#fff;font:inherit;font-weight:800;margin-top:12px}
+button:disabled{opacity:.5}button.l{background:none;color:#EDA7AA;height:40px;margin-top:6px;text-align:left;font-weight:700}
+.e{color:#ff8f93;margin-top:8px;min-height:0}.gone{color:#BFA7A8;text-align:center;margin-top:40px}
+</style></head><body><div class="w">
+<h1>SCRAPPY</h1><div class="sub">Signing in on your TV. Type here and the TV fills in by itself.</div>
+<div id="out"></div></div>
+<script>
+var base = location.pathname.replace(/\/$/, ''), out = document.getElementById('out');
+var last = null, pending = {}, n = 0, drawn = '', vals = {};
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function keep(){document.querySelectorAll('input').forEach(function(i){vals[i.id]=i.value})}
+function draw(st){
+  var key = JSON.stringify([st.servers, st.results, pending, !!last]);
+  if (key === drawn) return; drawn = key; keep();
+  var act = document.activeElement && document.activeElement.id;
+  out.innerHTML = (st.servers||[]).map(function(s){
+    if (s.signedIn) return '<div class="c ok">✓ '+esc(s.name)+' · signed in as '+esc(s.user)+'</div>';
+    var r = (st.results||{})[s.kind], busy = pending[s.kind] && !(r && r.n === pending[s.kind]);
+    var err = r && r.n === pending[s.kind] && !r.ok ? r.error : '';
+    return '<form class="c" data-k="'+s.kind+'"><h2>'+esc(s.name)+'</h2><small>'+esc(s.what)+'</small>'+
+      '<input id="a-'+s.kind+'" placeholder="Server address" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url" value="'+esc(vals['a-'+s.kind]||s.address||'')+'">'+
+      '<input id="u-'+s.kind+'" placeholder="Username" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username" value="'+esc(vals['u-'+s.kind]||'')+'">'+
+      '<input id="p-'+s.kind+'" placeholder="Password" type="password" autocomplete="current-password" value="'+esc(vals['p-'+s.kind]||'')+'">'+
+      (last ? '<button type="button" class="l" data-same="'+s.kind+'">Use the same username and password</button>' : '')+
+      '<div class="e">'+esc(err)+'</div><button'+(busy?' disabled':'')+'>'+(busy?'Signing in…':'Sign in')+'</button></form>';
+  }).join('') + ((st.servers||[]).every(function(s){return s.signedIn}) ? '<div class="gone">All done. You can put your phone down.</div>' : '');
+  if (act && document.getElementById(act)) document.getElementById(act).focus();
+}
+out.addEventListener('click', function(e){ var k = e.target.getAttribute && e.target.getAttribute('data-same'); if (!k || !last) return;
+  document.getElementById('u-'+k).value = last.user; document.getElementById('p-'+k).value = last.pass; });
+out.addEventListener('submit', function(e){ e.preventDefault(); var k = e.target.getAttribute('data-k'); keep();
+  var b = { kind: k, address: vals['a-'+k].trim(), user: vals['u-'+k].trim(), pass: vals['p-'+k], n: ++n };
+  if (!b.address || !b.user) return; pending[k] = b.n; pending['c'+k] = b; drawn = '';
+  fetch(base + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(poll); });
+function poll(){ fetch(base + '/state', { cache: 'no-store' }).then(function(r){ if (!r.ok) throw 0; return r.json() }).then(function(st){
+    Object.keys(st.results||{}).forEach(function(k){ var r = st.results[k], c = pending['c'+k]; if (r.ok && c && r.n === c.n) last = { user: c.user, pass: c.pass }; });
+    draw(st);
+  }).catch(function(){ out.innerHTML = '<div class="gone">The TV has left its sign-in screen. Open Sign in on the TV to get a new code.</div>'; drawn = ''; }); }
+poll(); setInterval(poll, 1200);
+</script></body></html>

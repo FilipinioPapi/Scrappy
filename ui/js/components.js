@@ -1,4 +1,4 @@
-import { img, api } from './api.js';
+import { img, hueOf, api } from './api.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,19 +33,23 @@ const PLAYABLE = new Set(['Movie', 'Episode', 'Video', 'MusicVideo', 'Trailer'])
 export const isPlayable = (it) => PLAYABLE.has(it.Type) || (it.MediaType === 'Video' && !it.IsFolder);
 
 // Choose the best picture for a card shape.
+const ON_TV = document.documentElement.classList.contains('tv');
+// A TV tile is about 230 px wide on a 1080p screen (wide tiles about 390): asking for more only
+// costs a slow TV decode time and picture memory.
+const PW = ON_TV ? 260 : 340, WW = ON_TV ? 420 : 500;
 function pickImage(it, shape) {
   const t = it.ImageTags || {};
   if (shape === 'wide') {
-    if (it.Type === 'Episode' && t.Primary) return img(it.Id, 'Primary', t.Primary, 500);
-    if (t.Thumb) return img(it.Id, 'Thumb', t.Thumb, 500);
-    if (it.BackdropImageTags?.length) return img(it.Id, 'Backdrop', it.BackdropImageTags[0], 500, 0);
-    if (t.Primary) return img(it.Id, 'Primary', t.Primary, 500);
-    if (it.ParentThumbItemId) return img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, 500);
-    if (it.ParentBackdropItemId) return img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags?.[0], 500, 0);
+    if (it.Type === 'Episode' && t.Primary) return img(it.Id, 'Primary', t.Primary, WW);
+    if (t.Thumb) return img(it.Id, 'Thumb', t.Thumb, WW);
+    if (it.BackdropImageTags?.length) return img(it.Id, 'Backdrop', it.BackdropImageTags[0], WW, 0);
+    if (t.Primary) return img(it.Id, 'Primary', t.Primary, WW);
+    if (it.ParentThumbItemId) return img(it.ParentThumbItemId, 'Thumb', it.ParentThumbImageTag, WW);
+    if (it.ParentBackdropItemId) return img(it.ParentBackdropItemId, 'Backdrop', it.ParentBackdropImageTags?.[0], WW, 0);
     return null;
   }
-  if (t.Primary) return img(it.Id, 'Primary', t.Primary, 340);
-  if (it.SeriesPrimaryImageTag) return img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, 340);
+  if (t.Primary) return img(it.Id, 'Primary', t.Primary, PW);
+  if (it.SeriesPrimaryImageTag) return img(it.SeriesId, 'Primary', it.SeriesPrimaryImageTag, PW);
   return null;
 }
 
@@ -59,6 +63,7 @@ export function shapeFor(it) {
 export function card(it, opts = {}) {
   const shape = opts.shape || shapeFor(it);
   const src = pickImage(it, shape);
+  const lo = hueOf(src);
   const ud = it.UserData || {};
   let title = it.Name;
   let sub = opts.subtitle ?? '';
@@ -67,9 +72,8 @@ export function card(it, opts = {}) {
       title = it.SeriesName || it.Name;
       sub = [epCode(it), it.Name].filter(Boolean).join(' · ');
     } else if (it.ProductionYear) {
-      sub = it.Type === 'Series' && it.EndDate && it.Status === 'Ended'
-        ? `${it.ProductionYear}–${new Date(it.EndDate).getFullYear()}`
-        : String(it.ProductionYear);
+      const endY = it.Type === 'Series' && it.EndDate && it.Status === 'Ended' ? new Date(it.EndDate).getFullYear() : 0;
+      sub = endY && endY !== it.ProductionYear ? `${it.ProductionYear}–${endY}` : String(it.ProductionYear);
     }
   }
   const pct = ud.PlayedPercentage && !ud.Played ? ud.PlayedPercentage : 0;
@@ -83,8 +87,8 @@ export function card(it, opts = {}) {
   return `
     <a class="card ${shape}${clickPlay ? ' click-play' : ''}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
       <div class="art">
-        <div class="ph">${esc(it.Name)}</div>
-        ${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
+        ${lo ? `<div class="ph lo" style="background:${lo}"></div>` : `<div class="ph">${esc(it.Name)}</div>`}
+        ${src ? `<img loading="lazy" decoding="async" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
         ${isPlayable(it) ? `<div class="play-over"><span data-play="${esc(it.Id)}" title="Play">${PLAY_ICON}</span></div>` : ''}
         ${badge}
         ${pct ? `<div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>` : ''}
@@ -212,4 +216,5 @@ function addRowArrows(row) {
 
 // Every sideways row: Movies & TV rows (.row) and Music / Audiobooks rows (.mrow).
 const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows]), #view .mrow:not([data-arrows])').forEach(addRowArrows);
-new MutationObserver(scanRows).observe(document.getElementById('view'), { childList: true, subtree: true });
+// (Not on the TV: arrows and bars are for the mouse, and measuring every row costs time.)
+{ const v = document.getElementById('view'); if (v && !/Android/.test(navigator.userAgent)) new MutationObserver(scanRows).observe(v, { childList: true, subtree: true }); }

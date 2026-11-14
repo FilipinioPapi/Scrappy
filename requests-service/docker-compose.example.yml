@@ -1,0 +1,24 @@
+# Copy this file to docker-compose.yml, fill in the values, then run:  docker compose up -d
+services:
+  scrappy-requests:
+    image: ghcr.io/filipiniopapi/scrappy-requests:preview   # use :latest once requests are on main
+    container_name: scrappy-requests
+    restart: unless-stopped
+    ports:
+      - "8095:8095"          # only your reverse proxy needs to reach this; no port forward
+    volumes:
+      - ./data:/data         # the request list lives here (requests.db)
+    environment:
+      ADMINS: "your-emby-username"         # comma-separated Emby usernames that can manage requests
+      REGION: "US"
+      TMDB_API_KEY: ""                      # themoviedb.org > Settings > API
+      EMBY_URL: "http://192.168.1.10:8096"  # Emby as this box sees it (local address is fine)
+      EMBY_API_KEY: ""                      # Emby Dashboard > Advanced > API Keys > New
+      NAVIDROME_URL: "http://192.168.1.10:4533"
+      NAVIDROME_USER: ""                    # a normal (non-admin) Navidrome user
+      NAVIDROME_PASSWORD: ""
+      ABS_URL: "http://192.168.1.10:13378"
+      ABS_TOKEN: ""                         # Audiobookshelf > Settings > Users > (a user) > API token
+      # Later, for the Discord bot:
+      # HANDOFF_URL: "http://jaydenator:3000/scrappy"
+      # HANDOFF_SECRET: "make-up-a-long-random-string"

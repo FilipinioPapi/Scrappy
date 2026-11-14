@@ -19,6 +19,39 @@ const ICON = {
 };
 
 const refreshPage = () => window.dispatchEvent(new Event('scrappy:refresh'));
+// Saved copies of other screens are out of date, but the screen you are on stays as it is.
+const stale = () => window.dispatchEvent(new Event('scrappy:stale'));
+// The round buttons on a title page follow a change made from the menu.
+function syncToggle(it, kind, on) {
+  if (!location.hash.startsWith('#/item/' + encodeURIComponent(it.Id))) return;
+  document.querySelectorAll(`#view [data-toggle="${kind}"]`).forEach((b) => b.classList.toggle('on', on));
+}
+// Mark watched / unwatched without redrawing the page: only the tiles of this title change.
+function markInPlace(it, on) {
+  const ud = (it.UserData ||= {}); ud.Played = on; if (on) { ud.PlaybackPositionTicks = 0; ud.PlayedPercentage = 0; ud.UnplayedItemCount = 0; }
+  const view = document.getElementById('view');
+  view.querySelectorAll(`.card[data-id="${CSS.escape(it.Id)}"]`).forEach((c) => {
+    const art = c.querySelector('.art'); if (!art) return;
+    // Finished things leave Continue Watching.
+    if (on && c.closest('[data-cw]')) { foldAway(c); return; }
+    art.querySelector('.badge')?.remove();
+    if (on) { art.querySelector('.progress')?.remove(); const b = document.createElement('span'); b.className = 'badge pop-in'; b.textContent = '✓'; art.appendChild(b); }
+    const ep = c.closest('[data-ep]');
+    if (ep) {
+      ep.classList.toggle('watched', on && ep.classList.contains('ep-thumb'));
+      const meta = ep.querySelector('.ep-meta');
+      if (meta) {
+        meta.querySelector('.watched')?.remove();
+        meta.innerHTML = meta.innerHTML.split(' · ').filter((x) => x.trim() && !(on && / left$/.test(x))).join(' · ');
+        if (on) meta.insertAdjacentHTML('beforeend', `${meta.textContent.trim() ? ' · ' : ''}<span class="watched pop-in">Watched</span>`);
+      }
+    }
+  });
+  syncToggle(it, 'played', on);
+  // A whole show or season: its episode list (if it is on screen) quietly takes the new ticks.
+  if (it.Type === 'Series' || it.Type === 'Season') document.getElementById('epList')?._soft?.();
+  stale();
+}
 
 // Fold a card out of its row: it shrinks away and its neighbours glide over.
 // Returns a function that brings it back.
@@ -75,6 +108,8 @@ async function getPolicy() {
 window.addEventListener('hashchange', () => { if (location.hash === '#/login') policy = null; });
 
 function rights(pol, it) {
+  // Google TV: editing, deleting and subtitle downloads stay on the PC (approved).
+  if (document.documentElement.classList.contains('tv')) return { canEdit: false, canDelete: false, canSubs: false };
   const admin = !!pol.IsAdministrator;
   // Emby names the "manage library" permission differently across versions.
   const manageFlag = Object.entries(pol).some(([k, v]) => v === true && /metadata|librarymanage|managelibrary|contentmanage/i.test(k));
@@ -91,7 +126,7 @@ menu.className = 'ctx-menu';
 menu.hidden = true;
 document.body.appendChild(menu);
 
-function closeMenu() { menu.hidden = true; }
+function closeMenu() { if (!menu.hidden) menu.hidden = true; }
 document.addEventListener('click', (e) => { if (!menu.contains(e.target)) closeMenu(); });
 window.addEventListener('blur', closeMenu);
 window.addEventListener('scroll', closeMenu, true);
@@ -237,7 +272,7 @@ const ACTIONS = {
     try {
       await (on ? api.post(`/Users/{userId}/FavoriteItems/${it.Id}`) : api.del(`/Users/{userId}/FavoriteItems/${it.Id}`));
       toast(on ? `Added ${it.Name} to Favorites` : `Removed ${it.Name} from Favorites`);
-      refreshPage();
+      (it.UserData ||= {}).IsFavorite = on; syncToggle(it, 'fav', on); stale();
     } catch (e) { toast(String(e), true); }
   },
   async played(it) {
@@ -245,7 +280,7 @@ const ACTIONS = {
     try {
       await (on ? api.post(`/Users/{userId}/PlayedItems/${it.Id}`) : api.del(`/Users/{userId}/PlayedItems/${it.Id}`));
       toast(on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`);
-      refreshPage();
+      markInPlace(it, on);
     } catch (e) { toast(String(e), true); }
   },
   async unresume(it, cardEl) {
@@ -276,7 +311,7 @@ const ACTIONS = {
     try {
       await api.post(`/Items/${it.Id}/Refresh?Recursive=true&MetadataRefreshMode=FullRefresh&ImageRefreshMode=FullRefresh&ReplaceAllMetadata=false&ReplaceAllImages=false`);
       toast(`Refreshing ${it.Name} from online sources. This can take a minute.`);
-      setTimeout(refreshPage, 4000);
+      setTimeout(refreshPage, 4000); setTimeout(refreshPage, 15000);
     } catch (e) { toast(String(e), true); }
   },
   delete: (it) => deleteDialog(it),
