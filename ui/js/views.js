@@ -917,7 +917,10 @@ export async function warmLibraries() {
       let i = Number(localStorage.getItem('sort:' + v.Id) || 0); if (!SORTS[i]) i = 0;
       const p = libPath(v.Id, v, SORTS[i][0], SORTS[i][1], '', '', true) + '&StartIndex=0';
       const one = `/Users/{userId}/Items/${v.Id}`;
-      await Promise.all([memHas(one) ? null : api.get(one), memHas(p) ? null : api.get(p)]);
+      const [, page] = await Promise.all([memHas(one) ? null : api.get(one), memHas(p) ? api.cached(p) : api.get(p)]);
+      // The posters you will see first are fetched too (the same addresses the grid asks for), so
+      // the first visit opens with its pictures instead of waiting for them.
+      for (const it of (page?.Items || []).slice(0, 24)) { const m = card(it).match(/<img[^>]*\ssrc="([^"]+)"/); if (m) preload(m[1].replace(/&amp;/g, '&')); }
     }
   } catch {}
 }
