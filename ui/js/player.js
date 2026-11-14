@@ -573,7 +573,8 @@ function liftSubs(up, instant = false) {
   if (goal === subGoal && subRaf) return;
   subGoal = goal;
   cancelAnimationFrame(subRaf); subRaf = 0;
-  if (instant) { subPos = goal; setProp('sub-pos', goal); return; }
+  // (The TV moves them in one step: its player is told once, not on every frame.)
+  if (instant || document.documentElement.classList.contains('tv')) { if (goal !== subPos) { subPos = goal; setProp('sub-pos', goal); } subGoal = goal; return; }
   const from = subPos, t0 = performance.now(), len = 420;
   cancelAnimationFrame(subRaf);
   const step = () => {
