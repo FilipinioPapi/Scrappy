@@ -26,6 +26,9 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import io.github.peerless2012.ass.media.AssHandlerConfig
+import io.github.peerless2012.ass.media.kt.buildWithAssSupport
+import io.github.peerless2012.ass.media.type.AssRenderType
 import app.tauri.annotation.Command
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
@@ -233,10 +236,31 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
       })
     PlayerLog.add(if (!plain) "sound: untouched to a soundbar when it can take it" else if (plainSound) "sound: decoded in the app (after a jam)" else "sound: decoded in the app")
     videoDecoder = ""; audioDecoder = ""; dropped = 0
-    val p = ExoPlayer.Builder(activity, renderers)
-      .setSeekBackIncrementMs(10_000)
-      .setSeekForwardIncrementMs(30_000)
-      .build()
+    val v = PlayerView(activity)
+    // Styled subtitles (ASS/SSA: fan subs, anime, signs and karaoke) are drawn by libass, the same
+    // engine mpv uses on the PC, on their own layer over the picture: fonts, colours, positions
+    // and moving effects as the subtitle's author made them. Drawn at no more than 720p worth of
+    // pixels, on its own thread, so a busy scene of signs can't hold the picture up. Plain
+    // subtitles (SRT, VTT) keep the look chosen in Settings.
+    val p = try {
+      ExoPlayer.Builder(activity)
+        .setSeekBackIncrementMs(10_000)
+        .setSeekForwardIncrementMs(30_000)
+        .buildWithAssSupport(
+          activity,
+          AssRenderType.OVERLAY_OPEN_GL,
+          AssHandlerConfig(maxRenderPixels = 1280 * 720),
+          v.subtitleView,
+          renderersFactory = renderers
+        ).also { PlayerLog.add("styled subtitles: on") }
+    } catch (e: Throwable) {
+      // Never let the subtitle engine stop a film from playing.
+      PlayerLog.add("styled subtitles: off (${e.javaClass.simpleName} ${e.message ?: ""})")
+      ExoPlayer.Builder(activity, renderers)
+        .setSeekBackIncrementMs(10_000)
+        .setSeekForwardIncrementMs(30_000)
+        .build()
+    }
     // Jumps land on the nearest clean frame of the film: near instant on a TV chip, where an
     // exact landing can take seconds of catching up (and a few in a row jam the decoder).
     p.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
@@ -279,7 +303,6 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
         PlayerLog.add("sound output error: ${audioSinkError.message ?: audioSinkError.toString()}")
       }
     })
-    val v = PlayerView(activity)
     v.useController = false
     v.setShutterBackgroundColor(Color.BLACK)
     // Pure black around the picture, so the bars of a wide film melt into the TV's frame.
