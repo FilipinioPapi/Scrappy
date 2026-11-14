@@ -110,7 +110,8 @@ impl Player {
             }
             ["seek", secs, mode @ ..] => {
                 let v: f64 = secs.parse().unwrap_or(0.0);
-                let relative = mode.first().map(|m| *m != "absolute").unwrap_or(true);
+                // "absolute", "absolute+exact", "absolute+keyframes" are all a spot in the film; the rest are steps.
+                let relative = mode.first().map(|m| !m.starts_with("absolute")).unwrap_or(true);
                 control("seek", json!({ "value": v, "relative": relative }))
             }
             ["cycle", "pause"] => control("toggle", json!({})),

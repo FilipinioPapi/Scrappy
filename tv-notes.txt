@@ -1,5 +1,5 @@
-New: Who is watching. Several people can share this TV, with an optional PIN each.
-New loading look: posters start as their own blurred colours, then sharpen in.
+Player: skipping never jams the film. Presses add up into one jump, and holding speeds up.
+Player: if a film ever stalls it picks itself up from the same spot.
+Player: Left and Right walk across every button, through to subtitles, speed and settings.
 Opening a title: Home fades away the moment you press, and only the poster glides across.
 Mark watched from the Hold OK menu ticks the tile in place. The screen no longer reloads.
-Back from a title drops you exactly where you were, with no scrolling.

@@ -1061,8 +1061,8 @@ el.addEventListener('click', (e) => {
   switch (b.dataset.act) {
     case 'exit': exitPlayer(); break;
     case 'pause': togglePause(); break;
-    case 'rew': seekBy(-skipBack()); break;
-    case 'fwd': seekBy(skipFwd()); break;
+    case 'rew': if (TVP) tvSeek(-1, false); else seekBy(-skipBack()); break;
+    case 'fwd': if (TVP) tvSeek(1, false); else seekBy(skipFwd()); break;
     case 'next': playNext(); break;
     case 'mute': setProp('mute', S.muted ? 'no' : 'yes'); break;
     case 'cc': toggleSubs(); break;
@@ -1295,6 +1295,26 @@ el.addEventListener('wheel', (e) => {
 // is open, then hides the bar, then leaves the video.
 const TVP = document.documentElement.classList.contains('tv');
 const tvFocus = (sel) => { const n = typeof sel === 'string' ? $(sel) : sel; if (n) n.focus({ preventScroll: true }); };
+// Skipping with the remote: presses add up on the time bar and the film makes ONE jump when you
+// stop (a jump per press jams the TV's player). Keep going and the steps grow, so a long film
+// can be crossed in a few seconds.
+let tvTo = null, tvSeekT = 0, tvRelT = 0, tvRun = 0, tvLastSkip = 0;
+function tvSeek(dir, held) {
+  const now = performance.now();
+  tvRun = held || now - tvLastSkip < 500 ? tvRun + 1 : 0; tvLastSkip = now;
+  const base = dir < 0 ? skipBack() : skipFwd();
+  const step = tvRun < 4 ? base : tvRun < 10 ? Math.max(base, 30) : tvRun < 20 ? 60 : tvRun < 34 ? 120 : 300;
+  const d = dur();
+  tvTo = Math.max(0, Math.min(d > 20 ? d - 5 : Infinity, (tvTo ?? livePos()) + dir * step));
+  S.dragging = true; drawBar(tvTo); wake();
+  clearTimeout(tvSeekT); clearTimeout(tvRelT);
+  tvSeekT = setTimeout(() => {
+    const t = tvTo;
+    if (S.open && t != null) { cmd('seek', t.toFixed(2), 'absolute+exact'); S.pos = t; markPos(); }
+    // Hold the bar on the new spot until the player has caught up.
+    tvRelT = setTimeout(() => { tvTo = null; S.dragging = false; if (S.open) drawTime(); }, 700);
+  }, 350);
+}
 function tvKey(e) {
   const k = e.key; const a = document.activeElement;
   const inCtl = !!a && a !== el && el.contains(a);
@@ -1311,7 +1331,7 @@ function tvKey(e) {
   if (k === 'n' || k === 'N') { if (S.next) playNext(); return true; }
   // A card on screen (Up next, Still watching): the remote lands on its first button.
   if (card && !card.contains(a)) { tvFocus(card.querySelector('button')); wake(); return true; }
-  if ((k === 'ArrowLeft' || k === 'ArrowRight') && (!inCtl || onSeek)) { seekBy(k === 'ArrowLeft' ? -skipBack() : skipFwd()); wake(); return true; }
+  if ((k === 'ArrowLeft' || k === 'ArrowRight') && (!inCtl || onSeek)) { tvSeek(k === 'ArrowLeft' ? -1 : 1, e.repeat); return true; }
   // With nothing on screen, OK always pauses (or skips an intro) and brings the bar up on Play.
   if (k === 'Enter' && el.classList.contains('idle') && !card) { if (skipMode) doSkip(); else togglePause(); wake(); tvFocus('.p-play'); return true; }
   if (!inCtl) {
@@ -1321,6 +1341,15 @@ function tvKey(e) {
   }
   if (k === 'Enter' && onSeek) { togglePause(); wake(); return true; }
   if (k === 'ArrowDown' && onSeek) { wake(); tvFocus('.p-play'); return true; }
+  // Along the row of buttons, Left and Right always go to the next button, however far away it is.
+  const row = a.closest('.p-row');
+  if (row && (k === 'ArrowLeft' || k === 'ArrowRight') && !S.settingsOpen && !S.epsOpen) {
+    const btns = [...row.querySelectorAll('button')].filter((b) => b.offsetWidth > 2 && !b.disabled && getComputedStyle(b).visibility !== 'hidden' && getComputedStyle(b).display !== 'none')
+      .sort((x, y) => x.getBoundingClientRect().left - y.getBoundingClientRect().left);
+    const to = btns[btns.indexOf(a) + (k === 'ArrowRight' ? 1 : -1)];
+    if (to) tvFocus(to);
+    wake(); return true;
+  }
   wake();
   return false; // tv.js moves the highlight; OK presses the highlighted button
 }

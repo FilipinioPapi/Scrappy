@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.FrameLayout
@@ -50,6 +51,48 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
   private var error: String? = null
   private var muted = false
   private var volume = 100f
+  // Getting going again by itself after a hiccup (network drop, the TV's decoder stumbling).
+  private var retries = 0
+  private var kicks = 0
+  private var goodTicks = 0
+  private var lastPos = -1L
+  private var stuckSince = 0L
+  private var watching = false
+  private val watchdog = object : Runnable {
+    override fun run() {
+      try { checkStuck() } catch (e: Exception) { }
+      main.postDelayed(this, 2000)
+    }
+  }
+
+  /** Meant to be playing but the picture has not moved: nudge it, then reload it at the same spot. */
+  private fun checkStuck() {
+    val p = player ?: return
+    if (p.currentMediaItem == null || !p.playWhenReady || error != null) { stuckSince = 0L; return }
+    val now = SystemClock.elapsedRealtime()
+    val pos = p.currentPosition
+    val st = p.playbackState
+    val moving = (st == Player.STATE_READY && pos != lastPos) || st == Player.STATE_ENDED
+    lastPos = pos
+    if (moving) {
+      stuckSince = 0L
+      // A minute of steady playing: the earlier trouble is over.
+      if (++goodTicks > 30) { retries = 0; kicks = 0 }
+      return
+    }
+    goodTicks = 0
+    if (stuckSince == 0L) { stuckSince = now; return }
+    if (now - stuckSince < 15_000) return
+    stuckSince = now
+    kicks++
+    when {
+      st == Player.STATE_IDLE -> p.prepare()
+      kicks == 1 -> p.seekTo(pos)
+      kicks <= 3 -> { p.stop(); p.prepare() }
+      // Nothing helped: say so and leave the player, so it is never a dead end. Resume picks it up.
+      else -> error = "Playback stopped responding. Choose Resume to carry on from the same spot."
+    }
+  }
   // mpv-style track numbers (1, 2, 3… per type) -> where the track lives in Media3.
   private val trackMap = HashMap<String, Pair<Int, Int>>()
 
@@ -76,12 +119,24 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
       .setSeekBackIncrementMs(10_000)
       .setSeekForwardIncrementMs(30_000)
       .build()
+    // Jumps land on the nearest clean frame of the film: near instant on a TV chip, where an
+    // exact landing can take seconds of catching up (and a few in a row jam the decoder).
+    p.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
     p.addListener(object : Player.Listener {
       override fun onPlaybackStateChanged(state: Int) {
         if (state == Player.STATE_READY && readySeq != loadSeq) readySeq = loadSeq
         if (state == Player.STATE_ENDED) ended = true
       }
       override fun onPlayerError(e: PlaybackException) {
+        // Most errors in the middle of a film are a passing hiccup: carry on from the same spot
+        // a few times before giving up. (A file the TV can't play at all fails before it is ready.)
+        if (readySeq == loadSeq && retries < 3 && p.currentMediaItem != null) {
+          retries++
+          main.postDelayed({
+            if (player === p && error == null && p.currentMediaItem != null && p.playbackState == Player.STATE_IDLE) p.prepare()
+          }, 800L * retries)
+          return
+        }
         error = "The TV couldn't play this (${e.errorCodeName})."
       }
     })
@@ -115,6 +170,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     wv?.setBackgroundColor(Color.TRANSPARENT)
     player = p
     view = v
+    if (!watching) { watching = true; main.postDelayed(watchdog, 2000) }
     return p
   }
 
@@ -150,6 +206,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
       loadSeq++
       ended = false
       error = null
+      retries = 0; kicks = 0; goodTicks = 0; stuckSince = 0L; lastPos = -1L
       trackMap.clear()
       // Start with no text track picked; Scrappy picks subtitles itself.
       p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
@@ -173,12 +230,13 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     ui(invoke) {
       val p = player ?: return@ui null
       when (what) {
-        "pause" -> p.playWhenReady = !a.optBoolean("on", true)
-        "toggle" -> p.playWhenReady = !p.playWhenReady
+        "pause" -> { p.playWhenReady = !a.optBoolean("on", true); wake(p) }
+        "toggle" -> { p.playWhenReady = !p.playWhenReady; wake(p) }
         "seek" -> {
           val t = a.optDouble("value", 0.0)
           val target = if (a.optBoolean("relative", false)) p.currentPosition + (t * 1000).toLong() else (t * 1000).toLong()
           p.seekTo(target.coerceAtLeast(0))
+          wake(p)
         }
         "speed" -> p.playbackParameters = PlaybackParameters(a.optDouble("value", 1.0).toFloat())
         "volume" -> { volume = a.optDouble("value", 100.0).toFloat(); p.volume = if (muted) 0f else (volume / 100f).coerceIn(0f, 1f) }
@@ -198,6 +256,11 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
       }
       null
     }
+  }
+
+  /** Asked to play while the player has dropped its file (after an error): load it again there. */
+  private fun wake(p: ExoPlayer) {
+    if (p.playWhenReady && p.playbackState == Player.STATE_IDLE && p.currentMediaItem != null && error == null) p.prepare()
   }
 
   private fun selectTrack(p: ExoPlayer, type: String, id: String) {
@@ -310,6 +373,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   override fun onDestroy() {
+    main.removeCallbacks(watchdog)
     player?.release()
     player = null
   }
