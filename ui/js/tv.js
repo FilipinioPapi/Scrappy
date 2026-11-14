@@ -6,6 +6,8 @@ const root = document.documentElement;
 root.classList.add('tv');
 import('./tvupdate.js').catch(() => {});
 import('./tvfly.js').catch(() => {});
+// "Who's watching?" when the app opens (only when more than one person is on this TV).
+window.__TAURI__.core.invoke('get_session').then((s) => import('./tvwho.js').then((m) => m.whoAtStart(s))).catch(() => {});
 // The side rail (set when it has loaded).
 let railApi = null;
 import('./tvrail.js').then((m) => { railApi = m; }).catch(() => {});

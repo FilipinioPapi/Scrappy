@@ -3690,3 +3690,52 @@ html.tv:not(.tv-fast) .card .art img { transition: opacity .26s ease; }
 
 /* TV: the poster that carries over when a title opens (tvfly.js). */
 .tv-fly { position: fixed; z-index: 9; border-radius: var(--radius); background: var(--bg-2) center / cover no-repeat; transform-origin: 0 0; will-change: transform; pointer-events: none; }
+
+/* TV: "Who's watching?" (tvwho.js): the faces screen, the side bar list and the PIN pad. */
+html.tv #tvrail .tr-me { margin-bottom: 8px; }
+html.tv #tvrail .tr-face { position: relative; width: 30px; height: 30px; margin: 0 -1.5px; border-radius: 50%; overflow: hidden; flex: none; display: grid; place-items: center; font: 800 15px/1 inherit; font-style: normal; color: #fff; background: linear-gradient(135deg, #f08a3c, #b13a1e); }
+html.tv #tvrail .tr-face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.who { position: fixed; inset: 0; z-index: 8500; color: var(--text); }
+.who h3 { margin: 0; }
+.who.full, .who.pinpad { background: radial-gradient(ellipse at 50% 0, #2a1214, var(--bg) 60%); display: grid; place-items: center; }
+.who-full, .who-pin { display: flex; flex-direction: column; align-items: center; gap: 36px; }
+.who-full h3 { font: 400 50px/1 var(--display); }
+.who-ppl { display: flex; flex-wrap: wrap; justify-content: center; gap: 38px; max-width: 1200px; }
+.who-p { display: flex; flex-direction: column; align-items: center; gap: 13px; background: none; border: 0; padding: 0; font: 700 20px/1.2 inherit; color: var(--muted); cursor: pointer; outline: none; }
+.who-p small { font: 600 13.5px/1 inherit; color: var(--muted); margin-top: -6px; }
+.who-face { position: relative; width: 146px; height: 146px; border-radius: 50%; display: grid; place-items: center; font: 400 64px/1 var(--display); font-style: normal; color: #fff; transition: transform .12s ease-out; }
+.who-face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.who-face.add { background: var(--bg-3); border: 2px dashed var(--line); color: var(--muted); font: 300 70px/1 inherit; }
+.who-face.lock::after { content: "PIN"; position: absolute; right: -4px; bottom: 4px; font: 800 12px/1 Inter, system-ui, sans-serif; letter-spacing: .04em; background: #0C0808; border: 1.5px solid var(--line); border-radius: 7px; padding: 3px 7px; color: var(--text); }
+.who-face.c1 { background: linear-gradient(135deg, #f08a3c, #b13a1e); } .who-face.c2 { background: linear-gradient(135deg, #4d9de0, #2b4a8a); }
+.who-face.c3 { background: linear-gradient(135deg, #59c27a, #1f6b4a); } .who-face.c4 { background: linear-gradient(135deg, #b06fd8, #5a2b86); }
+.who-face.c5 { background: linear-gradient(135deg, #e0607e, #8a2b48); } .who-face.c6 { background: linear-gradient(135deg, #d8b84a, #86601f); }
+.who-p:focus { color: #fff; }
+.who-p:focus .who-face { outline: 4px solid #fff; outline-offset: 5px; transform: scale(1.06); }
+.who-note { margin: 0; color: var(--muted); font-size: 16px; }
+.who.side { background: rgba(0,0,0,.55); }
+.who-panel { position: absolute; left: 0; top: 0; bottom: 0; width: 400px; background: #170f10; border-right: 1px solid var(--line); padding: 40px 26px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; animation: whoIn .18s ease-out; }
+@keyframes whoIn { from { transform: translateX(-40px); opacity: 0; } }
+.who-panel h3 { font-size: 24px; font-weight: 800; margin: 0 8px 12px; }
+.who-panel .who-p { flex-direction: row; gap: 16px; padding: 10px 12px; border-radius: 12px; font-size: 19px; text-align: left; }
+.who-panel .who-p span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-panel .who-p small { margin: 0; }
+.who-panel .who-face { width: 52px; height: 52px; font-size: 25px; flex: none; }
+.who-panel .who-face.add { font-size: 28px; border-width: 1.5px; }
+.who-panel .who-face.lock::after { display: none; }
+.who-panel .who-p:focus { background: var(--bg-3); box-shadow: 0 0 0 3px #fff; }
+.who-panel .who-p:focus .who-face { outline: none; transform: none; }
+.who-pin { gap: 22px; }
+.who-pin h3 { font: 400 36px/1 var(--display); }
+.who-pin .who-p { cursor: default; }
+.who-pin .who-face { width: 100px; height: 100px; font-size: 44px; }
+.who-dots { display: flex; gap: 16px; }
+.who-dots b { width: 56px; height: 68px; border-radius: 12px; background: var(--bg-2); border: 2px solid var(--line); display: grid; place-items: center; font-size: 36px; }
+.who-dots b.f { border-color: #fff; }
+.who-pad { display: grid; grid-template-columns: repeat(3, 76px); gap: 10px; }
+.who-pad button { height: 54px; border-radius: 12px; border: 0; background: var(--bg-3); color: var(--text); font: 700 22px/1 inherit; cursor: pointer; outline: none; }
+.who-pad button:focus { background: var(--red); box-shadow: 0 0 0 3px #fff; }
+html.tv .who-p:focus, html.tv .who-pad button:focus { outline: none; }
+html.tv .who.full .who-p:focus, html.tv .who-pin .who-p:focus { box-shadow: none; background: none; }
+.who-pin .who-face.lock::after { display: none; }
+.who-face.add { font-family: Inter, system-ui, sans-serif; font-weight: 300; }
