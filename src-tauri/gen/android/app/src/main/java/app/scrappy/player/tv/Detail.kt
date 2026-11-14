@@ -152,6 +152,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     Net.load("/Shows/$itemId/Seasons?UserId={userId}&Fields=$FIELDS,ChildCount") { v, _ ->
       val all = Net.items(v)
       seasons = all.filter { s -> s.optInt("IndexNumber", -1) != 0 } + all.filter { s -> s.optInt("IndexNumber", -1) == 0 }
+      measureTabs()
       if (seasons.isEmpty()) { layout(); tv.invalidate(); return@load }
       val pick = seasons.firstOrNull { s -> s.optString("Id") == selected.ifEmpty { wantSeason } }
         ?: seasons.firstOrNull { s -> s.optInt("IndexNumber", -1) != 0 && (s.optJSONObject("UserData")?.optInt("UnplayedItemCount") ?: 0) > 0 }
@@ -461,7 +462,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       26.67f * 2 + tabP.measureText(t[k].second) + if (n > 0) 8f + tabN.measureText(n.toString()) else 0f
     }
   }
-  private fun tabLeft(k: Int): Float { var x = 0f; for (j in 0 until k) x += tabW[j] + 16f; return x }
+  private fun tabLeft(k: Int): Float { var x = 0f; for (j in 0 until k) x += tabW.getOrElse(j) { 0f } + 16f; return x }
 
   // ---------------- remote ----------------
 
@@ -499,12 +500,16 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     else -> null
   }
 
+  // Cast and More like this start at their first entry, then come back to where you left them (as on the web page).
+  private val lastCol = HashMap<Char, Int>()
   private fun enter(r: Char, fromX: Float, down: Boolean) {
+    if (row == 'C' || row == 'S') lastCol[row] = col
     row = r
     val h = here(r)
     col = when {
       r == 'T' && h != null -> h
       h != null && r !in visited -> h
+      r == 'C' || r == 'S' -> lastCol[r] ?: 0
       r == 'E' && epView == "grid" -> gridEnter(fromX, down)
       else -> nearest(r, fromX)
     }.coerceIn(0, maxOf(0, rowLen(r) - 1))
@@ -896,6 +901,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     // Season bar.
     if (seasons.isNotEmpty()) {
       val t = tabs()
+      if (tabW.size != t.size) measureTabs()
       if (hasPick) {
         val w = 169f
         r.set(150f, barTop, 150f + w, barTop + 61f)
@@ -911,7 +917,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
         c.save(); c.clipRect(TABS_X - 8f, barTop - 8f, 1870f, barTop + 69f)
         var x = TABS_X - tabsX.pos
         for ((k, tab) in t.withIndex()) {
-          val w = tabW[k]
+          val w = tabW.getOrElse(k) { 0f }
           if (x + w > TABS_X - 20f && x < 1880f) {
             r.set(x, barTop, x + w, barTop + 61f)
             val foc = row == 'T' && col == k + (if (hasPick) 1 else 0)

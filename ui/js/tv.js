@@ -308,7 +308,8 @@ addEventListener('keydown', (e) => {
   }
   if (pend) { flushPend(); return; }
   const scope = scopeFor(cur);
-  if (!cur || !scope.contains(cur)) { const f = first(scope); if (f) go(f); return; }
+  // Nothing (or only the page itself, e.g. after a native screen) holds the highlight: start on the page's first thing.
+  if (!cur || !scope.contains(cur) || cur.id === 'view' || cur === document.documentElement) { const f = first(scope); if (f) go(f); return; }
   // The side rail: Up/Down move inside it, Right goes back to where you were on the page.
   if (inRail(cur)) {
     if (k === 'ArrowLeft') return;

@@ -118,7 +118,7 @@ function refocus() {
     const layer = [...document.querySelectorAll(LAYERS)].pop();
     if (layer) { if (!layer.contains(a)) layer.querySelector('button, [tabindex], a, input')?.focus({ preventScroll: true }); return; }
     const view = document.getElementById('view');
-    if (!a || a === document.body || !view?.contains(a)) window.__tvFocusFirst?.();
+    if (!a || a === document.body || a === view || !view?.contains(a)) window.__tvFocusFirst?.();
   };
   setTimeout(fix, 60); setTimeout(fix, 300);
 }
