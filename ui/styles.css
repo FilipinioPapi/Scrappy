@@ -3395,14 +3395,16 @@ label.set-row { cursor: pointer; }
 html.tv #tvrail:not([hidden]) { display: flex; }
 html.tv #tvrail { position: fixed; left: 0; top: 0; bottom: 0; width: 88px; z-index: 40; flex-direction: column; gap: 6px; padding: 24px 14px; overflow: hidden;
   background: #0C0808; border-right: 1px solid #1F1516; transition: width .16s ease-out; }
-html.tv #tvrail:focus-within { width: 320px; box-shadow: 24px 0 48px rgba(0,0,0,.6); }
+html.tv #tvrail:focus-within:not(.picked) { width: 320px; box-shadow: 24px 0 48px rgba(0,0,0,.6); }
+/* Folded at once after a pick: a sliding fold would only start after the new screen is built. */
+html.tv #tvrail.picked { transition: none; }
 html.tv #tvrail .tr-logo { display: flex; align-items: center; gap: 12px; height: 56px; margin: 0 0 14px 4px; flex: none; }
 html.tv #tvrail .tr-logo img { width: 52px; height: 52px; object-fit: contain; flex: none; }
 html.tv #tvrail .tr-logo b { font: 400 27px/1 var(--display); color: var(--red); letter-spacing: .02em; opacity: 0; transition: opacity .12s; white-space: nowrap; }
 html.tv #tvrail .tr-i { display: flex; align-items: center; gap: 18px; height: 52px; padding: 0 16px; border-radius: 14px; color: #B9A9A7; text-decoration: none; flex: none; white-space: nowrap; font-size: 20px; font-weight: 600; outline: none; }
 html.tv #tvrail .tr-i svg { width: 27px; height: 27px; flex: none; }
 html.tv #tvrail .tr-i span { opacity: 0; transition: opacity .12s; overflow: hidden; text-overflow: ellipsis; }
-html.tv #tvrail:focus-within .tr-i span, html.tv #tvrail:focus-within .tr-logo b { opacity: 1; }
+html.tv #tvrail:focus-within:not(.picked) .tr-i span, html.tv #tvrail:focus-within:not(.picked) .tr-logo b { opacity: 1; }
 html.tv #tvrail .tr-i.cur { color: #fff; background: rgba(255,255,255,.08); }
 html.tv #tvrail .tr-i.cur svg { color: var(--red-hi, var(--red)); }
 html.tv #tvrail .tr-i:focus { background: #fff; color: #140D0E; outline: none; box-shadow: none; }

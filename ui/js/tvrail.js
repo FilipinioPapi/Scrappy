@@ -83,4 +83,9 @@ rail.addEventListener('focusin', (e) => e.target.scrollIntoView?.({ block: 'near
 addEventListener('hashchange', () => { mark(); loadMe(); if (!views.length) loadViews(); });
 // Picking the screen you're already on just closes the rail.
 rail.addEventListener('click', (e) => { const a = e.target.closest('.tr-i'); if (!a) return; if (a.dataset.k === 'me') { e.preventDefault(); import('./tvwho.js').then((m) => m.who({ side: true })).catch(() => {}); return; } if (a.getAttribute('href') === (location.hash || '#/home')) { e.preventDefault(); window.dispatchEvent(new Event('tv:leave-rail')); } else window.dispatchEvent(new Event('tv:rail-go')); });
+// Picking another screen folds the rail away at once, instead of leaving it open over the new
+// screen until that has finished building. It opens again as soon as the remote moves on it.
+rail.addEventListener('click', (e) => { const a = e.target.closest('a.tr-i'); if (a && a.dataset.k !== 'me' && !e.defaultPrevented) rail.classList.add('picked'); });
+rail.addEventListener('focusout', (e) => { if (!rail.contains(e.relatedTarget)) rail.classList.remove('picked'); });
+rail.addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow')) rail.classList.remove('picked'); }, true);
 setTimeout(loadViews, 600);
