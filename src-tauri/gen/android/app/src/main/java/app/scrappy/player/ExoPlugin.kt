@@ -503,7 +503,11 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
         o.put("external", ext)
         o.put("default", (f.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0)
         o.put("forced", (f.selectionFlags and C.SELECTION_FLAG_FORCED) != 0)
-        val codec = (f.sampleMimeType ?: f.codecs ?: "").substringAfter('/').lowercase()
+        // Subtitles reach the player already unpacked ("x-media3-cues"); their real kind is in `codecs`.
+        val kind = if (f.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES) (f.codecs ?: "") else (f.sampleMimeType ?: f.codecs ?: "")
+        val codec = when (val c = kind.substringAfter('/').lowercase()) {
+          "x-subrip" -> "srt"; "x-ssa" -> "ass"; "vtt" -> "webvtt"; "x-media3-cues" -> ""; else -> c
+        }
         o.put("codec", codec)
         if (f.channelCount > 0) o.put("demux-channel-count", f.channelCount)
         // The stream's number inside the file, counted from 0 like Emby does.
