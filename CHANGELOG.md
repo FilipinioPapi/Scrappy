@@ -7,6 +7,13 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 40 · Nov 14, 2:50 PM
+**Movies & TV**
+- Changed: genres with fewer than 5 titles no longer show on the Genres page (Home's Browse by genre uses the same cut-off)
+- New: collections without a picture now show their first movie's poster
+
+<sub>Built from 4e4c973 · includes: Movies & TV</sub>
+
 ### Preview 39 · Nov 14, 2:37 PM
 **Movies & TV**
 - Changed: Continue Watching shows each show's own picture for episodes, instead of a still from the episode
