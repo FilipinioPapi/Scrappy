@@ -152,7 +152,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
         if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
           okDown = e.downTime; holdFired = false
           removeCallbacks(holdRun); postDelayed(holdRun, 600)
-        } else if (e.action == KeyEvent.ACTION_DOWN && !holdFired && e.eventTime - e.downTime >= 550) {
+        } else if (e.action == KeyEvent.ACTION_DOWN && !holdFired && (e.isLongPress || e.eventTime - e.downTime >= 550)) {
           removeCallbacks(holdRun); holdRun.run()
         } else if (e.action == KeyEvent.ACTION_UP) {
           removeCallbacks(holdRun)

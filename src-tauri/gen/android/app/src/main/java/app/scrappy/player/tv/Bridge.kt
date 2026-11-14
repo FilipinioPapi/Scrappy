@@ -56,21 +56,31 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   /** Keys while a native screen is up and nothing from the web is on top. */
   fun takesKeys() = active && !webKeys && !playing
 
+  private var hadNativeKeys = false
+  private var webHidden = false
+
   private fun apply() {
     val nativeKeys = active && !webKeys && !playing
     view.visibility = if (active && !playing) View.VISIBLE else View.GONE
-    // The remote's focus moves for real between the two views. The web view only takes keys again
-    // after a real focus change (being hidden quietly blurs the page, and the remote then did nothing
-    // on the next web screen). Native first, so the web view never hides while holding the focus.
+    // The remote's focus moves for real between the two views. Native first, so the web view never
+    // hides while holding the focus.
     if (nativeKeys && !view.isFocused) view.requestFocus()
     // With nothing on top, the web view is put away entirely, so it costs nothing while you browse.
     val webShown = !active || webVis || playing
+    val wasHidden = webHidden
+    webHidden = !webShown
     web.visibility = if (webShown) View.VISIBLE else View.INVISIBLE
-    if (!nativeKeys && !web.hasFocus()) {
+    // Keys go back to the web page: hiding the web view leaves its page unfocused even while Android
+    // still counts the view as focused (the remote then did nothing on the next web screen). Take the
+    // focus away and give it back, so the page itself is focused again.
+    if (!nativeKeys && (hadNativeKeys || wasHidden || !web.hasFocus())) {
+      if (web.hasFocus()) web.clearFocus()
       web.requestFocus()
       // Taking the focus moves the page's highlight to its first element; put it back.
       eval("window.__tvNative && window.__tvNative.refocus()")
     }
+    hadNativeKeys = nativeKeys
+    view.post { Log.i("ScrappyNative", "focus native=$nativeKeys tv=${view.isFocused} web=${web.hasFocus()} webShown=$webShown") }
     view.invalidate()
   }
 
