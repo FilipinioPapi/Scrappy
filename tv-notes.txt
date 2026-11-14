@@ -1,5 +1,5 @@
-Your look answers are in: Continue Watching shows each show's artwork with its title
-Collections with no picture borrow their first film's poster, and cast with no photo get coloured initials
-Search puts the best match first, then films and shows, people and episodes
-Every quick press of the remote now counts, and long shows get a Seasons list
-About & help has What's new, Remote tips and Restart; leaving a film takes two Backs
+Your look answers are in: Continue Watching shows each show's artwork, search puts the best match first, long shows get a Seasons list
+The picked season or library tab is a red outline everywhere, white only where the remote is
+Search shows people without a photo as coloured initials, like Cast & Crew
+On Home, Up from the first genre row reaches the Movies / TV Shows tabs
+Moving down Home always lands on a poster, never on a "See all" link

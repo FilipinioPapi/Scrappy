@@ -373,7 +373,7 @@ function tvSearchPage(root, ctx, q) {
     const v = res.video || { items: [], people: [] };
     const tops = v.items.filter((x) => x.Type !== 'Episode'); const eps = v.items.filter((x) => x.Type === 'Episode');
     const sec = (title, n, body) => n ? `<section class="sres"><div class="section-head"><h2>${title}</h2><span class="count">${n}</span></div>${body}</section>` : '';
-    const person = (p) => `<a class="card portrait tvs-person" href="#/person/${encodeURIComponent(p.Id)}"><div class="art"><div class="ph">${esc(p.Name)}</div>${p.ImageTags?.Primary ? `<img loading="lazy" decoding="async" src="${esc(img(p.Id, 'Primary', p.ImageTags.Primary, 220))}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}</div><div class="title">${esc(p.Name)}</div></a>`;
+    const person = (p) => `<a class="card portrait tvs-person" href="#/person/${encodeURIComponent(p.Id)}"><div class="art"><div class="ph person-ph pc${[...String(p.Name || '?')].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 997, 7) % 6 + 1}">${esc((p.Name || '?').trim().charAt(0).toUpperCase())}</div>${p.ImageTags?.Primary ? `<img loading="lazy" decoding="async" src="${esc(img(p.Id, 'Primary', p.ImageTags.Primary, 220))}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}</div><div class="title">${esc(p.Name)}</div></a>`;
     const other = ['music', 'audiobooks'].flatMap((k) => GROUPS[k](res[k]).filter((g) => g.rows.length)).map((g) => sec(g.title, g.rows.length, `<div class="sgrid">${g.rows.map(rowHtml).join('')}</div>`)).join('');
     // Order (Jayden's pick): the best match on its own first, then films and shows, people, episodes.
     let best = null, bestS = 0.84;

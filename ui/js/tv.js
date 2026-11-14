@@ -322,7 +322,21 @@ addEventListener('keydown', (e) => {
   if (k === 'ArrowLeft' && cur.closest('.set-body')) { const f = nearest(cur, k, candidates(scope).filter((el) => el.closest('.set-body')), true) || document.querySelector('.set-side a.on'); if (f) { go(f); return; } }
   let next = nearest(cur, k, candidates(scope, true).filter((el) => !inRail(el)), scope === pageScope());
   if (!next) next = nearest(cur, k, candidates(scope).filter((el) => !inRail(el)), scope === pageScope());
+  // Home's genre rows: Up from the first row reaches the library tabs (Movies, TV Shows...) beside the heading.
+  if (k === 'ArrowUp' && cur.classList.contains('card')) {
+    const gr = cur.closest('.genre-row');
+    if (gr && !gr.previousElementSibling?.matches?.('.genre-row')) { const t = gr.closest('.genre-section')?.querySelector('.season-tabs .season-tab.active'); if (t && shown(t)) { go(t); return; } }
+  }
   if (next) {
+    // Coming into a genre row from another row lands on a poster, never on its "See all" link.
+    if ((k === 'ArrowDown' || k === 'ArrowUp') && next.matches('.see-all') && next.closest('.genre-row') !== cur.closest('.genre-row')) {
+      const row = next.closest('.genre-row')?.querySelector('.row'); const cards = row ? candidates(row) : [];
+      if (cards.length) {
+        let best = cards[0];
+        if (row.scrollLeft >= 4) { const x = cur.getBoundingClientRect(), cx = x.left + x.width / 2; let bd = Infinity; for (const c of cards) { const r = c.getBoundingClientRect(); const d = Math.abs(r.left + r.width / 2 - cx); if (d < bd) { bd = d; best = c; } } }
+        go(best); return;
+      }
+    }
     // Down from a text box (Search) lands on the first thing in the line below, not the one under the middle of the box.
     if (isText(cur) && k === 'ArrowDown') {
       const t = next.getBoundingClientRect().top;
