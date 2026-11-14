@@ -1,5 +1,5 @@
 Your look answers are in: Continue Watching shows each show's artwork, search puts the best match first, long shows get a Seasons list
 The picked season or library tab is a red outline everywhere, white only where the remote is
-Search shows people without a photo as coloured initials, like Cast & Crew
+People without a photo show two initials on a coloured circle, in Cast & Crew and in search
 On Home, Up from the first genre row reaches the Movies / TV Shows tabs
-Moving down Home always lands on a poster, never on a "See all" link
+Racing down Home never stops on a "See all" link, even while rows are still loading

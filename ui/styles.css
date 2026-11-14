@@ -3821,7 +3821,7 @@ html.tv .tvm-card.tvm-info { width: 860px; max-width: 860px; }
 /* F3: on the TV, cast and crew are round faces; someone with no photo shows their initial on a
    colour (the same colours as "Who's watching?"). */
 html.tv .row .card.person .art { aspect-ratio: 1 / 1; border-radius: 50%; }
-html.tv .card.person .person-ph { font: 400 54px/1 var(--display); color: #fff; padding: 0; }
+html.tv .card.person .person-ph { font: 400 44px/1 var(--display); color: #fff; padding: 0; }
 html.tv .person-ph.pc1 { background: linear-gradient(135deg, #f08a3c, #b13a1e); } html.tv .person-ph.pc2 { background: linear-gradient(135deg, #4d9de0, #2b4a8a); }
 html.tv .person-ph.pc3 { background: linear-gradient(135deg, #59c27a, #1f6b4a); } html.tv .person-ph.pc4 { background: linear-gradient(135deg, #b06fd8, #5a2b86); }
 html.tv .person-ph.pc5 { background: linear-gradient(135deg, #e0607e, #8a2b48); } html.tv .person-ph.pc6 { background: linear-gradient(135deg, #d8b84a, #86601f); }
@@ -3829,4 +3829,4 @@ html.tv .person-ph.pc5 { background: linear-gradient(135deg, #e0607e, #8a2b48); 
 /* Seasons button on long shows (TV). */
 html.tv .tvs-bar .tvs-pick { flex: none; box-shadow: inset 0 0 0 2px rgba(255,255,255,.22); }
 html.tv .tvs-bar .tvs-pick::after { content: '▾'; margin-left: 8px; opacity: .7; }
-html.tv .tvs-person .person-ph { display: grid; place-items: center; font: 400 54px/1 var(--display); color: #fff; padding: 0; }
+html.tv .tvs-person .person-ph { display: grid; place-items: center; font: 400 44px/1 var(--display); color: #fff; padding: 0; }

@@ -231,3 +231,6 @@ function addRowArrows(row) {
 const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows]), #view .mrow:not([data-arrows])').forEach(addRowArrows);
 // (Not on the TV: arrows and bars are for the mouse, and measuring every row costs time.)
 { const v = document.getElementById('view'); if (v && !/Android/.test(navigator.userAgent)) new MutationObserver(scanRows).observe(v, { childList: true, subtree: true }); }
+
+// "Heath Ledger" -> "HL": the letters shown for a person with no photo (TV).
+export function initials(name) { const w = String(name || '?').trim().split(/\s+/).filter(Boolean); return ((w[0]?.[0] || '?') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }

@@ -1,5 +1,5 @@
 import { api, load, quiet, img, imgAny, memHas, kindOf } from './api.js';
-import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
+import { esc, card, initials, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { genreLook } from './gtiles.js';
@@ -1379,7 +1379,7 @@ function personCard(p) {
   const role = p.Role || (p.Type && p.Type !== 'Actor' ? p.Type.replace(/([a-z])([A-Z])/g, '$1 $2') : '');
   return `
     <a class="card person" href="#/person/${encodeURIComponent(p.Id)}" data-id="${esc(p.Id)}">
-      <div class="art">${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}${ON_TV ? `<div class="ph person-ph pc${[...String(p.Name || '?')].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 997, 7) % 6 + 1}">${esc((p.Name || '?').trim().charAt(0).toUpperCase())}</div>` : `<div class="ph person-ph">${PERSON_ICON}</div>`}</div>
+      <div class="art">${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}${ON_TV ? `<div class="ph person-ph pc${[...String(p.Name || '?')].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 997, 7) % 6 + 1}">${esc(initials(p.Name))}</div>` : `<div class="ph person-ph">${PERSON_ICON}</div>`}</div>
       <div class="title">${esc(p.Name)}</div><div class="subtitle">${esc(role)}</div>
     </a>`;
 }

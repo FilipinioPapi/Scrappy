@@ -331,6 +331,9 @@ addEventListener('keydown', (e) => {
     // Coming into a genre row from another row lands on a poster, never on its "See all" link.
     if ((k === 'ArrowDown' || k === 'ArrowUp') && next.matches('.see-all') && next.closest('.genre-row') !== cur.closest('.genre-row')) {
       const row = next.closest('.genre-row')?.querySelector('.row'); const cards = row ? candidates(row) : [];
+      // A row whose posters are still on their way: wait above it for a moment rather than stopping on the link.
+      // (Only for a few seconds, in case that row never arrives.)
+      if (!cards.length && row?.querySelector('.genre-ph')) { const now = performance.now(); if (waitRow !== row) { waitRow = row; waitAt = now; } if (now - waitAt < 3000) return; }
       if (cards.length) {
         let best = cards[0];
         if (row.scrollLeft >= 4) { const x = cur.getBoundingClientRect(), cx = x.left + x.width / 2; let bd = Infinity; for (const c of cards) { const r = c.getBoundingClientRect(); const d = Math.abs(r.left + r.width / 2 - cx); if (d < bd) { bd = d; best = c; } } }
@@ -361,6 +364,7 @@ addEventListener('keydown', (e) => {
   // Nothing further left on the page: Left opens the rail on the screen you're on.
   if (k === 'ArrowLeft' && railApi && scope === pageScope()) { fromPage = cur; railApi.railCurrent()?.focus({ preventScroll: true }); }
 });
+let waitRow = null, waitAt = 0;
 const pageScope = () => document.getElementById('view')?.parentElement || document.body;
 let fromPage = null;
 function leaveRail() {
