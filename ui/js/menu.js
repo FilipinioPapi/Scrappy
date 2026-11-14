@@ -1,7 +1,7 @@
 // Right-click menu for posters and cards, plus the "Manage" windows
 // (edit metadata, images, subtitles, identify, refresh, delete).
 import { api, img } from './api.js';
-import { esc, toast, playItem, playSeries, isPlayable } from './components.js';
+import { esc, toast, playItem, playSeries, isPlayable, syncPlayButtons, clearResume } from './components.js';
 
 const ICON = {
   play: '<svg viewBox="0 0 24 24"><path d="M7 5v14l11-7z" fill="currentColor"/></svg>',
@@ -233,7 +233,7 @@ function render(it, inResume, pol, cardEl, mode = 'full') {
       <div class="ctx-thumb">${thumb ? `<img src="${esc(thumb)}" alt="">` : ''}</div>
       <div class="ctx-names"><b>${esc(it.Name)}</b><span>${esc(String(sub))}</span></div>
     </div>
-    ${playable ? row('play', ICON.play, resumable ? 'Resume' : 'Play', 'primary') : ''}
+    ${playable ? row('play', ICON.play, resumable ? 'Resume' : ud.Played ? 'Play again' : 'Play', 'primary') : ''}
     ${resumable ? row('restart', ICON.restart, 'Play from start') : ''}
     ${row('fav', ICON.heart(ud.IsFavorite), ud.IsFavorite ? 'Remove from Favorites' : 'Add to Favorites', ud.IsFavorite ? 'on' : '')}
     ${row('played', ICON.check, ud.Played ? 'Mark Unwatched' : 'Mark Watched', ud.Played ? 'on' : '')}
@@ -280,7 +280,9 @@ const ACTIONS = {
     try {
       await (on ? api.post(`/Users/{userId}/PlayedItems/${it.Id}`) : api.del(`/Users/{userId}/PlayedItems/${it.Id}`));
       toast(on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`);
+      const had = it.UserData?.PlaybackPositionTicks > 0;
       markInPlace(it, on);
+      if (isPlayable(it)) { syncPlayButtons(it, on); if (on && had) clearResume(it); }
     } catch (e) { toast(String(e), true); }
   },
   async unresume(it, cardEl) {

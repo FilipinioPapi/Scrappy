@@ -1,5 +1,5 @@
-Your look answers are in: Continue Watching shows each show's artwork, search puts the best match first, long shows get a Seasons list
-The picked season or library tab is a red outline everywhere, white only where the remote is
-People without a photo show two initials on a coloured circle, in Cast & Crew and in search
-On Home, Up from the first genre row reaches the Movies / TV Shows tabs
-Racing down Home never stops on a "See all" link, even while rows are still loading
+Marking a film or episode watched now clears its saved spot: the bar goes and the page shows one "Play again" button
+Taking the mark off shows a plain "Play"
+The quick menu (hold OK) says "Play again" for things you have watched
+Racing down Home never stops on a "See all" link
+People without a photo show two initials on a coloured circle

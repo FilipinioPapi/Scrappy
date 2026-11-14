@@ -1,5 +1,5 @@
 import { api, load, quiet, img, imgAny, memHas, kindOf } from './api.js';
-import { esc, card, initials, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
+import { esc, card, initials, syncPlayButtons, clearResume, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { genreLook } from './gtiles.js';
@@ -739,7 +739,7 @@ function renderHero(slot, ctx, picks, seriesInfo) {
     const overview = (ser?.Overview || it.Overview || '');
     const play = it.Type === 'Series'
       ? `<button class="btn big" data-play-series="${esc(it.Id)}">${PLAY_ICON} <span class="lbl">Play</span></button>`
-      : `<button class="btn big" data-play="${esc(it.Id)}">${PLAY_ICON} ${resumable ? 'Resume' : 'Play'}</button>`;
+      : `<button class="btn big" data-play="${esc(it.Id)}">${PLAY_ICON} ${resumable ? 'Resume' : ud.Played ? 'Play again' : 'Play'}</button>`;
     return `
       <div class="hero-bg"><img src="${esc(p.url)}" alt=""></div>
       <div class="hero-text">
@@ -1369,6 +1369,11 @@ function wireIconButtons(scope, it) {
       toast(kind === 'played' ? (on ? `Marked ${it.Name} as watched` : `Marked ${it.Name} as unwatched`) : (on ? `Added ${it.Name} to Favorites` : `Removed ${it.Name} from Favorites`));
       // Only the episode list updates (in place, no reload of the page).
       if (kind === 'played') document.getElementById('epList')?._soft?.();
+      if (kind === 'played' && isPlayable(it)) {
+        const ud = (it.UserData ||= {}); const had = ud.PlaybackPositionTicks > 0; ud.Played = on; ud.PlaybackPositionTicks = 0; ud.PlayedPercentage = 0;
+        syncPlayButtons(it, on);
+        if (on && had) await clearResume(it);
+      }
     } catch (e) { b.classList.toggle('on', !on); setTip(!on); toast(String(e), true); }
     b.disabled = false;
   }));
@@ -1436,7 +1441,7 @@ function renderItem(root, ctx, it, seasonId = '') {
     buttons = resumable
       ? `<button class="btn" data-play="${esc(it.Id)}">${PLAY_ICON} Resume</button>
          <button class="btn secondary" data-play="${esc(it.Id)}" data-from-start="1">Play from start</button>`
-      : `<button class="btn" data-play="${esc(it.Id)}">${PLAY_ICON} Play</button>`;
+      : `<button class="btn" data-play="${esc(it.Id)}">${PLAY_ICON} ${ud.Played ? 'Play again' : 'Play'}</button>`;
   } else if (isSeries) {
     buttons = `<button class="btn" data-play-series="${esc(it.Id)}">${PLAY_ICON} <span class="lbl">Play</span></button>
       <button class="btn secondary" data-play-series="${esc(it.Id)}" data-from-start="1" hidden>Play from start</button>`;

@@ -234,3 +234,23 @@ const scanRows = () => document.querySelectorAll('#view .row:not([data-arrows]),
 
 // "Heath Ledger" -> "HL": the letters shown for a person with no photo (TV).
 export function initials(name) { const w = String(name || '?').trim().split(/\s+/).filter(Boolean); return ((w[0]?.[0] || '?') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+
+// A title page follows "Mark watched": the saved spot is gone, so the bar and "Resume / Play from start"
+// give way to one "Play again" button (and back to "Play" when the mark comes off).
+export function syncPlayButtons(it, played) {
+  if (!location.hash.startsWith('#/item/' + encodeURIComponent(it.Id))) return;
+  const view = document.getElementById('view'); if (!view) return;
+  const main = view.querySelector(`.detail [data-play="${CSS.escape(it.Id)}"]:not(.secondary)`); if (!main) return;
+  view.querySelectorAll(`.detail [data-play="${CSS.escape(it.Id)}"].secondary[data-from-start]`).forEach((b) => { if (document.activeElement === b) main.focus({ preventScroll: true }); b.remove(); });
+  main.innerHTML = `${PLAY_ICON} ${played ? 'Play again' : 'Play'}`;
+  main.dataset.fromStart = '1';
+  view.querySelectorAll('.detail .resume-bar').forEach((b) => b.remove());
+  view.querySelectorAll('.tvd-strip span').forEach((sp) => { sp.textContent = sp.textContent.replace(/ · [^·]* left$/, ''); });
+}
+// Marking watched also clears the saved spot on the server (some servers keep it).
+export async function clearResume(it) {
+  try {
+    const now = await api.get(`/Users/{userId}/Items/${it.Id}`);
+    if (now?.UserData?.PlaybackPositionTicks > 0) await api.post(`/Users/{userId}/Items/${it.Id}/UserData`, { PlaybackPositionTicks: 0, Played: true, IsFavorite: !!now.UserData.IsFavorite });
+  } catch {}
+}
