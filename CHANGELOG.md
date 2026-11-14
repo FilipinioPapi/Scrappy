@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 37 · Nov 14, 12:09 PM
+**Movies & TV**
+- Changed: marking a movie or episode watched now resets its progress, and its button says Play again instead of Resume and Play from start
+
+<sub>Built from 6f5288c · includes: Movies & TV</sub>
+
 ### Preview 36 · Nov 14, 8:05 AM
 **Movies & TV**
 - Fixed: editing an episode's info or picture keeps you on the season you were looking at, instead of jumping to another one
