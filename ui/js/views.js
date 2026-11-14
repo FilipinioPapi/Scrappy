@@ -1425,7 +1425,7 @@ function renderItem(root, ctx, it, seasonId = '') {
           ${titleHtml(it)}
           <div class="meta">${detailMeta(it)}</div>
           ${resumable && it.RunTimeTicks ? `<div class="resume-bar"><i style="width:${(100 * ud.PlaybackPositionTicks / it.RunTimeTicks).toFixed(1)}%"></i></div>` : ''}
-          <div class="detail-buttons">${buttons}${canToggle ? iconButtonsHtml(it) : ''}${tvShow ? '<button class="btn secondary" id="tvAv" hidden>Audio &amp; subtitles</button>' : ''}</div>
+          <div class="detail-buttons">${buttons}${canToggle ? iconButtonsHtml(it) : ''}${tvShow ? '<button class="btn secondary" id="tvAv" hidden>Audio &amp; subtitles</button><button class="btn secondary" id="tvView" hidden></button>' : ''}</div>
           ${isSeries ? '<div class="play-sub" id="playSub"></div>' : ''}
           <div id="streams">${isPlayable(it) ? streamPickersHtml(it, it) : ''}</div>
           ${it.Taglines?.[0] ? `<p><i>${esc(it.Taglines[0])}</i></p>` : ''}
@@ -1548,6 +1548,14 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       </section>`;
     const list = el.querySelector('#epList');
     const count = el.querySelector('#epCount');
+    // TV: the Row / Grid choice is one button up beside "Audio & subtitles" (a show with dozens of
+    // seasons put it dozens of presses away at the end of the season list).
+    const tvView = TVS && document.getElementById('tvView');
+    if (tvView) {
+      const label = () => { const on = el.querySelector('.tvs-seg .on'); tvView.textContent = `Episodes: ${on ? on.textContent.trim() : 'Row'}`; };
+      tvView.hidden = false; label();
+      tvView.onclick = () => { el.querySelector('.tvs-seg [data-view]:not(.on)')?.click(); label(); };
+    }
     const setCrumb = (name, animate) => {
       if (!crumbEl) return;
       crumbEl.hidden = false;
