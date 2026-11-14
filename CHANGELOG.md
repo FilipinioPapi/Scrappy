@@ -7,6 +7,35 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 41 · Nov 14, 3:56 PM
+**Home**
+- Fixed: rows like Watch again, Because you played and Albums you haven't played hide when they'd show fewer than 4 things, and don't repeat titles from rows above
+- Fixed: "Your top genre you haven't seen" skips things you've started
+- Fixed: "New from artists you love" no longer repeats albums already in Recently added
+
+**Movies & TV**
+- Fixed: the show page no longer shows an extra episode count next to "Episodes" when the season tabs already show counts
+- Fixed: a genre page lights Genres in the side menu and shows a Genres › name trail
+- Changed: a collection page's heading says "Movies" instead of "Items", and menus say "Mark watched / Mark unwatched"
+- New: collections without a picture show their first movie's poster in the side menu too
+
+**Music & Audiobooks**
+- Fixed: an artist no longer shows up in their own "Fans also like"
+- Fixed: on genre tiles, the count no longer runs into the covers or a two-line name
+- Fixed: on the Albums page, songs go in one column when the window is narrower, so titles aren't cut off
+
+**Stats**
+- Fixed: the empty "Episodes you rewatch" box is hidden, the heading says "What you watched", "Favorites" uses the US spelling, and "Never played" links straight to a search for unplayed songs
+
+**General**
+- Fixed: Advanced search looks right. The Words, Genre and Year boxes are proper boxes and the check boxes sit on one line
+- Fixed: names with numbers sort in number order (Book 2 comes before Book 10)
+- Fixed: right-click menus close when you go back or change page
+- Fixed: if a page fails to load, the side menu stays
+- Fixed: the top search box clears when you leave search
+
+<sub>Built from 9c6da2b · includes: PC review fixes</sub>
+
 ### Preview 40 · Nov 14, 2:50 PM
 **Movies & TV**
 - Changed: genres with fewer than 5 titles no longer show on the Genres page (Home's Browse by genre uses the same cut-off)
