@@ -17,6 +17,7 @@ mod updates;
 mod updates;
 mod appset;
 mod pair;
+mod profiles;
 
 use emby::Config;
 use serde_json::{json, Value};
@@ -192,6 +193,68 @@ async fn logout_emby(state: &AppState) -> Result<(), String> {
     c.user_id.clear();
     c.save(&state.cfg_path)?;
     Ok(())
+}
+
+// ---------- Who's watching ----------
+
+fn save_cfg(state: &AppState, c: &emby::Config) -> Result<(), String> {
+    c.save(&state.cfg_path)
+}
+
+#[tauri::command]
+fn profiles_get(state: State<'_, AppState>) -> Result<Value, String> {
+    let mut c = state.cfg.lock().unwrap();
+    let v = c.profiles_json();
+    save_cfg(&state, &c)?;
+    Ok(v)
+}
+
+#[tauri::command]
+fn profile_switch(state: State<'_, AppState>, id: String, pin: String) -> Result<Value, String> {
+    {
+        let mut c = state.cfg.lock().unwrap();
+        c.switch_profile(&id, &pin)?;
+        save_cfg(&state, &c)?;
+    }
+    Ok(get_session(state))
+}
+
+#[tauri::command]
+fn profile_new(state: State<'_, AppState>) -> Result<Value, String> {
+    {
+        let mut c = state.cfg.lock().unwrap();
+        c.new_profile();
+        save_cfg(&state, &c)?;
+    }
+    Ok(get_session(state))
+}
+
+#[tauri::command]
+async fn profile_remove(state: State<'_, AppState>, id: String, pin: String) -> Result<Value, String> {
+    let gone = {
+        let mut c = state.cfg.lock().unwrap();
+        let gone = c.remove_profile(&id, &pin)?;
+        save_cfg(&state, &c)?;
+        gone
+    };
+    // Tell Emby to forget that person's token; ignore failures (server may be offline).
+    if let Some(p) = gone {
+        if !p.token.is_empty() {
+            let mut old = state.cfg();
+            old.server = p.server;
+            old.user_id = p.user_id;
+            old.token = p.token;
+            let _ = emby::send(&state.http, &old, reqwest::Method::POST, "/Sessions/Logout", None).await;
+        }
+    }
+    Ok(get_session(state))
+}
+
+#[tauri::command]
+fn profile_pin(state: State<'_, AppState>, id: String, current: String, pin: String) -> Result<(), String> {
+    let mut c = state.cfg.lock().unwrap();
+    c.set_profile_pin(&id, &current, &pin)?;
+    save_cfg(&state, &c)
 }
 
 /// "Sign out" in the account menu: every server at once.
@@ -1434,6 +1497,11 @@ pub fn run() {
             updates::tv_update,
             set_zoom,
             get_session,
+            profiles_get,
+            profile_switch,
+            profile_new,
+            profile_remove,
+            profile_pin,
             login,
             logout,
             server_check,

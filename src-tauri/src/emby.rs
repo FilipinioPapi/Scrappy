@@ -37,6 +37,9 @@ pub struct Config {
     pub abs_token: String,
     /// Request service address; empty = the Emby address + /requests.
     pub requests_url: String,
+    /// "Who's watching": everyone signed in on this device (see profiles.rs), and who is active.
+    pub profiles: Vec<crate::profiles::Profile>,
+    pub active_profile: String,
 }
 
 impl Config {
