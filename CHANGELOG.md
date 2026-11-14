@@ -7,6 +7,20 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 42 · Nov 14, 4:07 PM
+**Movies & TV**
+- Changed: page titles (Movies, Shows, Anime, Collections, Genres, Favorites) use the big Scrappy font with a count beside them, matching Music and Audiobooks
+- New: collection pages show how many movies there are, the years they cover, the total time and how many you've watched. A new Play all button starts at the first one you haven't watched and plays them in release order, and Shuffle mixes them. Movies are listed in release order, and the trail links back to Collections
+
+**Music**
+- Changed: on the Albums page the extra Artists button is gone (it's in the side menu), and the search box is wider
+
+**Audiobooks**
+- Changed: Bookmarks shows how many bookmarks you have. Every bookmark has a play button you can always see, plus its time, rename and delete
+- New: Authors has a Sort by switch with Name A–Z (by first name, as written), Most books and Recently listened. It remembers your pick
+
+<sub>Built from 8fd800c · includes: PC review mock-ups</sub>
+
 ### Preview 41 · Nov 14, 3:56 PM
 **Home**
 - Fixed: rows like Watch again, Because you played and Albums you haven't played hide when they'd show fewer than 4 things, and don't repeat titles from rows above
