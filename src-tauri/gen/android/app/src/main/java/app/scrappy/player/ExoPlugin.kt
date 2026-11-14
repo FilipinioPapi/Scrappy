@@ -188,6 +188,10 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
 
   // Set once the sound has jammed: from then on Dolby/DTS is decoded in the app, not sent untouched.
   private var plainSound = false
+  // The viewer's choice (Settings): send Dolby/DTS untouched to a soundbar. Off unless asked for:
+  // on this TV, skipping while sound goes out untouched is what jams its sound system.
+  private val passthrough get() = PlayerLog.passthrough
+  private var builtPlain = true
   private val ffmpegSound by lazy { androidx.media3.decoder.ffmpeg.FfmpegLibrary.isAvailable() }
   private val CHIP_SOUND = setOf(
     MimeTypes.AUDIO_AC3, MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_E_AC3_JOC, MimeTypes.AUDIO_AC4,
@@ -204,7 +208,8 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     // The TV chip's own Dolby/DTS decoder is never used: the TV's log showed it stuck
     // ("outputThreadLoop: Maybe stuck") with the TV's whole sound system jammed behind it.
     // After a sound jam (plainSound), nothing is sent untouched for the rest of the session.
-    val plain = plainSound
+    val plain = plainSound || !passthrough
+    builtPlain = plain
     val renderers = object : DefaultRenderersFactory(activity) {
       override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink? {
         if (!plain) return super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
@@ -226,7 +231,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
         else if (ffmpegSound && mimeType in CHIP_SOUND) emptyList()
         else all.sortedBy { if (it.softwareOnly || it.name.startsWith("c2.android.") || it.name.startsWith("OMX.google.")) 0 else 1 }
       })
-    PlayerLog.add(if (plain) "sound: decoded in the app only (after a jam)" else "sound: untouched to a soundbar when it can take it")
+    PlayerLog.add(if (!plain) "sound: untouched to a soundbar when it can take it" else if (plainSound) "sound: decoded in the app (after a jam)" else "sound: decoded in the app")
     videoDecoder = ""; audioDecoder = ""; dropped = 0
     val p = ExoPlayer.Builder(activity, renderers)
       .setSeekBackIncrementMs(10_000)
@@ -317,6 +322,8 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     val start = a.optDouble("start", 0.0)
     val subs = a.optJSONArray("subs")
     ui(invoke) {
+      // The sound choice may have changed in Settings since the player was built.
+      player?.let { if (builtPlain != (plainSound || !passthrough)) drop(it) }
       val p = ensure()
       val configs = ArrayList<MediaItem.SubtitleConfiguration>()
       if (subs != null) {

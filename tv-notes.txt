@@ -1,5 +1,5 @@
-New opening: the logo and "Scrappy Media Center" fade in once and a thin red line fills, with no bouncing.
-Opening Scrappy goes straight to "Who's watching?" instead of flashing the app first.
+Player freeze found on your TV: skipping while Dolby sound went out untouched jammed the TV's sound system.
+Scrappy now decodes Dolby and DTS itself, so skipping can no longer jam it. Settings, Playing has a switch to send it untouched again.
+New opening: logo and "Scrappy Media Center" fade in once with a thin red line, then straight to "Who's watching?".
 The side bar folds away the moment you pick a screen, and Genres no longer shows a blank page while it builds.
-Player freeze: Scrappy no longer uses the TV chip's Dolby/DTS sound decoder that was jamming.
-A soundbar still gets Dolby and DTS untouched, surround and Atmos included.
+Backdrops load at the size the TV really draws, so movie pages open sooner.

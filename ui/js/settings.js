@@ -69,6 +69,7 @@ const tvHtml = () => card('PLAYING', [
   seg('upNextSecs', 'Countdown before the next episode', 'How long the “Up next” card waits.', [['5', '5s'], ['10', '10s'], ['20', '20s']]),
   sw('skipIntro', 'Skip intros automatically', 'Uses the intro markers on Emby. Off: shows a Skip Intro button.'),
   sw('skipCredits', 'Skip credits to the next episode', 'Only when Emby marks where the credits start. Otherwise Up next shows near the end, as now.'),
+  TV ? sw('tvSoundThrough', 'Send Dolby and DTS untouched to a soundbar', 'Off: Scrappy decodes the sound itself, which is the safe choice. On this TV, sending it untouched can freeze the film after skipping.') : '',
   TV ? '' : sw('', 'Play in a separate mpv window', 'Opens videos in their own window instead of inside Scrappy.', { id: 'setWindow', checked: pref('playerMode') === 'window' }),
   seg('seek', 'Seek step', 'How far the arrow keys and skip buttons jump.', [['5', '5s'], ['10', '10s'], ['30', '30s']], seekCur()),
 ]) + card('QUALITY', [

@@ -11,6 +11,8 @@ object PlayerLog {
   private val lines = ArrayDeque<String>()
   private val t0 = SystemClock.elapsedRealtime()
   @Volatile var live: String = ""
+  /** Settings: send Dolby/DTS untouched to a soundbar (off = Scrappy decodes the sound itself). */
+  @Volatile var passthrough: Boolean = false
 
   @Synchronized
   fun add(what: String) {

@@ -143,6 +143,11 @@ pub async fn tv_update(app: AppHandle, what: String) -> Result<Value, String> {
             let h = INSTALLER.get().ok_or("Not ready.")?;
             h.run_mobile_plugin::<Value>("playerlog", json!({})).map_err(|e| e.to_string())
         }
+        // Settings: Dolby/DTS untouched to a soundbar, or decoded by Scrappy (sent before each film).
+        "sound-through" | "sound-plain" => {
+            let h = INSTALLER.get().ok_or("Not ready.")?;
+            h.run_mobile_plugin::<Value>("sound", json!({ "through": what == "sound-through" })).map_err(|e| e.to_string())
+        }
         _ => Err("Unknown update step.".into()),
     }
 }

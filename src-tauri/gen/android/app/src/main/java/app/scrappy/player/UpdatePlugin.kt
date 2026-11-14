@@ -46,6 +46,13 @@ class UpdatePlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve(JSObject().put("text", PlayerLog.text()))
   }
 
+  /** Settings: whether Dolby/DTS goes untouched to a soundbar. Used from the next film on. */
+  @Command
+  fun sound(invoke: Invoke) {
+    PlayerLog.passthrough = invoke.getArgs().optBoolean("through", false)
+    invoke.resolve(JSObject())
+  }
+
   /** Close Scrappy completely and open it again (Settings: "Restart Scrappy"). Sign-ins stay. */
   @Command
   fun restart(invoke: Invoke) {

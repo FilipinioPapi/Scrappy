@@ -9,6 +9,7 @@ export const DEFAULTS = {
   autoplay: 'on', upNextSecs: '10', skipIntro: 'off', skipCredits: 'off', playerMode: 'embedded',
   quality: '', hwdec: 'auto-safe', heroMode: 'picks',
   skipBack: '10', skipFwd: '10',
+  tvSoundThrough: 'off',
   // Subtitles & audio
   subStart: 'default', subLang: 'eng', subScale: '1', subStyle: 'outline', audioLang: '', nightMode: 'off', volBoost: 'off',
   // Music

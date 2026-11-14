@@ -756,6 +756,7 @@ export async function startPlayback(id, opts = {}) {
   if (S.starting) return;
   S.starting = true;
   window.dispatchEvent(new CustomEvent('video:start'));
+  if (TVP) await invoke('tv_update', { what: pref('tvSoundThrough') === 'on' ? 'sound-through' : 'sound-plain' }).catch(() => {});
   S.embedded = ls.get('playerMode', 'embedded') !== 'window';
   hideUpNext();
   showSkip(null);
