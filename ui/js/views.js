@@ -1,5 +1,5 @@
 import { api, load, quiet, img, imgAny, IMG_BASE, clearProgress } from './api.js';
-import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem } from './components.js';
+import { esc, card, toast, runtime, epCode, loadingHtml, isPlayable, PLAY_ICON, seriesTarget, seriesPlayLabel, playItem, boxSetArt } from './components.js';
 import { pref } from './prefs.js';
 import { homeRows, rowOff, cachedRow, lowPriority } from './homeedit.js';
 import { genreLook } from './gtiles.js';
@@ -363,7 +363,7 @@ function smartRows(root, ctx, q) {
 // a row per genre, biggest genres first. Rows fill in as you scroll to them.
 
 const GENRE_LIBS = new Set(['movies', 'tvshows', 'mixed', undefined, null, '']);
-const GENRE_MIN = 6;
+const GENRE_MIN = 5; // Jayden: genres with fewer than 5 titles are hidden everywhere
 const GENRE_BROAD = 0.8; // genres on 80%+ of a library's titles are hidden there
 
 function genreTypes(v) {
@@ -1284,6 +1284,13 @@ function renderItem(root, ctx, it, seasonId = '') {
   if (isPlayable(it)) wireStreamPickers(root.querySelector('#streams'), it, it);
 
   if (isSeries) fillSeriesButtons(root, ctx, it);
+  // A collection with no poster shows its first movie's.
+  if (!poster && it.Type === 'BoxSet') {
+    boxSetArt(it.Id, 600).then((src) => {
+      const art = root.querySelector('.detail-poster .art');
+      if (src && art?.isConnected && !art.querySelector('img')) art.innerHTML = `<img src="${esc(src)}" alt="">`;
+    });
+  }
 
   const kids = root.querySelector('#children');
   if (isSeries) renderSeasonBrowser(kids, ctx, it.Id, seasonId, '', root.querySelector('#crumbSeason'));
@@ -1522,7 +1529,10 @@ export async function genresView(root, ctx) {
   const draw = async () => {
     const lib = libs.find((l) => l.Id === cur);
     await load(`/Genres?ParentId=${lib.Id}&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${genreTypes(lib)}&Fields=ItemCounts`, (d) => {
-      const gs = d?.Items || [];
+      // Genres with fewer than 5 titles are left out (unknown counts stay).
+      const cnt = (g) => g.MovieCount || g.SeriesCount || g.ChildCount || 0;
+      const known = (g) => g.MovieCount != null || g.SeriesCount != null || g.ChildCount != null;
+      const gs = (d?.Items || []).filter((g) => !known(g) || cnt(g) >= GENRE_MIN);
       count.textContent = `${gs.length} genre${gs.length === 1 ? '' : 's'}`;
       grid.innerHTML = gs.map((g) => {
         const look = genreLook(g.Name), n = g.MovieCount || g.SeriesCount || g.ChildCount || 0;

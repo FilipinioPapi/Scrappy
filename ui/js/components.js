@@ -54,6 +54,54 @@ function pickImage(it, shape, seriesArt = false) {
   return null;
 }
 
+// ---------- Collections without a picture: use the first movie's poster ----------
+const BOX_KEY = 'boxArt1';
+let boxArt = null;
+const boxFly = new Map();
+function boxStore() {
+  if (!boxArt) { try { boxArt = JSON.parse(localStorage.getItem(BOX_KEY) || '{}'); } catch { boxArt = {}; } }
+  return boxArt;
+}
+/** The poster URL of a collection's first movie (by release date), or '' when it has none. */
+export function boxSetArt(id, width = 340) {
+  const st = boxStore();
+  const known = st[id];
+  const url = (k) => (k ? img(k.id, 'Primary', k.tag, width) : '');
+  if (known && Date.now() - known.at < 7 * 864e5) return Promise.resolve(url(known));
+  if (!boxFly.has(id)) {
+    boxFly.set(id, api.get(`/Users/{userId}/Items?ParentId=${encodeURIComponent(id)}&SortBy=ProductionYear,PremiereDate,SortName&SortOrder=Ascending&Limit=10&Fields=PrimaryImageAspectRatio&ImageTypeLimit=1&EnableImageTypes=Primary`)
+      .then((d) => {
+        const first = (d?.Items || []).find((x) => x.ImageTags?.Primary);
+        st[id] = first ? { id: first.Id, tag: first.ImageTags.Primary, at: Date.now() } : { at: Date.now() };
+        try { localStorage.setItem(BOX_KEY, JSON.stringify(st)); } catch {}
+        return st[id];
+      })
+      .catch(() => known || null)
+      .finally(() => boxFly.delete(id)));
+  }
+  return boxFly.get(id).then((k) => (k?.id ? url(k) : ''));
+}
+let boxQueued = false;
+function queueBoxArt() {
+  if (boxQueued) return;
+  boxQueued = true;
+  setTimeout(() => {
+    boxQueued = false;
+    document.querySelectorAll('[data-boxart]:not([data-boxdone])').forEach((art) => {
+      art.dataset.boxdone = '1';
+      boxSetArt(art.dataset.boxart).then((src) => {
+        if (!src || !art.isConnected || art.querySelector('img')) return;
+        const im = new Image();
+        im.loading = 'lazy'; im.alt = '';
+        im.onload = () => im.classList.add('loaded');
+        im.onerror = () => im.remove();
+        im.src = src;
+        art.querySelector('.ph')?.after(im);
+      });
+    });
+  }, 0);
+}
+
 export function shapeFor(it) {
   if (it.Type === 'Episode' || it.Type === 'Video') return 'wide';
   if (it.Type === 'MusicAlbum' || it.Type === 'Audio') return 'square';
@@ -83,11 +131,14 @@ export function card(it, opts = {}) {
     : ud.UnplayedItemCount
     ? `<span class="badge">${ud.UnplayedItemCount}</span>`
     : '';
+  // A collection with no picture of its own borrows its first movie's poster (filled in just after).
+  const boxFill = !src && it.Type === 'BoxSet' ? ` data-boxart="${esc(it.Id)}"` : '';
+  if (boxFill) queueBoxArt();
   // Episodes and Continue Watching: clicking anywhere on the picture plays it.
   const clickPlay = isPlayable(it) && (opts.clickPlay || it.Type === 'Episode');
   return `
     <a class="card ${shape}${clickPlay ? ' click-play' : ''}" href="#/item/${encodeURIComponent(it.Id)}" data-id="${esc(it.Id)}">
-      <div class="art">
+      <div class="art"${boxFill}>
         <div class="ph">${esc(it.Name)}</div>
         ${src ? `<img loading="lazy" src="${esc(src)}" alt="" onload="this.classList.add('loaded')" onerror="this.remove()">` : ''}
         ${isPlayable(it) ? `<div class="play-over"><span data-play="${esc(it.Id)}" title="Play">${PLAY_ICON}</span></div>` : ''}
