@@ -892,6 +892,7 @@ function libPath(id, view, by, order, gid, extra, tv) {
 
 // ---- Google TV warm-up: fetch what the next screen needs before OK is pressed ----
 // Resting on a poster fetches that title's page; a show also gets its seasons and next episode.
+let lastKeyAt = 0; addEventListener('keydown', () => { lastKeyAt = performance.now(); }, true);
 let warming = '';
 export async function warmItem(id) {
   if (!id || warming === id) return;
@@ -920,7 +921,13 @@ export async function warmLibraries() {
       const [, page] = await Promise.all([memHas(one) ? null : api.get(one), memHas(p) ? api.cached(p) : api.get(p)]);
       // The posters you will see first are fetched too (the same addresses the grid asks for), so
       // the first visit opens with its pictures instead of waiting for them.
-      for (const it of (page?.Items || []).slice(0, 24)) { const m = card(it).match(/<img[^>]*\ssrc="([^"]+)"/); if (m) preload(m[1].replace(/&amp;/g, '&')); }
+      // One at a time, and never while the remote is being used, so Home stays smooth meanwhile.
+      for (const it of (page?.Items || []).slice(0, 24)) {
+        const m = card(it).match(/<img[^>]*\ssrc="([^"]+)"/); if (!m) continue;
+        while (performance.now() - lastKeyAt < 1200 || document.documentElement.classList.contains('playing')) await new Promise((r) => setTimeout(r, 400));
+        preload(m[1].replace(/&amp;/g, '&'));
+        await new Promise((r) => setTimeout(r, 90));
+      }
     }
   } catch {}
 }
