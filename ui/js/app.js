@@ -124,7 +124,9 @@ function dropGhost() {
 function fillKept(e) { if (e?.src) { e.frag.append(...e.src.childNodes); e.src = null; } }
 function holdOldPage(entry) {
   dropGhost();
-  if (!viewEl.firstElementChild || viewEl.querySelector(':scope > .loading') || (!entry && viewEl.getElementsByTagName('*').length > 5000)) { if (entry) entry.frag.append(...viewEl.childNodes); return; }
+  // (Google TV: when a poster is gliding to its title page, a cover is already fading in over the
+  // old page, so the old page goes straight on the shelf instead of being laid out a second time.)
+  if (!viewEl.firstElementChild || viewEl.querySelector(':scope > .loading') || (!entry && viewEl.getElementsByTagName('*').length > 5000) || (entry && window.__tvVeilUp)) { if (entry) entry.frag.append(...viewEl.childNodes); return; }
   const r0 = viewEl.getBoundingClientRect();
   // The TV draws the page scaled down, and measurements come back in scaled sizes: turn them back
   // into the page's own units, or the held picture shows up shrunken and in the wrong place.

@@ -46,8 +46,9 @@ view.addEventListener('click', (e) => {
   veil = document.createElement('div'); veil.className = 'tv-veil'; document.body.insertBefore(veil, d);
   veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, easing: 'ease-out', fill: 'forwards' });
   const anim = glide(d, from, to, 380);
-  // One drawn frame first, so the glide is already running when the page starts to build.
-  requestAnimationFrame(() => setTimeout(() => { location.hash = href; }, 0));
+  // The page starts to build once the cover is nearly solid (the glide is already running by then),
+  // so the old screen can simply be put away under it instead of being drawn again as a leaving copy.
+  setTimeout(() => { window.__tvVeilUp = true; location.hash = href; setTimeout(() => { window.__tvVeilUp = false; }, 0); }, 110);
   // Settle on the page's real poster once both the glide and the page are there.
   const t0 = performance.now();
   const settle = () => {

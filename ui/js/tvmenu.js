@@ -14,6 +14,9 @@ export function tvPick(title, options, selected = -1, note = '', startAt = -1) {
     addEventListener('keydown', onKey, true);
     box.addEventListener('click', (e) => { const o = e.target.closest('.tvm-opt'); if (o) close(Number(o.dataset.i)); else if (e.target === box) close(null); });
     document.body.appendChild(box);
+    // A long list ends on a whole row instead of slicing the last visible choice in half.
+    const list = box.querySelector('.tvm-list'), one = list.firstElementChild;
+    if (one && list.scrollHeight > list.clientHeight + 1) { const row = one.offsetHeight + 4; list.style.maxHeight = Math.max(1, Math.floor((list.clientHeight + 4) / row)) * row - 4 + 'px'; list.style.flex = 'none'; }
     const first = (startAt >= 0 && box.querySelectorAll('.tvm-opt')[startAt]) || box.querySelector('.tvm-opt.sel') || box.querySelector('.tvm-opt');
     first?.focus({ preventScroll: true }); first?.scrollIntoView({ block: 'center' });
   });

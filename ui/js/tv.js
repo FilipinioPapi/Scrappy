@@ -331,6 +331,8 @@ addEventListener('keydown', (e) => {
     // Up from the top line of an episode grid goes to its jump buttons, or the Row and Grid switch.
     if (k === 'ArrowUp' && cur.closest('.ep-grid') && !next.closest('.ep-grid')) { const up = document.querySelector('#epList .ep-block.on') || document.querySelector('.tvs-bar .season-tab.active') || document.querySelector('.tvs-seg .on'); if (up && shown(up)) { go(up); return; } }
     if (k === 'ArrowUp' && cur.closest('#epList') && !next.closest('#children')) { const up = document.querySelector('.tvs-bar .season-tab.active') || document.querySelector('.tvs-seg .on'); if (up && shown(up)) { go(up); return; } }
+    // Up from the season chips goes to the main Play button, never straight onto the heart.
+    if (k === 'ArrowUp' && cur.closest('.season-tabs') && next.closest('.detail-buttons')) { go(candidates(next.closest('.detail-buttons'))[0] || next); return; }
     const tabs = (k === 'ArrowDown' || k === 'ArrowUp') ? next.closest('.season-tabs') : null;
     if (tabs && !cur.closest('.season-tabs')) { go(tabs.querySelector('.season-tab.active') || next); return; }
     const r = next.closest('.row, .mrow');

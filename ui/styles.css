@@ -3450,6 +3450,9 @@ html.tv .card:focus .art { transform: translateY(-4px) scale(1.04); }
 /* ---------- Google TV: pick-from-a-list card, grid chips, A to Z ---------- */
 .tvm { position: fixed; inset: 0; z-index: 8000; background: rgba(8,5,5,.74); display: grid; place-items: center; }
 .tvm-card { width: 520px; max-height: 78vh; display: flex; flex-direction: column; background: #1E1415; border: 1px solid #33221F; border-radius: 24px; padding: 26px 18px 18px; }
+html.tv .tvm-card { max-height: calc(88vh / var(--tvzoom, 1)); width: max-content; min-width: 520px; max-width: 860px; box-sizing: border-box; }
+html.tv .tvm-opt span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.tv .tvm-list { scrollbar-width: none; }
 .tvm-card h4 { margin: 0 14px 14px; font-size: 26px; font-weight: 800; display: flex; align-items: baseline; gap: 12px; }
 .tvm-card h4 small { font-size: 16px; font-weight: 600; color: #8F7778; }
 .tvm-list { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
