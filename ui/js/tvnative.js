@@ -139,6 +139,8 @@ window.__tvNative = {
   whoAct: (seq, act, args) => import('./tvwho.js').then((m) => m.nativeAct(act, args)).catch((e) => ({ ok: false, err: String(e?.message || e) }))
     .then((r) => { try { window.ScrappyNative.whoReply(seq, JSON.stringify(r)); } catch {} }),
   whoClosed: () => import('./tvwho.js').then((m) => m.nativeClosed()).catch(() => {}),
+  setAct: (seq, act, args) => import('./tvsettings.js').then((m) => m.act(act, args)).catch((e) => ({ ok: false, err: String(e?.message || e) }))
+    .then((r) => { try { window.ScrappyNative.setReply(seq, JSON.stringify(r)); } catch {} }),
   pick,
   genreLib: (id) => { try { localStorage.setItem('genreLib', id); } catch {} },
   sort: (key, i) => { try { localStorage.setItem(key, String(i)); } catch {} sendPrefs(); },

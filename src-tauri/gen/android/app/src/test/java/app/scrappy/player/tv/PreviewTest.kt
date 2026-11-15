@@ -159,6 +159,28 @@ class PreviewTest {
     override fun playQueue(ids: List<String>) { calls.add("playQueue $ids") }
     override fun whoAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) { calls.add("whoAct $act $args"); done(JSONObject().put("ok", act != "switch" || args.optString("pin") == "1234")) }
     override fun whoClosed() { calls.add("whoClosed") }
+    override fun setAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
+      calls.add("setAct $act $args")
+      if (act != "model" && act != "tips") { done(JSONObject().put("ok", true)); return }
+      if (act == "tips") { done(JSONObject().put("ok", true).put("info", JSONObject().put("title", "Remote tips").put("lines", org.json.JSONArray().put("Hold OK on any poster for a quick menu.").put("Press Left at the edge of a screen to open the side bar.").put("While something plays, Left and Right skip and OK pauses. Back closes what is open, then leaves.")))); return }
+      fun ch(k: String, l: String, d: String, o: List<String>, cur: Int) = JSONObject().put("t", "ch").put("key", k).put("label", l).put("desc", d).put("opts", org.json.JSONArray(o)).put("vals", org.json.JSONArray(o.map { it.lowercase() }.mapIndexed { i, v -> if (k == "subScale") listOf("0.8", "1", "1.25", "1.5")[i] else v })).put("cur", cur)
+      fun sw(k: String, l: String, d: String, on: Boolean) = JSONObject().put("t", "sw").put("key", k).put("label", l).put("desc", d).put("on", on)
+      fun bt(a: String, l: String, d: String, b: String, letter: String = "") = JSONObject().put("t", "bt").put("act", a).put("label", l).put("desc", d).put("btn", b).put("letter", letter)
+      fun g(l: String) = JSONObject().put("t", "grp").put("label", l)
+      fun sec(id: String, n: String, k: String, vararg rows: JSONObject) = JSONObject().put("id", id).put("name", n).put("kicker", k).put("rows", org.json.JSONArray(rows.toList()))
+      val m = org.json.JSONArray()
+        .put(JSONObject().put("h", "YOU"))
+        .put(sec("account", "Account & servers", "SETTINGS", g("SIGNED IN"), bt("server", "Emby · Movies & TV", "Jayden on JJsNAS · ● Connected", "Switch account", "E"), bt("switch", "Audiobookshelf · Audiobooks", "Not signed in", "Sign in", "A"), g("THIS TV"), ch("startTab", "Start on", "Which tab opens when Scrappy starts.", listOf("Last used", "Movies & TV", "Music", "Audiobooks"), 0)))
+        .put(JSONObject().put("h", "PLAYBACK"))
+        .put(sec("tv", "Movies & TV", "PLAYBACK", g("PLAYING"), sw("autoplay", "Auto-play next episode", "Starts the next episode when one ends.", true), ch("upNextSecs", "Countdown before the next episode", "How long the “Up next” card waits.", listOf("5s", "10s", "20s"), 1),
+          sw("tvSoundThrough", "Send Dolby and DTS untouched to a soundbar", "Off: Scrappy decodes the sound itself, which is the safe choice. On this TV, sending it untouched can freeze the film after skipping.", false),
+          g("QUALITY"), ch("quality", "Streaming quality", "Original plays the file as it is.", listOf("Original", "40 Mbps · 4K", "20 Mbps · 1080p", "10 Mbps · 1080p", "6 Mbps · 720p"), 0)))
+        .put(sec("subs", "Subtitles & audio", "PLAYBACK", g("SUBTITLES"), ch("subStart", "Which subtitles start", "A pick you make for a show always wins.", listOf("Show’s own default", "Always my language", "Off unless I turn them on"), 0),
+          ch("subScale", "Subtitle size", "", listOf("Small", "Medium", "Large", "Extra large"), 1), ch("subStyle", "Subtitle style", "Outline, shadow or a dark box behind the text.", listOf("Outline", "Shadow", "Box"), 0), bt("resetSubs", "Forget my per-show picks", "Go back to every show’s own default.", "Reset")))
+        .put(JSONObject().put("h", "APP"))
+        .put(sec("about", "About & help", "APP", bt("tips", "Remote tips", "The handy things the remote can do in Scrappy.", "Show")))
+      done(JSONObject().put("ok", true).put("model", JSONObject().put("sections", m)))
+    }
     override fun editHome(rowsJson: String) { calls.add("editHome") }
     override fun who() { calls.add("who") }
     override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title"); tv.menu.pick(title, options, cur) { i -> calls.add("picked $title $i"); done(i) } }
@@ -286,6 +308,18 @@ class PreviewTest {
     tv.who.show(JSONObject().put("active", "a").put("side", true).put("people", ppl)); shot("who-side")
     press(KeyEvent.KEYCODE_DPAD_DOWN, 4); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("who-manage")
     File(out, "who-calls.txt").writeText(host.calls.joinToString("\n"))
+  }
+
+  @Test fun settings() {
+    start()
+    tv.route("#/settings"); pump(1500); shot("set")
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("set-tv")
+    press(KeyEvent.KEYCODE_DPAD_RIGHT); press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT); shot("set-tv-row")
+    press(KeyEvent.KEYCODE_BACK); press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT); press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT); shot("set-subs-preview", 900)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT, 2); shot("set-subs-box", 900)
+    press(KeyEvent.KEYCODE_DPAD_UP, 2); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("set-list")
+    press(KeyEvent.KEYCODE_BACK); press(KeyEvent.KEYCODE_BACK); press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("set-tips")
+    File(out, "settings-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun pages() {

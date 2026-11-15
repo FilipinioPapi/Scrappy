@@ -161,6 +161,16 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     val n = ++whoN; whoCalls[n] = done
     eval("window.__tvNative && window.__tvNative.whoAct($n, ${js(act)}, $args)")
   }
+  private val setCalls = HashMap<Int, (JSONObject?) -> Unit>()
+  private var setN = 0
+  @JavascriptInterface fun setReply(seq: Int, json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { null }
+    act.runOnUiThread { setCalls.remove(seq)?.invoke(o) }
+  }
+  override fun setAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
+    val n = ++setN; setCalls[n] = done
+    eval("window.__tvNative && window.__tvNative.setAct($n, ${js(act)}, $args)")
+  }
   override fun whoClosed() {
     modal = false; apply()
     eval("window.__tvNative && window.__tvNative.whoClosed()")

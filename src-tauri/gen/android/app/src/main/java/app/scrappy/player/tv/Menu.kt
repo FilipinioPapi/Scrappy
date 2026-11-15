@@ -84,6 +84,17 @@ class Menu(private val tv: TvView) {
     idx = tShown.indexOfFirst { it.on && it.arg != OTHER }.takeIf { it >= 0 } ?: tShown.indexOfFirst { it.on }.coerceAtLeast(0)
   }
 
+  // ---------- a short thing to read (What's new, Remote tips): title, a few lines, OK ----------
+  private var infoL: List<android.text.StaticLayout> = emptyList()
+  fun info(t: String, lines: List<String>) {
+    done?.invoke(-1); done = null
+    kind = "info"; title = t; item = null
+    infoL = lines.take(12).map { l -> Ui.clamp(l, pInfo, 620, 3, 28f) }
+    rows = listOf(Row("OK", "ok", ""))
+    idx = 0
+    start()
+  }
+
   // ---------- opening ----------
   fun pick(t: String, options: List<String>, current: Int, then: (Int) -> Unit) {
     done?.invoke(-1)
@@ -147,6 +158,7 @@ class Menu(private val tv: TvView) {
   private fun close() { kind = ""; closing = SystemClock.uptimeMillis(); val d = done; done = null; d?.invoke(-1); tv.invalidate() }
 
   private fun choose() {
+    if (kind == "info") { close(); return }
     if (kind == "tracks") {
       val t = tShown.getOrNull(idx) ?: return
       if (t.arg == OTHER) { tLevel = 1; tBuild(); tv.invalidate(); return }
@@ -214,7 +226,7 @@ class Menu(private val tv: TvView) {
     val k = Ui.ease(((now - openedAt) / 160f).coerceIn(0f, 1f))
     // Dim what's behind.
     fill.color = Ui.alpha(0x8C080505.toInt(), k); c.drawRect(0f, 0f, Ui.W, Ui.H, fill)
-    when (kind) { "hold" -> drawHold(c, now, k); "tracks" -> drawTracks(c, k); else -> drawPick(c, k) }
+    when (kind) { "hold" -> drawHold(c, now, k); "tracks" -> drawTracks(c, k); "info" -> drawInfo(c, k); else -> drawPick(c, k) }
     return k < 1f
   }
 
@@ -324,6 +336,22 @@ class Menu(private val tv: TvView) {
     y -= 4f
     if (dn) { icon.color = Ui.alpha(Ui.MUTED, a); icon.strokeWidth = 2f; Icons.drawPath(c, P_DOWN, left + w / 2f - 11f, y, 22f, icon); y += 22f }
     if (foot.isNotEmpty()) { pFoot.alpha = (255 * a).toInt(); Ui.line(c, Ui.fit(foot, pFoot, w - 56f), left + 28f, y + 10f, 24f, pFoot) }
+  }
+
+  private val pInfo = Ui.text(Ui.f400, 20f, Ui.TEXT)
+  private val dot = Ui.fill(Ui.RED)
+  private fun drawInfo(c: Canvas, a: Float) {
+    val w = 720f
+    val bodyH = infoL.sumOf { it.height.toDouble() }.toFloat() + max(0, infoL.size - 1) * 14f
+    val h = 24f + 40f + 18f + bodyH + 24f + 62f + 14f
+    val left = (Ui.W - w) / 2f; val top = (Ui.H - h) / 2f + (1f - a) * 16f
+    r.set(left, top, left + w, top + h); panel(c, a)
+    var y = top + 24f
+    pTitle.alpha = (255 * a).toInt(); Ui.line(c, Ui.fit(title, pTitle, w - 60f), left + 30f, y, 40f, pTitle); y += 40f + 18f
+    pInfo.alpha = (255 * a).toInt(); dot.alpha = (255 * a).toInt()
+    for (l in infoL) { c.drawCircle(left + 38f, y + 14f, 4f, dot); c.save(); c.translate(left + 60f, y); l.draw(c); c.restore(); y += l.height + 14f }
+    y += 10f
+    drawRow(c, rows[0], left, left + w, y, true, a, true)
   }
 
   private fun drawPick(c: Canvas, a: Float) {

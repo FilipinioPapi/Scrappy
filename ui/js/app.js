@@ -638,3 +638,5 @@ if (zoom !== 1) {
   while (z > 1 && !roomFor(z)) z = ZOOMS[ZOOMS.indexOf(z) - 1] ?? 1;
   applyZoom(z, false);
 }
+// Scrappy Native's Settings signs servers out and needs the session refreshed (tvsettings.js).
+window.__refreshSession = () => refreshSession();

@@ -48,6 +48,8 @@ interface Host {
   fun whoAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {}
   /** Who's watching closed. */
   fun whoClosed() {}
+  /** Settings: read the rows / change a setting / run a button (tvsettings.js act()). */
+  fun setAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {}
 }
 
 /** One glide per scroller, the same feel as the web screens (tv.js glideTo), in 1080p units. */
@@ -88,6 +90,8 @@ abstract class Screen(val tv: TvView) {
   /** Data changed elsewhere (watched, favourite, after playing): fetch again. */
   open fun stale() {}
   open val railKey: String = "home"
+  /** Back: return true if the screen handled it (e.g. stepping out of a list), else the page goes back. */
+  open fun back(): Boolean = false
 }
 
 /** The single native view: draws the current native screen and the side rail, takes the remote's keys. */
@@ -173,6 +177,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     if (h == "#/genres") return genres()
     if (h == "#/favorites") return favs()
     if (h == "#/search") return search()
+    if (p.size in 2..3 && p[1] == "settings") return screens.getOrPut("settings") { Settings(this) }
     if (p.size == 3 && p[1] == "person" && p[2].isNotEmpty()) return person(java.net.URLDecoder.decode(p[2], "UTF-8"))
     return null
   }
@@ -181,7 +186,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     val h = hash.substringBefore('?')
     if (h == "" || h == "#" || h == "#/" || h == "#/home") return true
     val p = h.split('/')
-    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" || h == "#/search" ||
+    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" || h == "#/search" || (p.size in 2..3 && p[1] == "settings") ||
       (p.size == 3 && p[1] == "person" && p[2].isNotEmpty())
   }
 
@@ -258,7 +263,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
       }
       KeyEvent.KEYCODE_BACK -> {
         if (e.action == KeyEvent.ACTION_UP) {
-          if (rail.open) { rail.open = false; invalidate() } else host.back()
+          if (rail.open) { rail.open = false; invalidate() } else if (!s.back()) host.back() else invalidate()
         }
         return true
       }
