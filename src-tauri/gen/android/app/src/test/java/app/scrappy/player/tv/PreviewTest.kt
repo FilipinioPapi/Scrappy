@@ -578,6 +578,15 @@ class PreviewTest {
     key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_UP); snap("seek")
     key(KeyEvent.KEYCODE_DPAD_RIGHT, 3); snap("seeking", 100)
     frames(1500); paused = true; snap("paused", 1000); snap("pausedinfo", 6500)
+    // Cards drawn by the app: Up next, Are you still watching, Player details.
+    paused = false; key(KeyEvent.KEYCODE_DPAD_UP); frames(300); acts.add("--- cards")
+    val upCard = JSONObject().put("mode", "end").put("count", 7).put("title", "S2:E4 · Second Front").put("meta", "24m").put("thumb", "").put("now", "Next episode").put("cancel", "Cancel")
+    ui.state(JSONObject(base.toString()).put("up", upCard)); snap("upnext", 900)
+    key(KeyEvent.KEYCODE_DPAD_RIGHT); ui.state(JSONObject(base.toString()).put("up", JSONObject(upCard.toString()).put("count", 6).put("cancel", "Watch credits"))); snap("upnext-cancel")
+    key(KeyEvent.KEYCODE_DPAD_CENTER); key(KeyEvent.KEYCODE_DPAD_LEFT); key(KeyEvent.KEYCODE_DPAD_CENTER)
+    ui.state(JSONObject(base.toString()).put("still", "Gundam II · S2:E4 · Second Front")); snap("still", 900)
+    key(KeyEvent.KEYCODE_DPAD_CENTER); key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER)
+    ui.state(JSONObject(base.toString()).put("details", true).put("detailsText", "Player details (open the cog and press Player details again to close)\nDirectStream  The Gundam Rises\n\n19:02:11 open http://emby/Videos/1/stream.mkv\n19:02:12 video hevc 3840x2160 hdr10\n19:02:12 sound eac3 6ch decoded here\n19:02:14 ready")); snap("details", 600)
     File(out, "player-acts.txt").writeText(acts.joinToString("\n"))
   }
 }

@@ -20,6 +20,8 @@ interface PlayerHost {
   /** Where the video is: position and length in seconds, paused, waiting for data. Null when there is no player. */
   fun clock(): DoubleArray?
   fun log(msg: String) {}
+  /** A button on the remote was pressed while a video is open (someone is there). */
+  fun there() {}
 }
 
 /**
@@ -45,6 +47,8 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     snap = j
     open = j.optBoolean("open")
     card = j.optBoolean("card")
+    val nc = natCard()
+    if (nc != cardKind) { cardKind = nc; cardBtn = 0; if (nc.isNotEmpty()) cardAt = SystemClock.uptimeMillis() }
     if (open && !wasOpen) start()
     if (!open && wasOpen) stop()
     if (open && oldId != j.optString("id") && oldId.isNotEmpty()) { closeMenus(); epsOpen = false; seasons = emptyList(); episodes = emptyList(); epsFor = "" }
@@ -53,6 +57,15 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     visibility = if (open) VISIBLE else GONE
     invalidate()
   }
+
+  // ---------- cards over the video: Up next, Are you still watching ----------
+  private var cardKind = ""
+  private var cardBtn = 0
+  private var cardAt = 0L
+  private fun up(): JSONObject? = snap.optJSONObject("up")
+  private fun natCard() = if (snap.has("still")) "still" else if (up() != null) "up" else ""
+  /** A card has the remote: ours, or one the page still draws. */
+  private val carded get() = card || cardKind.isNotEmpty()
 
   // ---------- what is showing ----------
   private enum class Mode { IDLE, BAR, EPS, POP }
@@ -72,6 +85,8 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
   private val epsA = Anim(0f)     // episodes popped up 0..1
   private val popA = Anim(0f)     // a menu open 0..1
   private val pinfoA = Anim(0f)   // paused screen 0..1
+  private val upA = Anim(0f)      // Up next card 0..1
+  private val stillA = Anim(0f)   // Are you still watching 0..1
   private val focusA = HashMap<String, Anim>()
 
   private class Anim(var v: Float) {
@@ -83,7 +98,7 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
   private fun start() {
     mode = Mode.IDLE; focus = "play"; pop = ""; epsOpen = false; pinfo = false; pausedSince = 0L
     val now = SystemClock.uptimeMillis()
-    vis.set(0f, now, 1f); vis.v = 0f; epsA.v = 0f; epsA.to = 0f; popA.v = 0f; popA.to = 0f; pinfoA.v = 0f; pinfoA.to = 0f
+    vis.set(0f, now, 1f); vis.v = 0f; epsA.v = 0f; epsA.to = 0f; popA.v = 0f; popA.to = 0f; pinfoA.v = 0f; pinfoA.to = 0f; upA.v = 0f; upA.to = 0f; stillA.v = 0f; stillA.to = 0f
     seekTo = -1.0; liftedTo = -1
   }
   private fun stop() { h.removeCallbacks(seekRun); h.removeCallbacks(releaseRun); seekTo = -1.0 }
@@ -160,6 +175,20 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
   private fun press(k: String, held: Boolean) {
     val now = SystemClock.uptimeMillis()
     lastKey = now
+    host.there()
+    if (cardKind.isNotEmpty()) {
+      // The highlight starts on the first button, so one OK plays the next one. A press in the card's first
+      // third of a second is taken as meant for the video, not the card.
+      when (k) {
+        "left" -> cardBtn = 0
+        "right" -> cardBtn = 1
+        "ok" -> if (now - cardAt > 350) host.act(if (cardKind == "up") (if (cardBtn == 0) "up-now" else "up-cancel") else (if (cardBtn == 0) "still-yes" else "still-no"))
+        "back" -> host.act("exit")
+        "pp" -> if (cardKind == "up") host.act("pause")
+        "next" -> if (cardKind == "up") host.act("up-now")
+      }
+      kick(); return
+    }
     if (pinfo) { pinfo = false; if (k == "back") { showBar("play"); kick(); return } }
     when (k) {
       "pp" -> { host.act("pause"); if (mode == Mode.IDLE) showBar("play"); kick(); return }
@@ -519,17 +548,19 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     readClock()
     // Paused a while with nothing open: the big paused screen.
     if (paused) { if (pausedSince == 0L) pausedSince = now } else { pausedSince = 0L; pinfo = false }
-    if (paused && !pinfo && (mode == Mode.BAR || mode == Mode.IDLE) && seekTo < 0 && now - max(pausedSince, lastKey) > 5000) { pinfo = true; mode = Mode.IDLE }
+    if (paused && !pinfo && !carded && (mode == Mode.BAR || mode == Mode.IDLE) && seekTo < 0 && now - max(pausedSince, lastKey) > 5000) { pinfo = true; mode = Mode.IDLE }
     // Controls hide by themselves after a few seconds of nothing (not while paused or a menu is open).
     if (mode == Mode.BAR && !paused && seekTo < 0 && now - lastKey > 5000) mode = Mode.IDLE
-    if (card && mode == Mode.POP) closeMenus()
+    if (carded && (mode == Mode.POP || mode == Mode.EPS)) { closeMenus(); mode = Mode.IDLE }
+    if (carded) pinfo = false
     if (focus == "skipbtn" && snap.optString("skip").isEmpty()) focus = "seek"
 
-    vis.set(if (mode == Mode.IDLE || card) 0f else 1f, now, 260f)
+    vis.set(if (mode == Mode.IDLE || carded) 0f else 1f, now, 260f)
     epsA.set(if (mode == Mode.EPS) 1f else 0f, now, 320f)
     popA.set(if (mode == Mode.POP) 1f else 0f, now, 180f)
     pinfoA.set(if (pinfo) 1f else 0f, now, 600f)
-    var moving = vis.step(now) or epsA.step(now) or popA.step(now) or pinfoA.step(now)
+    upA.set(if (cardKind == "up") 1f else 0f, now, 480f); stillA.set(if (cardKind == "still") 1f else 0f, now, 400f)
+    var moving = vis.step(now) or epsA.step(now) or popA.step(now) or pinfoA.step(now) or upA.step(now) or stillA.step(now)
     for ((id, a) in focusA) { a.set(if (mode == Mode.BAR && focus == id) 1f else 0f, now, 180f); moving = a.step(now) or moving }
     moving = epScroll.step(if (lastDraw == 0L) 16f else (now - lastDraw).toFloat().coerceIn(1f, 50f)) or moving
     if (mode == Mode.EPS) epScroll.set(scrollFor(epIdx))
@@ -552,16 +583,20 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
       if (popA.v > 0.01f && pop == "dl") drawDl(c, a * popA.v)
       else if (popA.v > 0.01f && pop.isNotEmpty()) drawPop(c, a * popA.v)
     }
-    if (!card && !pinfo && mode != Mode.EPS && mode != Mode.POP && snap.optString("skip").isNotEmpty()) drawSkip(c)
+    if (!carded && !pinfo && mode != Mode.EPS && mode != Mode.POP && snap.optString("skip").isNotEmpty()) drawSkip(c)
+    if (upA.v > 0.01f) drawUp(c, upA.v)
+    if (stillA.v > 0.01f) drawStill(c, stillA.v)
+    snap.optString("detailsText").let { if (it.isNotEmpty()) drawDetails(c, it) }
     c.restore()
 
     // Subtitles sit above the bar while it shows.
     // (Worked out from where the bar is headed, so the player is told once per change, not every frame.)
-    val target = if (mode == Mode.IDLE || card) Ui.H else Ui.H - (if (mode == Mode.EPS) 390f else 48f + hintFull()) - 64f - 30f - 27f - 20f
+    val target = if (mode == Mode.IDLE || carded) Ui.H else Ui.H - (if (mode == Mode.EPS) 390f else 48f + hintFull()) - 64f - 30f - 27f - 20f
     val lift = (100 - ((Ui.H - target) / Ui.H) * 100).toInt().coerceIn(50, 100)
     if (lift != liftedTo) { liftedTo = lift; host.act("subpos", lift.toString()) }
 
     if (mode == Mode.POP && pop == "dl" && (dl().optString("state") == "searching" || dl().optInt("busy", -1) >= 0)) moving = true
+    if (cardKind == "up" && Img.loading(up()?.optString("thumb")?.takeIf { it.isNotEmpty() })) moving = true
     if (moving) postInvalidateOnAnimation()
     else if (a > 0.01f || seekTo >= 0) postInvalidateDelayed(250)
     else postInvalidateDelayed(if (paused) 500 else 1000)
@@ -917,6 +952,87 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     if (over != null) { y += 22f; c.save(); c.translate(120f, y); over.draw(c); c.restore(); y += over.height }
     y += 28f
     Ui.line(c, meta, 120f, y, 30f, pMeta)
+  }
+
+  // ---------- Up next, Still watching, Player details (the page's look, at the TV's size) ----------
+  private val pUpLabel = Ui.text(Ui.f500, 17f, Ui.MUTED)
+  private val pUpCount = Ui.text(Ui.f700, 17f, 0xFFEDA7AA.toInt())
+  private val pUpTitle = Ui.text(Ui.f800, 21f, Ui.TEXT)
+  private val pCardBtn = Ui.text(Ui.f700, 25f, Ui.WHITE)
+  private val pStill = Ui.text(Ui.display, 61f, Ui.RED, 0.7f)
+  private val pStillSub = Ui.text(Ui.f500, 21f, 0xFFEADADA.toInt())
+  private val pMono = Ui.text(android.graphics.Typeface.MONOSPACE, 20f, Ui.WHITE)
+  private val hair = Ui.stroke(0xFF3A2526.toInt(), 1.4f)
+  private var upLast: JSONObject? = null
+
+  private fun cardButton(c: Canvas, x: Float, y: Float, w: Float, text: String, primary: Boolean, focused: Boolean, a: Float) {
+    r.set(x, y, x + w, y + 69f)
+    fill.color = Ui.alpha(if (primary) Ui.RED else 0xFF2C1C1D.toInt(), a); c.drawRoundRect(r, 16f, 16f, fill)
+    if (focused) { ring.color = Ui.alpha(Ui.WHITE, a); r.set(x - 5f, y - 5f, x + w + 5f, y + 74f); c.drawRoundRect(r, 20f, 20f, ring) }
+    pCardBtn.color = Ui.alpha(Ui.WHITE, a)
+    Ui.line(c, text, x + (w - pCardBtn.measureText(text)) / 2f, y, 69f, pCardBtn)
+  }
+
+  private fun drawUp(c: Canvas, a: Float) {
+    val u = up()?.also { upLast = it } ?: upLast ?: return
+    val w = 560f; val hgt = 242f
+    val x = Ui.W - 43f - w + (1f - a) * (w + 53f); val y = Ui.H - 75f - hgt
+    r.set(x, y, x + w, y + hgt)
+    fill.color = Ui.alpha(0xE6140D0E.toInt(), a); c.drawRoundRect(r, 21f, 21f, fill)
+    hair.color = Ui.alpha(0xFF3A2526.toInt(), a); c.drawRoundRect(r, 21f, 21f, hair)
+    // The next one's picture.
+    r.set(x + 21f, y + 21f, x + 221f, y + 133f)
+    fill.color = Ui.alpha(0xFF2C1C1D.toInt(), a); c.drawRoundRect(r, 13f, 13f, fill)
+    u.optString("thumb").takeIf { it.isNotEmpty() }?.let { url -> Img.get(url)?.let { Img.draw(c, it, r, 13f, a * Img.fade(it, SystemClock.uptimeMillis(), false)) } }
+    val tx = x + 240f; val tw = w - 240f - 21f
+    val al = (255 * a).toInt()
+    pUpLabel.alpha = al; pUpCount.alpha = al; pUpTitle.alpha = al
+    Ui.line(c, "Up next in ", tx, y + 21f, 24f, pUpLabel)
+    Ui.line(c, u.optInt("count").toString(), tx + pUpLabel.measureText("Up next in "), y + 21f, 24f, pUpCount)
+    Ui.line(c, Ui.fit(u.optString("title"), pUpTitle, tw), tx, y + 48f, 30f, pUpTitle)
+    Ui.line(c, u.optString("meta"), tx, y + 81f, 24f, pUpLabel)
+    // Next episode fills the row, Cancel is as wide as its words.
+    val cancel = u.optString("cancel", "Cancel")
+    val cw = pCardBtn.measureText(cancel) + 42f
+    val by = y + 21f + 112f + 19f
+    val on = cardKind == "up"
+    cardButton(c, x + 21f, by, w - 42f - 11f - cw, u.optString("now", "Next episode"), true, on && cardBtn == 0, a)
+    cardButton(c, x + w - 21f - cw, by, cw, cancel, false, on && cardBtn == 1, a)
+  }
+
+  private var stillLast = ""
+  private fun drawStill(c: Canvas, a: Float) {
+    if (snap.has("still")) stillLast = snap.optString("still")
+    fill.color = Ui.alpha(0xD1000000.toInt(), a); c.drawRect(0f, 0f, Ui.W, Ui.H, fill)
+    val title = "ARE YOU STILL WATCHING?"
+    val yes = "Keep watching"; val no = "Back to browsing"
+    val yw = pCardBtn.measureText(yes) + 56f; val nw = pCardBtn.measureText(no) + 56f
+    val hgt = 64f + (if (stillLast.isNotEmpty()) 13f + 30f else 0f) + 35f + 69f
+    var y = (Ui.H - hgt) / 2f + (1f - a) * 24f
+    val tw = pStill.measureText(title)
+    pStill.color = Ui.alpha(0xFF000000.toInt(), a); Ui.line(c, title, (Ui.W - tw) / 2f, y + 4f, 64f, pStill)
+    pStill.color = Ui.alpha(Ui.RED, a); Ui.line(c, title, (Ui.W - tw) / 2f, y, 64f, pStill)
+    y += 64f
+    if (stillLast.isNotEmpty()) {
+      val t = Ui.fit(stillLast, pStillSub, 1400f)
+      pStillSub.alpha = (255 * a).toInt(); Ui.line(c, t, (Ui.W - pStillSub.measureText(t)) / 2f, y + 13f, 30f, pStillSub); y += 43f
+    }
+    y += 35f
+    val x = (Ui.W - yw - 16f - nw) / 2f
+    val on = cardKind == "still"
+    cardButton(c, x, y, yw, yes, true, on && cardBtn == 0, a)
+    cardButton(c, x + yw + 16f, y, nw, no, false, on && cardBtn == 1, a)
+  }
+
+  /** What the TV's player is doing, on screen (for a photo when something is stuck). */
+  private fun drawDetails(c: Canvas, text: String) {
+    val maxW = Ui.W * 0.62f - 54f
+    val lines = text.split('\n').take(((Ui.H * 0.62f - 42f) / 28f).toInt()).map { Ui.fit(it, pMono, maxW) }
+    val w = (lines.maxOfOrNull { pMono.measureText(it) } ?: 0f) + 54f
+    r.set(53f, 147f, 53f + w, 147f + 42f + lines.size * 28f)
+    fill.color = 0xC7000000.toInt(); c.drawRoundRect(r, 19f, 19f, fill)
+    pMono.color = Ui.WHITE
+    for ((i, l) in lines.withIndex()) Ui.line(c, l, 80f, 168f + i * 28f, 28f, pMono)
   }
 
   /** Something changed: redraw now (and keep the controls up). */
