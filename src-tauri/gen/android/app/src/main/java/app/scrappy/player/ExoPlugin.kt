@@ -437,6 +437,32 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
           }
         }
         "track" -> selectTrack(p, a.optString("type"), a.optString("id"))
+        // Subtitles downloaded while the video plays: the TV player only takes subtitle files with the
+        // video, so the same video is given again with the new file added, from the same spot, and the
+        // new subtitles are turned on as soon as they show up.
+        "addSub" -> {
+          val cur = lastItem ?: p.currentMediaItem ?: return@ui null
+          val su = a.optString("url")
+          val mime = when {
+            su.contains(".vtt", true) -> MimeTypes.TEXT_VTT
+            su.contains(".ass", true) || su.contains(".ssa", true) -> MimeTypes.TEXT_SSA
+            else -> MimeTypes.APPLICATION_SUBRIP
+          }
+          val id = "extadd" + (++addedSubs)
+          val configs = ArrayList(cur.localConfiguration?.subtitleConfigurations ?: emptyList())
+          configs.add(MediaItem.SubtitleConfiguration.Builder(Uri.parse(su)).setMimeType(mime)
+            .setLanguage(a.optString("lang").ifEmpty { null }).setLabel(a.optString("title").ifEmpty { null }).setId(id).build())
+          val item = cur.buildUpon().setSubtitleConfigurations(configs).build()
+          lastItem = item
+          val at = p.currentPosition
+          val play = p.playWhenReady
+          PlayerLog.add("ADD SUBTITLES at ${at / 1000}s: now ${configs.size} subtitle files")
+          pendingSub = id
+          p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
+          p.setMediaItem(item, at)
+          p.prepare()
+          p.playWhenReady = play
+        }
         "stop" -> {
           p.stop()
           p.clearMediaItems()
@@ -496,9 +522,26 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  private var addedSubs = 0
+  /** A just-added subtitle file to turn on once the player lists it. */
+  private var pendingSub: String? = null
+
   private fun tracks(t: Tracks): JSArray {
     val out = JSArray()
     trackMap.clear()
+    pendingSub?.let { want ->
+      val p = player
+      t.groups.forEach { g ->
+        if (g.type != C.TRACK_TYPE_TEXT || p == null) return@forEach
+        for (ti in 0 until g.length) if (g.getTrackFormat(ti).id?.contains(want) == true) {
+          pendingSub = null
+          PlayerLog.add("new subtitles turned on")
+          p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).addOverride(TrackSelectionOverride(g.mediaTrackGroup, ti)).build()
+          return@let
+        }
+      }
+    }
     val counters = HashMap<String, Int>()
     t.groups.forEachIndexed { gi, g ->
       val type = when (g.type) {

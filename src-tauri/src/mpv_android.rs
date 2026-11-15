@@ -102,9 +102,14 @@ impl Player {
                 };
                 call("open", json!({ "url": url, "start": start, "subs": subs })).map(|_| ())
             }
-            ["sub-add", url, _flag, rest @ ..] => {
+            ["sub-add", url, flag, rest @ ..] => {
                 let title = rest.first().copied().unwrap_or("");
                 let lang = rest.get(1).copied().unwrap_or("");
+                // "select" = just downloaded while the video plays: the TV player adds it to the
+                // video that's open now and turns it on. Otherwise it goes in with the next video.
+                if *flag == "select" {
+                    return control("addSub", json!({ "url": url, "title": title, "lang": lang }));
+                }
                 self.0.lock().unwrap().pending_subs.push(json!({ "url": url, "title": title, "lang": lang }));
                 Ok(())
             }
