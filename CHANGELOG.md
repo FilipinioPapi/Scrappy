@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 49 · Nov 15, 12:58 PM
+**Updates**
+- Fixed: if an update can't install, Scrappy no longer closes every time it starts. It tells you, and offers to try again or download the update yourself
+
+<sub>Built from 9ec1ada · includes: Updates</sub>
+
 ### Preview 48 · Nov 15, 12:05 PM
 **Speed**
 - Optimization pass for weaker PCs: big blurred backgrounds (album, playlist and book pages, Now playing, follow-along) are drawn once instead of on every frame
