@@ -4,6 +4,7 @@
 // presses back ("fa-cmd"). The top-right button sends the text back into Scrappy.
 import { listen } from './api.js';
 import { followHTML, followBind, followActive, followRemote, openSettings, BACK_ICON } from './follow.js';
+import './softbg.js';
 
 const { invoke } = window.__TAURI__.core;
 const { emit } = window.__TAURI__.event;

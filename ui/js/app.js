@@ -16,6 +16,7 @@ import { pref, setPref, on, onPref } from './prefs.js';
 import { loginView, firstTab, homeView, libraryView, itemView, personView, comingSoonView, connectView, genresView, favoritesView } from './views.js';
 import { tvShell } from './tvside.js';
 import { artPageStart } from './art.js';
+import './softbg.js';
 
 const viewEl = document.getElementById('view');
 

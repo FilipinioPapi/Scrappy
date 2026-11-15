@@ -1441,6 +1441,17 @@ pub fn run() {
                     fit_work_area(window);
                 }
             }
+            // Tell the page when the main window is minimised, so it stops drawing things
+            // nobody can see (the visualiser, the video player's progress bar).
+            if window.label() == "main" {
+                if let tauri::WindowEvent::Resized(_) = event {
+                    let min = window.is_minimized().unwrap_or(false);
+                    static LAST_MIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                    if LAST_MIN.swap(min, std::sync::atomic::Ordering::Relaxed) != min {
+                        let _ = window.app_handle().emit_to("main", "win-min", min);
+                    }
+                }
+            }
             // The Follow along pop-out closed: tell the main window to show the text again.
             if window.label() == "follow" {
                 if let tauri::WindowEvent::Destroyed = event {

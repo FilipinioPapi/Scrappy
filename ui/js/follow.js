@@ -5,6 +5,7 @@
 // what to expect on this PC; the gear has the quality choice and saved text.
 import { listen } from './api.js';
 import { esc } from './components.js';
+import { win } from './softbg.js';
 
 const { invoke } = window.__TAURI__.core;
 const line = (d, n = 18) => `<svg viewBox="0 0 24 24" width="${n}" height="${n}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -183,7 +184,9 @@ function drawText(force) {
 let raf = 0;
 function tick() {
   if (raf) return;
-  const step = () => { raf = 0; if (!F.active || !F.root || F.view !== 'text') return; if (!document.hidden) drawText(false); raf = requestAnimationFrame(step); };
+  // At most 60 updates a second (120 Hz screens would double the work for no visible gain).
+  let last = 0;
+  const step = (ts) => { raf = 0; if (!F.active || !F.root || F.view !== 'text') return; if (!document.hidden && !win.min && ts - last >= 15) { last = ts; drawText(false); } raf = requestAnimationFrame(step); };
   raf = requestAnimationFrame(step);
 }
 

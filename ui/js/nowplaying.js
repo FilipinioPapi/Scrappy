@@ -1,6 +1,7 @@
 // Now playing: big cover with the record sliding out, controls, and on the right
 // Up next, Lyrics or the Visualizer (Bars, Wave, Circle, Particles).
 import { listen, api } from './api.js';
+import { win } from './softbg.js';
 import { esc, toast } from './components.js';
 import { on, onPref } from './prefs.js';
 import { music, onMusic, current, togglePlay, next, prev, seek, toggleShuffle, cycleRepeat, setVolume, toggleMute, setFavorite, playAt, removeAt, moveInQueue, clearUpNext, cover, fmt, IC } from './mplayer.js';
@@ -379,7 +380,7 @@ function startViz(canvas) {
   // Drawn at most 60 times a second: on 120 Hz screens drawing every refresh doubles the cost
   // (and the bars would move twice as fast, since each step is per frame).
   let last = 0;
-  const loop = (now = performance.now()) => { raf = requestAnimationFrame(loop); if (now - last < 15) return; last = now; frame(); };
+  const loop = (now = performance.now()) => { raf = requestAnimationFrame(loop); if (now - last < 15 || win.min) return; last = now; frame(); };
   loop();
 }
 function stopViz() {

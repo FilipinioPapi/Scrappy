@@ -1,6 +1,7 @@
 // Scrappy's own player screen. mpv draws the video into the window behind
 // this page; this file draws the controls on top and talks to mpv.
 import { api, listen, img, load, IMG_BASE } from './api.js';
+import { win } from './softbg.js';
 import { esc, toast, epCode, runtime } from './components.js';
 import { pref, on, onPref, SUB_STYLES, NIGHT_FILTER } from './prefs.js';
 
@@ -395,7 +396,7 @@ let glideRaf = 0;
 function glide() {
   glideRaf = 0;
   if (!S.open) return;
-  if (!S.dragging && !el.classList.contains('idle')) drawBar(livePos());
+  if (!S.dragging && !win.min && !el.classList.contains('idle')) drawBar(livePos());
   glideRaf = requestAnimationFrame(glide);
 }
 const startGlide = () => { if (!glideRaf) glideRaf = requestAnimationFrame(glide); };
