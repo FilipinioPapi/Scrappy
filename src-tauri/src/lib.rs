@@ -912,6 +912,31 @@ fn set_fullscreen(app: AppHandle, on: bool) -> Result<bool, String> {
     Ok(on)
 }
 
+/// The window is see-through (the video draws behind the page), and on Windows a maximized
+/// see-through window can come out the full height of the screen, running under the taskbar.
+/// When that happens, fit it to the screen's usable area instead (any size, shape or scaling).
+#[cfg(windows)]
+fn fit_work_area(w: &tauri::Window) {
+    if !w.is_maximized().unwrap_or(false) || w.is_fullscreen().unwrap_or(false) {
+        return;
+    }
+    let Ok(Some(m)) = w.current_monitor() else { return };
+    let wa = *m.work_area();
+    let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
+    // A normal maximized window pokes out by its invisible resize border (about 8 px each side).
+    let slack = (12.0 * m.scale_factor()).round() as i32;
+    let bottom = pos.y + size.height as i32;
+    let right = pos.x + size.width as i32;
+    let wa_bottom = wa.position.y + wa.size.height as i32;
+    let wa_right = wa.position.x + wa.size.width as i32;
+    if bottom <= wa_bottom + slack && right <= wa_right + slack && pos.y >= wa.position.y - slack {
+        return;
+    }
+    let _ = w.unmaximize();
+    let _ = w.set_position(tauri::PhysicalPosition::new(wa.position.x, wa.position.y));
+    let _ = w.set_size(tauri::PhysicalSize::new(wa.size.width, wa.size.height));
+}
+
 #[tauri::command]
 fn is_fullscreen(app: AppHandle) -> bool {
     app.get_webview_window("main").and_then(|w| w.is_fullscreen().ok()).unwrap_or(false)
@@ -1386,6 +1411,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Maximized, the main window must stop at the taskbar (see fit_work_area).
+            #[cfg(windows)]
+            if window.label() == "main" {
+                if let tauri::WindowEvent::Resized(_) = event {
+                    fit_work_area(window);
+                }
+            }
             // The Follow along pop-out closed: tell the main window to show the text again.
             if window.label() == "follow" {
                 if let tauri::WindowEvent::Destroyed = event {
