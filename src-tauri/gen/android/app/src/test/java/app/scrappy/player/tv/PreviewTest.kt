@@ -229,6 +229,7 @@ class PreviewTest {
     override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title"); tv.menu.pick(title, options, cur) { i -> calls.add("picked $title $i"); done(i) } }
     override fun saveSort(key: String, i: Int) {}
     override fun saveHomeRows(json: String) { calls.add("saveHomeRows $json") }
+    override fun updAct(act: String) { calls.add("updAct $act") }
     override fun playFrom(id: String, fromStart: Boolean) {}
     override fun playSeriesFrom(id: String, fromStart: Boolean) {}
     override fun toast(msg: String, error: Boolean) {}
@@ -377,6 +378,19 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_BACK); pump(200); shot("sign-back-emby")
     press(KeyEvent.KEYCODE_DPAD_UP); shot("sign-tiles")
     File(out, "signin-calls.txt").writeText(host.calls.joinToString("\n"))
+  }
+
+  @Test fun update() {
+    start()
+    tv.route("#/home"); pump(3000)
+    tv.upd.show(JSONObject().put("step", "ask").put("version", "0.4.2").put("current", "0.4.0").put("notes", JSONArray().put("Episode pages match the show pages").put("Edit home works with the remote").put("Stats on the side bar")))
+    shot("upd-ask")
+    press(KeyEvent.KEYCODE_DPAD_RIGHT); shot("upd-later")
+    tv.upd.show(JSONObject().put("step", "get").put("version", "0.4.2").put("got", 15_000_000L).put("total", 38_000_000L).put("gotText", "14 of 36 MB").put("left", "about 12 seconds left")); shot("upd-get", 900)
+    tv.upd.show(JSONObject().put("step", "ready").put("version", "0.4.2")); shot("upd-ready")
+    tv.upd.show(JSONObject().put("step", "fail").put("err", "Download failed: no connection")); shot("upd-fail")
+    press(KeyEvent.KEYCODE_BACK); shot("upd-closed")
+    File(out, "upd-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun banner() {

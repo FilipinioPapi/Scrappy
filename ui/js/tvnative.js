@@ -147,6 +147,7 @@ window.__tvNative = {
     .then((r) => { try { window.ScrappyNative.statsReply(seq, JSON.stringify(r)); } catch {} }),
   pick,
   genreLib: (id) => { try { localStorage.setItem('genreLib', id); } catch {} },
+  updAct: (a) => import('./tvupdate.js').then((m) => m.nativeAct(a)).catch(() => {}),
   homeRows: (s) => { try { if (s) localStorage.setItem('homeRows:tv', s); else localStorage.removeItem('homeRows:tv'); } catch {} sendPrefs(); },
   sort: (key, i) => { try { localStorage.setItem(key, String(i)); } catch {} sendPrefs(); },
 };

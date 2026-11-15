@@ -77,22 +77,24 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   fun playerKeys() = playing && player.open && !player.card
 
   /** Keys while a native screen is up and nothing from the web is on top. */
-  fun takesKeys() = ((active && !webKeys && !playing) || modal) && box?.hasFocus() != true
+  fun takesKeys() = ((active && !webKeys && !playing) || modal || updModal) && box?.hasFocus() != true
 
   /** Who's watching is up (drawn natively over everything, even before the first native screen). */
   private var modal = false
+  /** The update card is up (drawn natively over the screen). */
+  private var updModal = false
 
   private var hadNativeKeys = false
   private var webHidden = false
 
   private fun apply() {
-    val nativeKeys = (active && !webKeys && !playing) || modal
-    view.visibility = if ((active && !playing) || modal) View.VISIBLE else View.GONE
+    val nativeKeys = (active && !webKeys && !playing) || modal || updModal
+    view.visibility = if ((active && !playing) || modal || updModal) View.VISIBLE else View.GONE
     // The remote's focus moves for real between the two views. Native first, so the web view never
     // hides while holding the focus.
     if (nativeKeys && !view.isFocused) view.requestFocus()
     // With nothing on top, the web view is put away entirely, so it costs nothing while you browse.
-    val webShown = (!active || webVis || playing) && !modal
+    val webShown = (!active || webVis || playing) && !modal && !updModal
     val wasHidden = webHidden
     webHidden = !webShown
     web.visibility = if (webShown) View.VISIBLE else View.INVISIBLE
@@ -143,6 +145,17 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     val o = try { JSONObject(json) } catch (_: Throwable) { return }
     act.runOnUiThread { attach(); player.state(o) }
   }
+
+  /** The update prompt: tvupdate.js sends each card ({step:""} closes it). */
+  @JavascriptInterface fun upd(json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { return }
+    act.runOnUiThread {
+      attach()
+      view.upd.onClosed = { updModal = false; apply() }
+      if (o.optString("step").isNotEmpty()) { updModal = true; view.upd.show(o); apply() } else view.upd.show(o)
+    }
+  }
+  override fun updAct(act: String) = eval("window.__tvNative && window.__tvNative.updAct(${js(act)})")
 
   @JavascriptInterface fun stale() { act.runOnUiThread { view.stale() } }
 

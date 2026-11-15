@@ -10,7 +10,16 @@ const mb = (n) => Math.max(1, Math.round((n || 0) / 1048576));
 
 let box = null, found = null, before = null, unlisten = null;
 
+// Scrappy Native draws the same cards itself (approved mock "Update prompt"); this file keeps the logic.
+const N = window.ScrappyNative;
+const native = !!(N && typeof N.upd === 'function');
+let natOpen = false;
+const send = (o) => { natOpen = !!o.step; try { N.upd(JSON.stringify(o)); } catch {} };
+const notesOf = () => (Array.isArray(found.notes) ? found.notes : String(found.notes || '').split('\n'))
+  .map((l) => String(l).replace(/^\s*[-*•]\s*/, '').trim()).filter(Boolean).slice(0, 5);
+
 function close() {
+  if (native) { if (natOpen) send({ step: '' }); if (unlisten) { unlisten(); unlisten = null; } return; }
   if (!box) return;
   box.remove(); box = null;
   if (unlisten) { unlisten(); unlisten = null; }
@@ -37,8 +46,8 @@ function open(html) {
 const head = (title, sub) => `<div class="tvu-h"><img src="logo.png" alt=""><div><div class="tvu-t">${title}</div><div class="tvu-v">${sub}</div></div></div>`;
 
 function ask() {
-  const notes = (Array.isArray(found.notes) ? found.notes : String(found.notes || '').split('\n'))
-    .map((l) => String(l).replace(/^\s*[-*•]\s*/, '').trim()).filter(Boolean).slice(0, 5);
+  const notes = notesOf();
+  if (native) { send({ step: 'ask', version: found.version, current: found.current, notes }); return; }
   open(`${head('A new Scrappy is ready', `Version ${esc(found.version)} · you have ${esc(found.current)}`)}
     ${notes.length ? `<div class="tvu-k">WHAT'S NEW</div><ul class="tvu-l">${notes.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
     <div class="tvu-s">Takes under a minute. You stay signed in and keep your spot in every show.</div>
@@ -48,6 +57,7 @@ function ask() {
 }
 
 async function download() {
+  if (native) return downloadNative();
   open(`${head('Getting the update…', `Version ${esc(found.version)}`)}
     <div class="tvu-p"><i id="tvuBar"></i></div>
     <div class="tvu-n"><span id="tvuGot">Starting…</span><span id="tvuLeft"></span></div>
@@ -76,6 +86,7 @@ async function download() {
 }
 
 async function install() {
+  if (native) { send({ step: 'ready', version: found.version }); tv('install').catch(failed); return; }
   open(`${head('Ready to install', `Version ${esc(found.version)}`)}
     <div class="tvu-s">The TV's own screen comes up next. Press OK on <b>Update</b>, then <b>Open</b>.<br>The very first time it also asks you to allow Scrappy to install updates: switch that on once and press Back.</div>
     <div class="tvu-b"><button type="button" class="tvu-btn red" data-first id="tvuInst">Install</button><button type="button" class="tvu-btn" data-back id="tvuLater">Later</button></div>`);
@@ -86,6 +97,7 @@ async function install() {
 }
 
 function failed(e) {
+  if (native) { send({ step: 'fail', err: String(e) }); return; }
   open(`${head("The update didn't work", esc(String(e)))}
     <div class="tvu-s">Nothing was changed. You can try again now or later from Settings.</div>
     <div class="tvu-b"><button type="button" class="tvu-btn red" data-first id="tvuAgain">Try again</button><button type="button" class="tvu-btn" data-back id="tvuLater">Later</button></div>`);
@@ -93,11 +105,45 @@ function failed(e) {
   box.querySelector('#tvuLater').onclick = close;
 }
 
+async function downloadNative() {
+  const left = (got, total, t0) => {
+    const secs = (Date.now() - t0) / 1000;
+    const l = total && got > 0 && secs > 1 ? Math.round(((total - got) / got) * secs) : 0;
+    return l > 60 ? `about ${Math.round(l / 60)} min left` : l > 2 ? `about ${l} seconds left` : '';
+  };
+  const t0 = Date.now();
+  send({ step: 'get', version: found.version, got: 0, total: 0, gotText: 'Starting…', left: '' });
+  if (unlisten) unlisten();
+  unlisten = await listen('tv-upd', (e) => {
+    if (!natOpen) return;
+    const { got = 0, total = 0 } = e.payload || {};
+    send({ step: 'get', version: found.version, got, total, gotText: total ? `${mb(got)} of ${mb(total)} MB` : `${mb(got)} MB`, left: left(got, total, t0) });
+  });
+  try {
+    await tv('download');
+    if (unlisten) { unlisten(); unlisten = null; }
+    if (!natOpen) return; // cancelled meanwhile
+    await install();
+  } catch (e) {
+    if (unlisten) { unlisten(); unlisten = null; }
+    if (String(e) === 'cancelled') return;
+    failed(e);
+  }
+}
+
+/** A button on the native card: go (Update now), again (Try again), install, cancel, later. */
+export function nativeAct(a) {
+  if (a === 'go' || a === 'again') download();
+  else if (a === 'install') tv('install').catch(failed);
+  else if (a === 'cancel') { tv('cancel').catch(() => {}); close(); }
+  else close();
+}
+
 const playing = () => { const p = document.getElementById('player'); return !!(p && (p.classList.contains('open') || !p.hidden && p.offsetParent)); };
 
 /** Look for a newer TV build. `manual` = asked for from Settings (always answers). */
 export async function checkNow(manual = false) {
-  if (box) return;
+  if (box || natOpen) return;
   try {
     const r = await tv('check');
     found = r?.available ? r : null;

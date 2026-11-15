@@ -20,6 +20,8 @@ interface Host {
   fun editHome(rowsJson: String)
   /** Keep Home's row order and hidden rows ("" = back to default). */
   fun saveHomeRows(json: String) {}
+  /** A button on the update card: go, again, install, cancel, later (tvupdate.js does the work). */
+  fun updAct(act: String) {}
   fun who()
   fun log(msg: String) {}
   fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit)
@@ -115,6 +117,8 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   val who = Who(this)
   /** Edit home, drawn over Home. */
   val edit = EditHome(this)
+  /** The update prompt, drawn over everything. */
+  val upd = UpdateCard(this)
   private var last = 0L
   /** Holding a direction or tapping fast: pictures appear at once, no fades (tv-fast on the web). */
   var fast = false; private set
@@ -227,6 +231,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     anim = who.draw(c, now) || anim
     anim = edit.draw(c, now) || anim
     anim = menu.draw(c, now) || anim
+    anim = upd.draw(c, now) || anim
     c.restore()
     if (anim || fast) postInvalidateOnAnimation() else last = 0L
   }
@@ -237,6 +242,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
 
   /** Keys from the activity while a native screen is showing and nothing from the web is on top. */
   fun onKey(e: KeyEvent): Boolean {
+    if (upd.open) return upd.key(e)
     if (menu.open) return menu.key(e)
     if (who.open) return who.key(e)
     if (edit.open) return edit.key(e)
