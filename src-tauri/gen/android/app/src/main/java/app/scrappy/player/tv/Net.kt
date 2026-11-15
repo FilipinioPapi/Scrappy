@@ -59,7 +59,10 @@ object Net {
   }
 
   /** Blocking GET; also saves the answer. Throws on failure. */
-  fun getNow(path: String): Any {
+  fun getNow(path: String): Any = getNow(path, true)
+
+  /** The same, with a say in whether the answer is kept on disk (search results are not). */
+  fun getNow(path: String, keep: Boolean): Any {
     val s = session
     if (!s.ok) throw IllegalStateException("Not signed in")
     val c = URL(url(path)).openConnection() as HttpURLConnection
@@ -71,7 +74,7 @@ object Net {
       if (code == 401) throw IllegalStateException("SESSION_EXPIRED")
       if (code !in 200..299) throw IllegalStateException("HTTP $code")
       val text = c.inputStream.bufferedReader().use { it.readText() }
-      try { cacheFile(path).writeText(text) } catch (_: Throwable) {}
+      if (keep) try { cacheFile(path).writeText(text) } catch (_: Throwable) {}
       return parse(text)
     } finally { c.disconnect() }
   }

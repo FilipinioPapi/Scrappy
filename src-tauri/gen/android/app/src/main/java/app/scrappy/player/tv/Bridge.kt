@@ -436,7 +436,18 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     val o = try { JSONObject(json) } catch (_: Throwable) { null }
     act.runOnUiThread { searches.remove(seq)?.invoke(o) }
   }
+  private val finder = Finder { path -> Net.getNow(path, false) as? JSONObject }
+  /** Movies & TV search is the app's own. With Music or Audiobooks signed in the page still searches, so their results keep showing. */
   override fun search(text: String, done: (JSONObject?) -> Unit) {
+    val others = try { Store.load(java.io.File(act.dataDir, "config.json")).let { c -> c.musicIn || c.booksIn } } catch (e: Exception) { true }
+    if (!others) {
+      Net.bg {
+        val r = if (!Net.session.ok) JSONObject().put("failed", JSONArray()).put("sections", JSONArray())
+          else try { finder.search(text) } catch (e: Throwable) { JSONObject().put("failed", JSONArray().put("Emby")).put("sections", JSONArray()) }
+        Net.main.post { done(r) }
+      }
+      return
+    }
     val n = ++searchN; searches[n] = done
     eval("window.__tvNative && window.__tvNative.search($n, ${js(text)})")
   }
