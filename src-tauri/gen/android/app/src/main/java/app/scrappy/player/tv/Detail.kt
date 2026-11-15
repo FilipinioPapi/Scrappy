@@ -190,6 +190,14 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   }
 
   private fun pickSeason(id: String) {
+    if (gridAll) {
+      selected = id
+      tv.host.replace("#/item/" + Card.enc(itemId) + "/" + Card.enc(id), false)
+      val idx = epIndexes()
+      val k = idx.indexOfFirst { i -> epData.getOrNull(i)?.optString("SeasonId") == id }
+      if (k >= 0) { row = 'E'; col = k; aim() }
+      tv.invalidate(); return
+    }
     if (id == selected) return
     selected = id
     if (id != "all") tv.host.replace("#/item/" + Card.enc(itemId) + "/" + Card.enc(id), false)
@@ -197,9 +205,10 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   }
 
   private var epGen = 0
-  /** Grid on a show = every episode of every season in one grid, 50 at a time (no season bar). */
+  /** Grid on a show = every episode of every season in one grid you scroll through (Jayden): no chunk tabs;
+   *  a show with seasons keeps its season tabs, which jump to that season in the grid. */
   private val gridAll get() = epView == "grid" && !isEp
-  private fun blocked() = epView == "grid" && (gridAll || selected != "all")
+  private fun blocked() = epView == "grid" && !gridAll && selected != "all"
   private var multiSeason = false
   private fun epLabel(e: JSONObject): String {
     if (!e.has("IndexNumber")) return "•"
@@ -514,7 +523,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
         var k = 0
         var lastSeason: String? = null
         while (k < idx.size) {
-          if (selected == "all" && !gridAll) {
+          if ((selected == "all" && !gridAll) || (gridAll && seasons.size > 1)) {
             val e = epData[idx[k]]
             val sk = e.optString("SeasonId").ifEmpty { e.optInt("ParentIndexNumber").toString() }
             if (sk != lastSeason) {
@@ -544,7 +553,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     val order = ArrayList<Char>()
     order.add('B')
     if (hasEps && seasons.isNotEmpty()) {
-      if ((seasons.size > 1 || seasons.size >= 8) && !gridAll) order.add('T')
+      if (seasons.size > 1 || seasons.size >= 8) order.add('T')
       if (blocks > 1 && epView == "grid") order.add('K')
       if (eps.isNotEmpty()) order.add('E')
     }
@@ -584,7 +593,8 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private fun tabs(): List<Pair<String, String>> {
     if (seasons.size <= 1) return emptyList()
     val total = seasons.sumOf { s -> s.optInt("ChildCount") }
-    return seasons.map { s -> s.optString("Id") to s.optString("Name") } + ("all" to "All")
+    val list = seasons.map { s -> s.optString("Id") to s.optString("Name") }
+    return if (gridAll) list else list + ("all" to "All")
   }
   private fun tabCount(id: String): Int = if (id == "all") seasons.sumOf { s -> s.optInt("ChildCount") } else seasons.firstOrNull { s -> s.optString("Id") == id }?.optInt("ChildCount") ?: 0
   private val hasPick get() = seasons.size >= 8
@@ -757,7 +767,8 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
           tv.host.pick("Seasons", seasons.map { s -> s.optString("Name") }, seasons.indexOfFirst { s -> s.optString("Id") == selected }) { i ->
             if (i < 0) return@pick
             pickSeason(seasons[i].optString("Id"))
-            col = i + 1; aim(); tv.invalidate()
+            if (!gridAll) { col = i + 1; aim() }
+            tv.invalidate()
           }
           return
         }
@@ -1040,7 +1051,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     drawButtons(c, btnTop)
     if (playSub.isNotEmpty()) Ui.line(c, Ui.fit(playSub, subP, 1300f), x0, subTop, 27f, subP)
     // Season bar (an episode page names its season and where you are).
-    if (seasons.isNotEmpty() && gridAll) {
+    if (seasons.size == 1 && gridAll) {
       // Grid: the whole show in one grid, so no season tabs.
       Ui.line(c, "All episodes", 149f, barTop, 61f, oneP)
       if (eps.isNotEmpty()) Ui.line(c, "${eps.size} episodes" + (if (seasons.size > 1) " · ${seasons.size} seasons" else ""), 149f + oneP.measureText("All episodes") + 16f, barTop + 3f, 61f, hereP)

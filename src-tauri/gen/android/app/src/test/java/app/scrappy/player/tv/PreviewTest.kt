@@ -452,6 +452,12 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_DPAD_DOWN); shot("showgrid-eps", 800)
   }
 
+  @Test fun backExit() {
+    start()
+    tv.route("#/home"); pump(2500)
+    press(KeyEvent.KEYCODE_BACK); shot("back-exit", 400)
+  }
+
   @Test fun searchClear() {
     recentsOn = true
     start()

@@ -243,8 +243,41 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     anim = edit.draw(c, now) || anim
     anim = menu.draw(c, now) || anim
     anim = upd.draw(c, now) || anim
+    anim = drawExit(c, now) || anim
     c.restore()
     if (anim || fast) postInvalidateOnAnimation() else last = 0L
+  }
+
+  // ---------- "Press Back again to leave Scrappy" ----------
+  private var exitAt = 0L
+  private val EXIT_MS = 2500L
+  private val exitBg = Ui.fill(0xF51E1415.toInt())
+  private val exitLine = Ui.stroke(Ui.LINE, 1.5f)
+  private val exitDot = Ui.fill(0xFF2C1C1D.toInt())
+  private val exitIcon = Ui.stroke(Ui.TEXT, 2.2f)
+  private val exitP = Ui.text(Ui.f600, 26f, Ui.TEXT)
+  private val exitB = Ui.text(Ui.f800, 26f, Ui.TEXT)
+  private val exitR = android.graphics.RectF()
+  private val exitPath = android.graphics.Path().apply { moveTo(9f, 14f); lineTo(4f, 9f); lineTo(9f, 4f); moveTo(4f, 9f); lineTo(14.5f, 9f); cubicTo(17.5f, 9f, 20f, 11.5f, 20f, 14.5f); cubicTo(20f, 17.5f, 17.5f, 20f, 14.5f, 20f); lineTo(11f, 20f) }
+  private fun drawExit(c: Canvas, now: Long): Boolean {
+    if (exitAt == 0L) return false
+    val t = now - exitAt
+    if (t >= EXIT_MS + 200) { exitAt = 0L; return false }
+    val a = Ui.ease(if (t < 200) t / 200f else if (t > EXIT_MS) 1f - (t - EXIT_MS) / 200f else 1f)
+    val p1 = "Press "; val p2 = "Back"; val p3 = " again to leave Scrappy"
+    val tw = exitP.measureText(p1) + exitB.measureText(p2) + exitP.measureText(p3)
+    val w = 18f + 44f + 16f + tw + 34f
+    val x = (Ui.W - w) / 2f; val y = Ui.H - 64f - 72f + (1f - a) * 16f
+    c.saveLayerAlpha(x - 40f, y - 40f, x + w + 40f, y + 112f, (255 * a).toInt())
+    exitR.set(x, y, x + w, y + 72f); c.drawRoundRect(exitR, 36f, 36f, exitBg); c.drawRoundRect(exitR, 36f, 36f, exitLine)
+    c.drawCircle(x + 18f + 22f, y + 36f, 22f, exitDot)
+    c.save(); c.translate(x + 18f + 10f, y + 24f); c.drawPath(exitPath, exitIcon); c.restore()
+    var tx = x + 18f + 44f + 16f
+    Ui.line(c, p1, tx, y, 72f, exitP); tx += exitP.measureText(p1)
+    Ui.line(c, p2, tx, y, 72f, exitB); tx += exitB.measureText(p2)
+    Ui.line(c, p3, tx, y, 72f, exitP)
+    c.restore()
+    return true
   }
 
   private var okDown = 0L
@@ -259,6 +292,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     if (edit.open) return edit.key(e)
     val s = screen ?: return false
     val code = e.keyCode
+    if (exitAt != 0L && code != KeyEvent.KEYCODE_BACK && e.action == KeyEvent.ACTION_DOWN) { exitAt = 0L; invalidate() }
     when (code) {
       KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
         if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
@@ -297,7 +331,13 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
       }
       KeyEvent.KEYCODE_BACK -> {
         if (e.action == KeyEvent.ACTION_UP) {
-          if (rail.open) { rail.open = false; invalidate() } else if (!s.back()) host.back() else invalidate()
+          if (rail.open) { rail.open = false; invalidate() }
+          else if (s.back()) invalidate()
+          else if (s is Home) {
+            // Back to exit (approved mock): the first Back on Home only says so; a second within 2.5 s leaves.
+            val now = SystemClock.uptimeMillis()
+            if (exitAt != 0L && now - exitAt < EXIT_MS) { exitAt = 0L; host.back() } else { exitAt = now; invalidate() }
+          } else host.back()
         }
         return true
       }
