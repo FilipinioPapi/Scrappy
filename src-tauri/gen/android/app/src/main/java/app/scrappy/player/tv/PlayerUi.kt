@@ -591,7 +591,7 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     rx = buttonR(c, "speed", rx, y, speedLabel(snap.optDouble("speed", 1.0)), null, false, a, minW = 76f) - 16f
     rx = buttonR(c, "audio", rx, y, null, PATH_VOL, false, a, square = true, line = true) - 16f
     rx = buttonR(c, "cc", rx, y, "CC", null, snap.optBoolean("subOn"), a, minW = 64f, cc = true) - 16f
-    if (rowShown("next")) buttonR(c, "next", rx, y, "Next episode", PATH_NEXT, false, a, filled = true)
+    if (rowShown("next")) buttonR(c, "next", rx, y, if (snap.optBoolean("isEp")) "Next episode" else "Next film", PATH_NEXT, false, a, filled = true)
     if (hintH() > 1f) {
       val k = 1f - epsA.v
       pHint.alpha = (al * k).toInt()

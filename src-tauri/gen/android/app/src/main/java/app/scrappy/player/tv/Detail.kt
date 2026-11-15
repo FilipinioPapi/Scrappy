@@ -30,13 +30,27 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private var wantSeason = ""
   private var loaded = false
   private var gen = 0
-  private val isSeries get() = it?.optString("Type") == "Series"
+  private val type get() = it?.optString("Type").orEmpty()
+  private val isSeries get() = type == "Series"
+  private val isEp get() = type == "Episode"
+  private val isBox get() = type == "BoxSet"
+  /** Show, episode and collection pages have their header at the top (a film's sits on the bottom edge). */
+  private val tall get() = isSeries || isEp || isBox
+  private val hasEps get() = isSeries || isEp
+  /** Where episodes come from (an episode page lists its own season). */
+  private val showId get() = if (isEp) it?.optString("SeriesId").orEmpty() else itemId
+  /** The same key the player keeps audio/subtitle choices under (per show, per film). */
+  private val tracksKey get() = "tracks:" + if (isEp) showId.ifEmpty { itemId } else itemId
+  private val textX get() = if (isEp) 631f else if (tall) 445f else 589f
 
   // ---------- what the page holds ----------
   private class Btn(val kind: String, var label: String, var icon: String? = null) { var x = 0f; var w = 0f; var on = false }
   private var buttons = ArrayList<Btn>()
-  private class Pick(val kind: String, val label: String) { var options: List<String> = emptyList(); var cur = 0; var x = 0f; var w = 0f; var selX = 0f }
+  private class Pick(val kind: String, val label: String) { var tracks: List<Menu.Track> = emptyList(); var cur = 0; var value = "" }
   private var picks = ArrayList<Pick>()
+  // Collection: its films (release order) and the line under the buttons.
+  private var films: List<JSONObject> = emptyList()
+  private var boxMeta = ""
   private var media: JSONObject? = null // the item (film) or the episode Play starts (show) — tracks and quality come from it
   private var tracks = JSONObject()
 
@@ -74,7 +88,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private var titleL: StaticLayout? = null
   private var overL: StaticLayout? = null
   private var titleTop = 0f; private var metaTop = 0f; private var overTop = 0f; private var barTop = 0f; private var btnTop = 0f
-  private var pickTop = 0f; private var resumeTop = -1f; private var subTop = 0f
+  private var kickTop = 0f; private var resumeTop = -1f; private var subTop = 0f
   private var epTop = 0f; private var epBottom = 0f
   private var castT = 0f; private var simT = 0f
   private var mainBottom = 0f
@@ -115,7 +129,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       if (type == "Season" && o.optString("SeriesId").isNotEmpty()) {
         tv.host.replace("#/item/" + Card.enc(o.optString("SeriesId")) + "/" + Card.enc(itemId), true); return@load
       }
-      if (type != "Movie" && type != "Series") { tv.host.reroute(); return@load }
+      if (type !in setOf("Movie", "Series", "Episode", "BoxSet")) { tv.host.reroute(); return@load }
       val key = key(o)
       if (key == shownKey) return@load
       val firstTime = it == null
@@ -137,13 +151,23 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private fun more() {
     val o = it ?: return
     val my = gen
-    Net.load("/Items/$itemId/Similar?UserId={userId}&Limit=20&Fields=$FIELDS&$IMG_OPTS") { v, _ ->
+    if (!isEp && !isBox) Net.load("/Items/$itemId/Similar?UserId={userId}&Limit=20&Fields=$FIELDS&$IMG_OPTS") { v, _ ->
       if (my != gen && similar.isNotEmpty()) return@load
       val old = similar.associateBy { c -> c.id }
       similar = Net.items(v).map { j -> Card(j, Shape.PORTRAIT).also { c -> c.f = old[c.id]?.f ?: 0f } }
       layout(); tv.invalidate()
     }
-    tv.host.local("tracks:$itemId") { s -> tracks = try { JSONObject(s ?: "{}") } catch (_: Throwable) { JSONObject() }; buildPicks(); tv.invalidate() }
+    if (!isBox) tv.host.local(tracksKey) { s -> tracks = try { JSONObject(s ?: "{}") } catch (_: Throwable) { JSONObject() }; buildPicks(); tv.invalidate() }
+    if (isBox) loadFilms()
+    if (isEp) {
+      // The episode's own season, laid out as a row under the buttons.
+      val sid = o.optString("SeasonId")
+      val n = o.optInt("ParentIndexNumber", -1)
+      seasons = listOf(JSONObject().put("Id", sid).put("Name", o.optString("SeasonName").ifEmpty { if (n == 0) "Specials" else if (n > 0) "Season $n" else "Episodes" }).put("IndexNumber", n))
+      selected = sid.ifEmpty { "all" }
+      epView = "row"
+      loadEpisodes(false)
+    }
     if (o.optString("Type") == "Series") {
       tv.host.local("epView:$itemId") { s -> if (s == "grid" || s == "row" || s == "list") { epView = if (s == "list") "row" else s; epViewSet = true }; loadSeasons() }
       loadTarget()
@@ -176,21 +200,28 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private fun loadEpisodes(live: Boolean) {
     val my = ++epGen
     val all = selected == "all"
-    Net.load("/Shows/$itemId/Episodes?" + (if (all) "" else "SeasonId=$selected&") + "UserId={userId}&Fields=Overview,PrimaryImageAspectRatio") { v, _ ->
+    val sid = showId
+    if (sid.isEmpty()) { lowerReady = true; layout(); tv.invalidate(); return }
+    Net.load("/Shows/$sid/Episodes?" + (if (all) "" else "SeasonId=$selected&") + "UserId={userId}&Fields=Overview,PrimaryImageAspectRatio") { v, _ ->
       if (my != epGen) return@load
       var list = Net.items(v)
-      if (all) list = list.filter { e -> e.optInt("ParentIndexNumber", -1) != 0 } + list.filter { e -> e.optInt("ParentIndexNumber", -1) == 0 }
+      if (isEp && all) { val n = it?.optInt("ParentIndexNumber", -1) ?: -1; list = list.filter { e -> e.optInt("ParentIndexNumber", -1) == n } }
+      else if (all) list = list.filter { e -> e.optInt("ParentIndexNumber", -1) != 0 } + list.filter { e -> e.optInt("ParentIndexNumber", -1) == 0 }
       val keepF = eps.associate { c -> c.id to c.f }
       epData = list
       eps = list.map { e -> Card(e, Shape.WIDE).also { c -> c.f = keepF[c.id] ?: 0f } }
       lowerReady = true
       upNext = list.indexOfFirst { e -> (e.optJSONObject("UserData")?.optLong("PlaybackPositionTicks") ?: 0L) > 0 && !(e.optJSONObject("UserData")?.optBoolean("Played") ?: false) }
       if (upNext < 0) upNext = list.indexOfFirst { e -> !(e.optJSONObject("UserData")?.optBoolean("Played") ?: false) }
+      // An episode page marks itself; a show marks the episode that's up next.
+      if (isEp) upNext = list.indexOfFirst { e -> e.optString("Id") == itemId }
+      for ((k, c) in eps.withIndex()) { c.flag = if (k == upNext) (if (isEp) "YOU'RE HERE" else "UP NEXT") else ""; c.here = isEp && k == upNext }
       blocks = if (epView == "grid" && !all) maxOf(1, (list.size + GRID_BLOCK - 1) / GRID_BLOCK) else 1
       if (live || block >= blocks) block = if (epView == "grid" && !all) maxOf(0, maxOf(0, upNext) / GRID_BLOCK) else 0
       if (!visited.contains('E') || live) {
         val here = maxOf(0, upNext)
-        if (epView == "row") epsX.set(maxOf(0f, minOf(here * EP_PITCH + 4f, epMaxScroll())), true)
+        if (isEp) epsX.set(scrollFor(here, 400f, EP_PITCH, eps.size), true)
+        else if (epView == "row") epsX.set(maxOf(0f, minOf(here * EP_PITCH + 4f, epMaxScroll())), true)
       }
       if (row == 'E') col = col.coerceIn(0, maxOf(0, epIndexes().size - 1))
       layout(); tv.invalidate()
@@ -231,12 +262,47 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
 
   private fun build(firstTime: Boolean) {
     val o = it ?: return
-    if (!isSeries) media = o
-    people = buildPeople(o)
+    if (!isSeries && !isBox) media = o
+    people = if (isBox) emptyList() else buildPeople(o)
     buildButtons(); buildPicks()
     titleL = null; overL = null
     layout()
     if (firstTime) { row = 'B'; col = 0; visited.add('B') }
+  }
+
+  /** Collection: its films in release order, with what you've watched. */
+  private fun loadFilms() {
+    val my = gen
+    Net.load("/Users/{userId}/Items?ParentId=$itemId&SortBy=PremiereDate,ProductionYear,SortName&Fields=$FIELDS&$IMG_OPTS") { v, _ ->
+      if (my != gen) return@load
+      films = Net.items(v).filter { j -> j.optString("Type") != "BoxSet" }
+      val old = similar.associateBy { c -> c.id }
+      similar = films.map { j ->
+        Card(j, Shape.PORTRAIT).also { c ->
+          c.f = old[c.id]?.f ?: 0f
+          val ud = j.optJSONObject("UserData") ?: JSONObject()
+          val rt = j.optLong("RunTimeTicks"); val pos = ud.optLong("PlaybackPositionTicks")
+          val y = if (j.optInt("ProductionYear") > 0) j.optInt("ProductionYear").toString() else ""
+          c.sub = listOf(y, if (ud.optBoolean("Played")) "Watched" else if (pos > 0 && rt > 0) "${(pos * 100 / rt).coerceAtLeast(1)}% watched" else Card.runtime(rt)).filter { t -> t.isNotEmpty() }.joinToString(" · ")
+        }
+      }
+      // years · total runtime · X of N watched; and what to watch next.
+      val years = films.map { j -> j.optInt("ProductionYear") }.filter { y -> y > 0 }
+      val total = films.sumOf { j -> j.optLong("RunTimeTicks") }
+      val seen = films.count { j -> j.optJSONObject("UserData")?.optBoolean("Played") ?: false }
+      boxMeta = listOf(if (years.isEmpty()) "" else if (years.min() == years.max()) "${years.min()}" else "${years.min()} – ${years.max()}",
+        if (total > 0) Card.runtime(total) + " in total" else "", if (films.isNotEmpty()) "$seen of ${films.size} watched" else "").filter { t -> t.isNotEmpty() }.joinToString("  ·  ")
+      val next = films.firstOrNull { j -> (j.optJSONObject("UserData")?.optLong("PlaybackPositionTicks") ?: 0L) > 0 && !(j.optJSONObject("UserData")?.optBoolean("Played") ?: false) }
+        ?: films.firstOrNull { j -> !(j.optJSONObject("UserData")?.optBoolean("Played") ?: false) }
+      playSub = if (films.isEmpty()) "" else if (next == null) "You've watched them all" else {
+        val ud = next.optJSONObject("UserData") ?: JSONObject()
+        val left = if (ud.optLong("PlaybackPositionTicks") > 0 && next.optLong("RunTimeTicks") > 0) Card.runtime(next.optLong("RunTimeTicks") - ud.optLong("PlaybackPositionTicks")) + " left" else ""
+        "Next to watch: " + listOf(next.optString("Name"), left).filter { t -> t.isNotEmpty() }.joinToString(" · ")
+      }
+      for ((k, c) in similar.withIndex()) c.flag = if (films.getOrNull(k) === next && next != null && films.size > 1) "UP NEXT" else ""
+      lowerReady = true
+      buildButtons(); layout(); tv.invalidate()
+    }
   }
 
   private fun buildPeople(o: JSONObject): List<Person> {
@@ -276,20 +342,27 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     } else if (isSeries) {
       out.add(Btn("series", if (started && target != null) ("Play " + Card.epCode(target!!)).trim() else "Play", "play"))
       if (started) out.add(Btn("seriesStart", "Play from start"))
+    } else if (isBox) {
+      out.add(Btn("all", "Play all", "play"))
+      out.add(Btn("shuffle", "Shuffle"))
     }
-    out.add(Btn("played", "", "check").also { b -> b.on = ud.optBoolean("Played") })
+    if (!isBox) out.add(Btn("played", "", "check").also { b -> b.on = ud.optBoolean("Played") })
     out.add(Btn("fav", "", "heart").also { b -> b.on = ud.optBoolean("IsFavorite") })
-    if (isSeries) {
-      if (streams("Audio").isNotEmpty() || streams("Subtitle").isNotEmpty()) out.add(Btn("av", "Audio & subtitles"))
-      if (seasons.isNotEmpty()) out.add(Btn("view", "Episodes: " + if (epView == "grid") "Grid" else "Row"))
-    }
+    // Audio and Subtitles open the player's own lists.
+    val avBtns = picks.map { p -> Btn(p.kind, "").also { b -> out.add(b) } }
+    if (isSeries && seasons.isNotEmpty()) out.add(Btn("view", "Episodes: " + if (epView == "grid") "Grid" else "Row"))
     val focusKind = buttons.getOrNull(col)?.kind
     buttons = out
-    var x = if (isSeries) 445f else 589f
-    for (b in out) {
-      b.x = x
-      b.w = if (b.label.isEmpty()) 69f else 34.67f * 2 + btnP.measureText(b.label) + (if (b.icon == "play") 24f + 10.67f else 0f)
-      x += b.w + 16f
+    // The track values shorten until the buttons fit on one line.
+    for (fit in floatArrayOf(190f, 120f, 70f)) {
+      for ((k, p) in picks.withIndex()) avBtns[k].label = p.label + ": " + Ui.fit(p.value, btnP, fit)
+      var x = textX
+      for (b in out) {
+        b.x = x
+        b.w = if (b.label.isEmpty()) 69f else 34.67f * 2 + btnP.measureText(b.label) + (if (b.icon == "play") 24f + 10.67f else 0f)
+        x += b.w + 16f
+      }
+      if (x - 16f <= 1850f) break
     }
     if (row == 'B') col = out.indexOfFirst { b -> b.kind == focusKind }.takeIf { i -> i >= 0 } ?: col.coerceIn(0, out.size - 1)
   }
@@ -308,39 +381,67 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private fun sameRef(s: JSONObject, r: JSONObject?): Boolean = r != null && langOf(s.optString("Language")) == langOf(r.optString("lang")) &&
     s.optBoolean("IsForced") == r.optBoolean("forced") && (r.optString("title").isEmpty() || s.optString("Title") == r.optString("title"))
 
+  private fun langName(code: String): String {
+    val l = langOf(code)
+    if (l.isEmpty() || l == "und") return ""
+    val n = try { Locale(l).getDisplayLanguage(Locale.ENGLISH) } catch (_: Throwable) { "" }
+    return (if (n.isNotEmpty() && n.lowercase() != l) n else code).replaceFirstChar { ch -> ch.uppercase() }
+  }
+
+  private val CODEC = mapOf("ac3" to "Dolby", "eac3" to "Dolby", "truehd" to "Dolby TrueHD", "dts" to "DTS", "dts-hd" to "DTS-HD", "aac" to "AAC", "mp3" to "MP3",
+    "flac" to "FLAC", "opus" to "Opus", "pcm" to "PCM")
+
+  /** Same names and notes as the player's Audio / Subtitles lists (npAudio / npSubs in player.js). */
   private fun buildPicks() {
     val audio = streams("Audio"); val subs = streams("Subtitle")
     val out = ArrayList<Pick>()
     if (audio.isNotEmpty() || subs.isNotEmpty()) {
       if (audio.isNotEmpty()) out.add(Pick("audio", "Audio").also { p ->
-        p.options = audio.map { s -> streamLabel(s) }
         val i = audio.indexOfFirst { s -> sameRef(s, tracks.optJSONObject("audio")) }
         p.cur = if (i >= 0) i else maxOf(0, audio.indexOfFirst { s -> s.optBoolean("IsDefault") })
+        p.tracks = audio.mapIndexed { k, s ->
+          val n = langName(s.optString("Language")).ifEmpty { "Unknown" }
+          val ch = s.optInt("Channels")
+          val chs = if (ch >= 8) "7.1" else if (ch >= 6) "5.1" else if (ch == 2) "Stereo" else if (ch == 1) "Mono" else ""
+          val tech = listOf(CODEC[s.optString("Codec").lowercase()] ?: s.optString("Codec").uppercase(), chs).filter { t -> t.isNotEmpty() }.joinToString(" ")
+          val t = s.optString("Title").trim()
+          val bits = listOfNotNull(t.takeIf { x -> x.isNotEmpty() && x.lowercase() != n.lowercase() && !Regex("^(stereo|mono|surround|5\\.1|7\\.1)$", RegexOption.IGNORE_CASE).matches(x) }, tech.takeIf { x -> x.isNotEmpty() })
+          Menu.Track(n, bits.joinToString(" · "), k == p.cur, 0, k)
+        }
+        p.value = p.tracks.getOrNull(p.cur)?.label ?: ""
       })
-      out.add(Pick("sub", "Subtitles").also { p ->
-        p.options = listOf("Off") + subs.map { s -> streamLabel(s) } + "Search for more…"
+      out.add(Pick("subs", "Subtitles").also { p ->
         val off = tracks.optString("sub") == "off"
         var i = if (off) -1 else subs.indexOfFirst { s -> sameRef(s, tracks.optJSONObject("sub")) }
         if (i < 0 && !off) i = subs.indexOfFirst { s -> s.optBoolean("IsDefault") || s.optBoolean("IsForced") }
         p.cur = i + 1
+        // English and Spanish first; the rest sit behind "Other languages".
+        fun rank(s: JSONObject) = when (langOf(s.optString("Language"))) { "en" -> 0; "es" -> 1; else -> 9 }
+        val named = subs.mapIndexed { k, s ->
+          val n = langName(s.optString("Language")).ifEmpty { "Unknown" }
+          val t = s.optString("Title").trim()
+          val bits = ArrayList<String>()
+          if (t.isNotEmpty() && t.lowercase() != n.lowercase()) bits.add(t)
+          if (s.optBoolean("IsForced") && !t.contains("forced", true)) bits.add("Forced")
+          Triple(k, s, Menu.Track(n, bits.joinToString(" · "), k + 1 == p.cur, if (rank(s) < 9) 0 else 1, k + 1))
+        }
+        p.tracks = listOf(Menu.Track("Off", "", p.cur == 0, 0, 0)) +
+          named.filter { x -> rank(x.second) < 9 }.sortedWith(compareBy({ x -> rank(x.second) }, { x -> x.first })).map { x -> x.third } +
+          named.filter { x -> rank(x.second) == 9 }.sortedWith(compareBy({ x -> x.third.label }, { x -> x.first })).map { x -> x.third } +
+          Menu.Track("Download subtitles", "", false, 2, subs.size + 1)
+        p.value = if (p.cur == 0) "Off" else named.getOrNull(p.cur - 1)?.third?.label ?: "Off"
       })
     }
     picks = out
-    var x = 589f
-    for (p in out) {
-      p.x = x
-      p.selX = x + pickL.measureText(p.label) + 13.33f
-      p.w = (24f + 53.33f + p.options.maxOf { o -> pickV.measureText(o) }).coerceAtMost(560f)
-      x = p.selX + p.w + 29.33f
-    }
-    if (!isSeries) layout()
+    buildButtons()
+    layout()
   }
 
   private fun writeTrack(kind: String, i: Int) {
     if (kind == "audio") { val s = streams("Audio").getOrNull(i) ?: return; tracks.put("audio", ref(s)) }
     else if (i == streams("Subtitle").size + 1) { media?.optString("Id")?.takeIf { s -> s.isNotEmpty() }?.let { id -> tv.host.subtitles(id) }; return }
     else tracks.put("sub", if (i <= 0) "off" else (streams("Subtitle").getOrNull(i - 1)?.let { s -> ref(s) } ?: return))
-    tv.host.setLocal("tracks:$itemId", tracks.toString())
+    tv.host.setLocal(tracksKey, tracks.toString())
     buildPicks(); tv.invalidate()
   }
 
@@ -357,7 +458,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private fun layout() {
     val o = it ?: return
     val name = o.optString("Name")
-    if (!isSeries) {
+    if (!tall) {
       val tl = titleL ?: StaticLayout.Builder.obtain(name, 0, name.length, titleBig, 1200).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END)
         .setLineSpacing(0f, 96f / (titleBig.fontMetrics.descent - titleBig.fontMetrics.ascent)).setIncludePad(false).build().also { titleL = it }
       val ov = o.optString("Overview")
@@ -372,24 +473,24 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       if (ud.optLong("PlaybackPositionTicks") > 0 && o.optLong("RunTimeTicks") > 0) { y += 27f; resumeTop = y; y += 5.33f } else resumeTop = -1f
       y += if (resumeTop >= 0) 28f else 29f
       btnTop = y; y += 69f
-      if (picks.isNotEmpty()) { y += 19f; pickTop = y; y += 59f }
       val shift = 923f - y
-      titleTop += shift; metaTop += shift; overTop += shift; btnTop += shift; pickTop += shift; if (resumeTop >= 0) resumeTop += shift
+      titleTop += shift; metaTop += shift; overTop += shift; btnTop += shift; if (resumeTop >= 0) resumeTop += shift
       mainBottom = 1080f
       castT = 1130f
     } else {
-      val tl = titleL ?: StaticLayout.Builder.obtain(name, 0, name.length, titleShow, 1300).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END)
+      val tl = titleL ?: StaticLayout.Builder.obtain(name, 0, name.length, titleShow, if (isEp) 1150 else 1300).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END)
         .setLineSpacing(0f, 73f / (titleShow.fontMetrics.descent - titleShow.fontMetrics.ascent)).setIncludePad(false).build().also { titleL = it }
       val ov = o.optString("Overview")
-      overL = overL ?: if (ov.isEmpty()) null else Ui.clamp(ov, overShow, 960, 2, 29.3f)
+      overL = overL ?: if (ov.isEmpty()) null else Ui.clamp(ov, overShow, if (isEp) 1100 else 960, if (isEp) 3 else 2, 29.3f)
       var y = 113f
+      kickTop = y; if (kicker().isNotEmpty()) y += 34f
       titleTop = y; y += (if (logoUrl() != null) 128f else tl.height.toFloat()) + 9f
       metaTop = y; y += 32f
       if (overL != null) { y += 10f; overTop = y; y += overL!!.height }
       y += 22f
       btnTop = y; y += 69f
       if (playSub.isNotEmpty()) { subTop = y + 15f; y = subTop + 27f }
-      mainBottom = maxOf(417f, y)
+      mainBottom = maxOf(if (isEp) 338f else 417f, y)
       barTop = mainBottom + 62f
       epTop = barTop + 89f
       // Episodes.
@@ -430,10 +531,10 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       castT = epBottom + 87f
     }
     simT = if (people.isNotEmpty()) castT + 382f else castT
+    if (isBox) simT = mainBottom + 90f
     val order = ArrayList<Char>()
     order.add('B')
-    if (!isSeries && picks.isNotEmpty()) order.add('P')
-    if (isSeries && seasons.isNotEmpty()) {
+    if (hasEps && seasons.isNotEmpty()) {
       if (seasons.size > 1 || seasons.size >= 8) order.add('T')
       if (blocks > 1 && epView == "grid") order.add('K')
       if (eps.isNotEmpty()) order.add('E')
@@ -445,8 +546,21 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     measureTabs()
   }
 
+  /** The small line above the title: SERIES · SEASON 2 · EPISODE 3, or COLLECTION · 4 FILMS. */
+  private fun kicker(): String {
+    val o = it ?: return ""
+    if (isEp) {
+      val n = o.optInt("ParentIndexNumber", -1); val e = o.optInt("IndexNumber", -1)
+      return listOf(o.optString("SeriesName"), if (n == 0) "Specials" else if (n > 0) "Season $n" else "", if (e >= 0) "Episode $e" else "")
+        .filter { t -> t.isNotEmpty() }.joinToString(" · ").uppercase()
+    }
+    if (isBox) { val n = if (films.isNotEmpty()) films.size else o.optInt("ChildCount"); return "COLLECTION" + if (n > 0) " · $n FILM" + (if (n == 1) "" else "S") else "" }
+    return ""
+  }
+
   private fun logoUrl(): String? {
     val o = it ?: return null
+    if (isEp) return null
     val t = o.optJSONObject("ImageTags")?.optString("Logo").orEmpty()
     return if (t.isNotEmpty() && Img.failed(Net.image(itemId, "Logo", t, 800)).not()) Net.image(itemId, "Logo", t, 800) else null
   }
@@ -478,14 +592,13 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   // ---------------- remote ----------------
 
   private fun rowLen(r: Char): Int = when (r) {
-    'B' -> buttons.size; 'P' -> picks.size; 'T' -> tabs().size + (if (hasPick) 1 else 0); 'K' -> blocks
+    'B' -> buttons.size; 'T' -> tabs().size + (if (hasPick) 1 else 0); 'K' -> blocks
     'E' -> epIndexes().size; 'C' -> people.size; 'S' -> similar.size; else -> 0
   }
 
   /** Where the highlight sits on screen (x centre), for going up and down to the nearest thing. */
   private fun focusX(r: Char, c: Int): Float = when (r) {
     'B' -> buttons.getOrNull(c)?.let { b -> b.x + b.w / 2f } ?: 0f
-    'P' -> picks.getOrNull(c)?.let { p -> p.selX + p.w / 2f } ?: 0f
     'T' -> if (hasPick && c == 0) 235f else { val k = c - (if (hasPick) 1 else 0); TABS_X + tabLeft(k) - tabsX.pos + (tabW.getOrNull(k) ?: 0f) / 2f }
     'K' -> 149f + c * 150f + 60f
     'E' -> if (epView == "row") 149f + c * EP_PITCH - epsX.pos + 200f else { val line = gridLines.firstOrNull { l -> c in l.second }; val p = line?.second?.indexOf(c) ?: 0; 149f + p * (GRID_W + 16f) + GRID_W / 2f }
@@ -602,7 +715,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     }
     // Up and down.
     val y = when (row) {
-      'B', 'P', 'T', 'K' -> 0f
+      'B', 'T', 'K' -> 0f
       'E' -> if (epView == "row") maxOf(0f, epBottom - 1040f) else {
         val line = gridLines.firstOrNull { l -> col in l.second }
         if (line == null) 0f else {
@@ -614,7 +727,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
         }
       }
       'C' -> castT - 226f
-      'S' -> simT - 226f
+      'S' -> if (isBox) simT + 500f - 1040f else simT - 226f
       else -> 0f
     }
     sy.set(maxOf(0f, y), instant)
@@ -630,10 +743,6 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     val o = it ?: return
     when (row) {
       'B' -> press(buttons.getOrNull(col) ?: return)
-      'P' -> {
-        val p = picks.getOrNull(col) ?: return
-        tv.host.pick(p.label, p.options, p.cur) { i -> if (i >= 0 && i != p.cur) writeTrack(p.kind, i) }
-      }
       'T' -> {
         if (hasPick && col == 0) {
           tv.host.pick("Seasons", seasons.map { s -> s.optString("Name") }, seasons.indexOfFirst { s -> s.optString("Id") == selected }) { i ->
@@ -669,11 +778,14 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       "series" -> tv.host.playSeriesFrom(itemId, false)
       "seriesStart" -> tv.host.playSeriesFrom(itemId, true)
       "played", "fav" -> toggle(b)
-      "av" -> {
-        if (picks.isEmpty()) return
-        val go = { p: Pick -> tv.host.pick(p.label, p.options, p.cur) { i -> if (i >= 0 && i != p.cur) writeTrack(p.kind, i) } }
-        if (picks.size == 1) go(picks[0])
-        else tv.host.pick("Audio & subtitles", picks.map { p -> "${p.label} · ${p.options.getOrNull(p.cur) ?: ""}" }, -1) { i -> picks.getOrNull(i)?.let(go) }
+      "audio", "subs" -> {
+        val p = picks.firstOrNull { p -> p.kind == b.kind } ?: return
+        val at = RectF(b.x, btnTop - sy.pos, b.x + b.w, btnTop + 69f - sy.pos)
+        tv.menu.tracks(p.label, if (hasEps) "for this show" else "for this film", p.tracks, at) { i -> if (i >= 0 && i != p.cur) writeTrack(b.kind, i) }
+      }
+      "all", "shuffle" -> {
+        val ids = films.map { j -> j.optString("Id") }.filter { s -> s.isNotEmpty() }
+        if (ids.isNotEmpty()) tv.host.playQueue(if (b.kind == "shuffle") ids.shuffled() else ids)
       }
       "view" -> {
         epView = if (epView == "grid") "row" else "grid"; epViewSet = true
@@ -719,7 +831,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
         if (ok) {
           tv.host.toast(if (played) (if (on) "Marked $name as watched" else "Marked $name as unwatched") else (if (on) "Added $name to Favorites" else "Removed $name from Favorites"), false)
           tv.host.changed()
-          if (played && isSeries && my == gen) { loadEpisodes(false); loadTarget() }
+          if (played && hasEps && my == gen) { loadEpisodes(false); if (isSeries) loadTarget() }
         } else {
           if (played) ud.put("Played", !on) else ud.put("IsFavorite", !on)
           b.on = !on; shownKey = key(o); buildButtons(); layout(); tv.invalidate()
@@ -753,10 +865,8 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private val white = Ui.fill(Ui.WHITE)
   private val resBg = Ui.fill(Ui.LINE)
   private val resFg = Ui.fill(Ui.RED)
-  private val pickL = Ui.text(Ui.f600, 21.33f, Ui.TEXT)
-  private val pickV = Ui.text(Ui.f600, 21.33f, Ui.TEXT)
-  private val pickBg = Ui.fill(0x1AFFFFFF)
-  private val chev = Ui.stroke(Ui.TEXT, 3f)
+  private val kickP = Ui.text(Ui.f800, 20f, 0xFFBFA7A8.toInt(), 2.5f)
+  private val hereP = Ui.text(Ui.f500, 20f, Ui.MUTED)
   private val hintP = Ui.text(Ui.f400, 20f, 0xFFA8979A.toInt())
   private val subP = Ui.text(Ui.f400, 20f, Ui.MUTED)
   private val h2 = Ui.text(Ui.f800, 29.33f, Ui.TEXT, -0.27f)
@@ -815,9 +925,9 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     val y0 = sy.pos
     c.save(); c.translate(0f, -y0)
     anim = drawBackdrop(c, o, now) || anim
-    if (isSeries) anim = drawShowHead(c, o, now) || anim else anim = drawMovieHead(c, o, now) || anim
-    if (isSeries) anim = drawEpisodes(c, now, dt, y0) || anim
-    if (!isSeries || lowerReady) {
+    if (tall) anim = drawShowHead(c, o, now) || anim else anim = drawMovieHead(c, o, now) || anim
+    if (hasEps) anim = drawEpisodes(c, now, dt, y0) || anim
+    if (!tall || lowerReady) {
       anim = drawCast(c, now, dt, y0) || anim
       anim = drawSimilar(c, now, dt, y0) || anim
     }
@@ -827,9 +937,8 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   }
 
   private fun drawBackdrop(c: Canvas, o: JSONObject, now: Long): Boolean {
-    val h = if (isSeries) 778f else 1080f
-    val tag = o.optJSONArray("BackdropImageTags")?.optString(0)
-    val url = if (!tag.isNullOrEmpty()) Net.image(itemId, "Backdrop/0", tag, if (Img.lowMemory) 1280 else 1920, 90) else null
+    val h = if (tall) 778f else 1080f
+    val url = backdropUrl(o)
     var anim = false
     val pic = Img.get(url)
     r.set(117f, 0f, Ui.W, h)
@@ -840,6 +949,16 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     bottomGrad.shader = LinearGradient(0f, h, 0f, 0f, intArrayOf(Ui.BG, 0xD9120C0C.toInt(), 0x00120C0C, 0x00120C0C), floatArrayOf(0f, 0.28f, 0.62f, 1f), Shader.TileMode.CLAMP)
     c.drawRect(r, sideGrad); c.drawRect(r, bottomGrad)
     return anim
+  }
+
+  /** The page's backdrop: its own, else the show's (episodes), else the first film's that has one (collections). */
+  private fun backdropUrl(o: JSONObject): String? {
+    val w = if (Img.lowMemory) 1280 else 1920
+    o.optJSONArray("BackdropImageTags")?.optString(0)?.takeIf { t -> t.isNotEmpty() }?.let { t -> return Net.image(itemId, "Backdrop/0", t, w, 90) }
+    val pid = o.optString("ParentBackdropItemId")
+    o.optJSONArray("ParentBackdropImageTags")?.optString(0)?.takeIf { t -> t.isNotEmpty() && pid.isNotEmpty() }?.let { t -> return Net.image(pid, "Backdrop/0", t, w, 90) }
+    for (f in films) f.optJSONArray("BackdropImageTags")?.optString(0)?.takeIf { t -> t.isNotEmpty() }?.let { t -> return Net.image(f.optString("Id"), "Backdrop/0", t, w, 90) }
+    return null
   }
 
   private fun poster(o: JSONObject): String? {
@@ -887,14 +1006,6 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       r.right = 589f + 426.67f * p; c.drawRoundRect(r, 2.67f, 2.67f, resFg)
     }
     drawButtons(c, btnTop)
-    for ((k, p) in picks.withIndex()) {
-      Ui.line(c, p.label, p.x, pickTop, 59f, pickL)
-      r.set(p.selX, pickTop, p.selX + p.w, pickTop + 59f); c.drawRoundRect(r, 29.5f, 29.5f, pickBg)
-      Ui.line(c, Ui.fit(p.options.getOrNull(p.cur) ?: "", pickV, p.w - 77f), p.selX + 24f, pickTop, 59f, pickV)
-      val cx = p.selX + p.w - 17.33f - 8f; val cy = pickTop + 29.5f
-      c.drawLine(cx - 5.33f, cy - 2.67f, cx, cy + 2.67f, chev); c.drawLine(cx, cy + 2.67f, cx + 5.33f, cy - 2.67f, chev)
-      if (row == 'P' && col == k) { r.inset(-5f, -5f); c.drawRoundRect(r, 34.5f, 34.5f, outline) }
-    }
     // The hint under the page (Down glides to Cast & crew).
     c.save(); c.translate(190f, 1009f)
     val tri = Path().apply { moveTo(0f, 3f); lineTo(18f, 3f); lineTo(9f, 19f); close() }
@@ -905,14 +1016,29 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
 
   private fun drawShowHead(c: Canvas, o: JSONObject, now: Long): Boolean {
     var anim = false
-    anim = drawPoster(c, o, RectF(191f, 99f, 401f, 417f), 16f, now) || anim
-    anim = drawTitle(c, 445f, titleTop, 128f, 960f, now) || anim
-    drawMeta(c, o, 445f, metaTop)
-    overL?.let { c.save(); c.translate(445f, overTop); it.draw(c); c.restore() }
+    val x0 = textX
+    if (isEp) {
+      // The episode's picture, with how far you got.
+      val box = RectF(191f, 113f, 591f, 338f)
+      anim = drawPoster(c, o, box, 13.33f, now) || anim
+      val ud = o.optJSONObject("UserData") ?: JSONObject()
+      val rt = o.optLong("RunTimeTicks"); val pos = ud.optLong("PlaybackPositionTicks")
+      if (pos > 0 && rt > 0) { c.save(); c.clipRect(box); r.set(box.left, box.bottom - 6f, box.left + box.width() * (pos.toFloat() / rt).coerceIn(0f, 1f), box.bottom); c.drawRect(r, resFg); c.restore() }
+    } else anim = drawPoster(c, o, RectF(191f, 99f, 401f, 417f), 16f, now) || anim
+    val k = kicker()
+    if (k.isNotEmpty()) Ui.line(c, Ui.fit(k, kickP, 1300f), x0, kickTop, 28f, kickP)
+    anim = drawTitle(c, x0, titleTop, 128f, 960f, now) || anim
+    if (isBox) { if (boxMeta.isNotEmpty()) Ui.line(c, boxMeta, x0, metaTop, 32f, metaP) } else drawMeta(c, o, x0, metaTop)
+    overL?.let { c.save(); c.translate(x0, overTop); it.draw(c); c.restore() }
     drawButtons(c, btnTop)
-    if (playSub.isNotEmpty()) Ui.line(c, Ui.fit(playSub, subP, 1300f), 445f, subTop, 27f, subP)
-    // Season bar.
-    if (seasons.isNotEmpty()) {
+    if (playSub.isNotEmpty()) Ui.line(c, Ui.fit(playSub, subP, 1300f), x0, subTop, 27f, subP)
+    // Season bar (an episode page names its season and where you are).
+    if (seasons.isNotEmpty() && isEp) {
+      val name = seasons[0].optString("Name")
+      Ui.line(c, name, 149f, barTop, 61f, oneP)
+      val n = it?.optInt("IndexNumber", -1) ?: -1
+      if (n >= 0) Ui.line(c, "you're on episode $n", 149f + oneP.measureText(name) + 16f, barTop + 3f, 61f, hereP)
+    } else if (seasons.isNotEmpty()) {
       val t = tabs()
       if (tabW.size != t.size) measureTabs()
       if (hasPick) {
@@ -954,7 +1080,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private fun drawButtons(c: Canvas, top: Float) {
     for ((k, b) in buttons.withIndex()) {
       r.set(b.x, top, b.x + b.w, top + 69f)
-      val primary = b.kind in setOf("resume", "play", "series")
+      val primary = b.kind in setOf("resume", "play", "series", "all")
       c.drawRoundRect(r, 13.33f, 13.33f, if (primary || b.on) btnRed else btn2)
       if (row == 'B' && col == k) { r.inset(-6f, -6f); c.drawRoundRect(r, 19.33f, 19.33f, outline); r.inset(6f, 6f) }
       when (b.icon) {
@@ -1164,7 +1290,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private fun drawSimilar(c: Canvas, now: Long, dt: Float, y0: Float): Boolean {
     if (similar.isEmpty() || simT - y0 > 1100f || simT + 460f - y0 < 0f) return false
     var anim = false
-    Ui.line(c, "More Like This", 149f, simT - 20f, 40f, h2)
+    Ui.line(c, if (isBox) "In release order" else "More Like This", 149f, simT - 20f, 40f, h2)
     val top = simT + 37f
     c.save(); c.clipRect(138f, top - 30f, 1898f, top + 440f)
     var focAt = -1
@@ -1182,7 +1308,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   }
 
   private fun drawStrip(c: Canvas, o: JSONObject, now: Long, y0: Float): Boolean {
-    val want = if (isSeries) mainBottom - y0 < 130f else 1080f - y0 < 594f
+    val want = if (tall) mainBottom - y0 < 130f else 1080f - y0 < 594f
     if (want != stripOn) { stripOn = want; stripAt = now }
     val t = Ui.ease(((now - stripAt) / 220f).coerceIn(0f, 1f))
     val a = if (stripOn) t else 1f - t
@@ -1193,14 +1319,17 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     stripBg.alpha = (255 * a).toInt()
     c.drawRect(117f, 0f, Ui.W, 183f, stripBg)
     r.set(190f, 34f, 262f, 142f)
-    val pic = Img.peek(poster(o))
+    val sp = o.optString("SeriesPrimaryImageTag")
+    val pic = Img.peek(if (isEp && sp.isNotEmpty()) Net.image(o.optString("SeriesId"), "Primary", sp, 600) else poster(o))
     panel.alpha = (255 * a).toInt(); c.drawRoundRect(r, 10.67f, 10.67f, panel); panel.alpha = 255
     if (pic != null) Img.draw(c, pic, r, 10.67f, a)
     stripTitle.alpha = (255 * a).toInt(); stripSub.alpha = (255 * a).toInt()
-    Ui.line(c, Ui.fit(o.optString("Name"), stripTitle, 1500f), 286f, 49f, 48f, stripTitle)
+    Ui.line(c, Ui.fit(if (isEp) o.optString("SeriesName").ifEmpty { o.optString("Name") } else o.optString("Name"), stripTitle, 1500f), 286f, 49f, 48f, stripTitle)
     val ud = o.optJSONObject("UserData") ?: JSONObject()
     val rt = o.optLong("RunTimeTicks"); val pos = ud.optLong("PlaybackPositionTicks")
-    val sub = listOf(if (o.optInt("ProductionYear") > 0) o.optInt("ProductionYear").toString() else "", if (isSeries) "" else Card.runtime(rt),
+    val sub = if (isEp) listOf(Card.epCode(o), o.optString("Name"), if (pos > 0 && rt > 0) Card.runtime(rt - pos) + " left" else "").filter { s -> s.isNotEmpty() }.joinToString(" · ")
+      else if (isBox) boxMeta
+      else listOf(if (o.optInt("ProductionYear") > 0) o.optInt("ProductionYear").toString() else "", if (isSeries) "" else Card.runtime(rt),
       if (!isSeries && pos > 0 && rt > 0) Card.runtime(rt - pos) + " left" else "").filter { s -> s.isNotEmpty() }.joinToString(" · ")
     Ui.line(c, sub, 286f, 104f, 27f, stripSub)
     c.restore()

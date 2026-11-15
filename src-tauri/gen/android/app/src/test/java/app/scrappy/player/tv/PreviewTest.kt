@@ -63,15 +63,24 @@ class PreviewTest {
       p.contains("Series50/Seasons") -> JSONObject().put("Items", JSONArray().apply { for (n in 1..36) put(JSONObject().put("Id", "Season$n").put("Name", "$n. Arc name $n").put("Type", "Season").put("IndexNumber", n).put("ChildCount", 6).put("UserData", JSONObject())) }).toString()
       p.contains("/Episodes?") -> JSONObject().put("Items", JSONArray().apply { for (i in 0 until 8) put(item(i + 2, "Episode").put("Id", "Episode${i + 1}").put("IndexNumber", i + 1)
         .put("UserData", JSONObject().put("Played", i < 3).put("PlaybackPositionTicks", if (i == 3) 20000000000L else 0L).put("PlayedPercentage", if (i == 3) 33 else 0))) }).toString()
-      Regex("/Users/[^/]+/Items/(it\\d+|Series50|Episode9\\d)(\\?|$)").containsMatchIn(p) -> {
+      p.contains("ParentId=Box") -> JSONObject().put("Items", JSONArray().apply { listOf("The Matrix", "The Matrix Reloaded", "The Matrix Revolutions", "The Matrix Resurrections").forEachIndexed { i, n ->
+        put(item(i + 10).put("Name", n).put("ProductionYear", listOf(1999, 2003, 2003, 2021)[i]).put("UserData", JSONObject().put("Played", i < 2).put("PlaybackPositionTicks", if (i == 2) 20000000000L else 0L))) } }).toString()
+      Regex("/Users/[^/]+/Items/(it\\d+|Series50|Episode\\d+|Box\\d+)(\\?|$)").containsMatchIn(p) -> {
         val id = Regex("/Items/([^/?]+)").find(p)!!.groupValues[1]
         val n = id.filter { it.isDigit() }.toInt()
-        item(n, if (id.startsWith("Series")) "Series" else if (id.startsWith("Episode")) "Episode" else "Movie").put("Id", id).put("ChildCount", 3)
+        item(n, if (id.startsWith("Series")) "Series" else if (id.startsWith("Episode")) "Episode" else if (id.startsWith("Box")) "BoxSet" else "Movie").put("Id", id).put("ChildCount", 3)
+          .apply { if (id.startsWith("Episode")) { put("IndexNumber", n % 90); put("SeasonId", "Season2"); put("SeasonName", "Season 2"); put("Name", "The Long Night"); remove("BackdropImageTags"); put("ParentBackdropItemId", "Series$n"); put("ParentBackdropImageTags", JSONArray().put("pb")) } }
+          .apply { if (id.startsWith("Box")) { put("Name", "The Matrix Collection"); remove("BackdropImageTags"); put("Overview", "A hacker learns the world he lives in is a simulation, and joins the fight against the machines that built it.") } }
           .put("People", JSONArray().apply { for (i in 0 until 8) put(JSONObject().put("Id", "p$i").put("Name", "Actor $i").put("Role", "Role $i").put("Type", "Actor").apply { if (i % 3 == 0) put("PrimaryImageTag", "x") }) })
           .put("MediaSources", JSONArray().put(JSONObject().put("Id", "ms").put("MediaStreams", JSONArray()
             .put(JSONObject().put("Type", "Video").put("Width", 3840).put("Height", 2160))
             .put(JSONObject().put("Type", "Audio").put("Language", "eng").put("Codec", "eac3").put("Channels", 6).put("Index", 1).put("DisplayTitle", "eng · EAC3"))
-            .put(JSONObject().put("Type", "Subtitle").put("Language", "eng").put("Index", 2))))).toString()
+            .put(JSONObject().put("Type", "Audio").put("Language", "spa").put("Codec", "aac").put("Channels", 2).put("Index", 3))
+            .put(JSONObject().put("Type", "Subtitle").put("Language", "eng").put("Index", 2))
+            .put(JSONObject().put("Type", "Subtitle").put("Language", "eng").put("Title", "SDH").put("Index", 4))
+            .put(JSONObject().put("Type", "Subtitle").put("Language", "spa").put("Index", 5))
+            .put(JSONObject().put("Type", "Subtitle").put("Language", "fre").put("Index", 6))
+            .put(JSONObject().put("Type", "Subtitle").put("Language", "ger").put("IsForced", true).put("Index", 7))))).toString()
       }
       p.contains("/Shows/NextUp") -> list(12, "Episode").toString()
       p.contains("/Similar") -> list(24).toString()
@@ -147,6 +156,7 @@ class PreviewTest {
     override fun playSeries(id: String) { calls.add("playSeries $id") }
     override fun hold(id: String, inResume: Boolean) { calls.add("hold $id"); tv.menu.hold(id, inResume) }
     override fun holdAct(id: String, act: String) { calls.add("holdAct $id $act") }
+    override fun playQueue(ids: List<String>) { calls.add("playQueue $ids") }
     override fun editHome(rowsJson: String) { calls.add("editHome") }
     override fun who() { calls.add("who") }
     override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title"); tv.menu.pick(title, options, cur) { i -> calls.add("picked $title $i"); done(i) } }
@@ -242,6 +252,23 @@ class PreviewTest {
       for (i in 1..4) { press(KeyEvent.KEYCODE_DPAD_DOWN); pump(500); if (i == 1 || i % 2 == 0) shot("item-$n-d$i", 1600) }
     }
     File(out, "detail-calls.txt").writeText(host.calls.joinToString("\n") + "\n---\n" + synchronized(log) { log.joinToString("\n") })
+  }
+
+  @Test fun pages2() {
+    start()
+    tv.route("#/item/Episode4"); pump(3000); shot("item-ep")
+    press(KeyEvent.KEYCODE_DPAD_DOWN); pump(500); shot("item-ep-d1", 1200)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); pump(500); shot("item-ep-d2", 1200)
+    tv.route("#/item/Box7"); pump(3000); shot("item-box")
+    press(KeyEvent.KEYCODE_DPAD_DOWN); pump(500); shot("item-box-d1", 1200)
+    tv.route("#/item/it4"); pump(3000)
+    press(KeyEvent.KEYCODE_DPAD_RIGHT, 5); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("item-subs")
+    press(KeyEvent.KEYCODE_DPAD_DOWN, 4); press(KeyEvent.KEYCODE_DPAD_RIGHT); shot("item-subs-other")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); pump(400); shot("item-subs-picked")
+    press(KeyEvent.KEYCODE_DPAD_LEFT); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("item-audio")
+    press(KeyEvent.KEYCODE_BACK)
+    tv.route("#/item/Series50"); pump(3000); shot("item-show2")
+    File(out, "pages2-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun pages() {

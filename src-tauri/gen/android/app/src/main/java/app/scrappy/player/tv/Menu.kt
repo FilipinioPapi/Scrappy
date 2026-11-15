@@ -19,7 +19,7 @@ import kotlin.math.min
 class Menu(private val tv: TvView) {
   private class Row(val label: String, val act: String, val icon: String, val on: Boolean = false)
 
-  private var kind = ""        // "", "hold", "pick"
+  private var kind = ""        // "", "hold", "pick", "tracks"
   val open get() = kind.isNotEmpty()
   private var title = ""
   private var meta = ""
@@ -52,6 +52,36 @@ class Menu(private val tv: TvView) {
       focusRect.set(tmp.left * k, tmp.top * k, tmp.right * k, tmp.bottom * k)
       focusCard = card; focusAt = SystemClock.uptimeMillis()
     }
+  }
+
+  // ---------- Audio / Subtitles on a title page (the same list as the player's) ----------
+  /** One track: group 0 = shown first (Off, English, Spanish), 1 = behind "Other languages", 2 = an action at the bottom. arg goes back to the page. */
+  class Track(val label: String, val note: String = "", val on: Boolean = false, val group: Int = 0, val arg: Int = 0)
+  private var tAll: List<Track> = emptyList()
+  private var tShown: List<Track> = emptyList()
+  private var tLevel = 0
+  private var tSub = ""
+  private val tAnchor = RectF()
+  private val OTHER = -1000
+
+  fun tracks(t: String, sub: String, list: List<Track>, anchor: RectF, then: (Int) -> Unit) {
+    done?.invoke(-1)
+    kind = "tracks"; title = t; tSub = sub; tAll = list; done = then; item = null
+    tAnchor.set(anchor)
+    // A track that sits under "Other languages" opens that list.
+    tLevel = if (list.any { it.group == 1 && it.on }) 1 else 0
+    tBuild()
+    start()
+  }
+
+  private fun tBuild() {
+    val others = tAll.count { it.group == 1 }
+    tShown = if (tLevel == 1) tAll.filter { it.group == 1 } else {
+      tAll.filter { it.group == 0 } +
+        (if (others > 0) listOf(Track("Other languages", "$others  ›", tAll.any { it.group == 1 && it.on }, 3, OTHER)) else emptyList()) +
+        tAll.filter { it.group == 2 }
+    }
+    idx = tShown.indexOfFirst { it.on && it.arg != OTHER }.takeIf { it >= 0 } ?: tShown.indexOfFirst { it.on }.coerceAtLeast(0)
   }
 
   // ---------- opening ----------
@@ -117,6 +147,11 @@ class Menu(private val tv: TvView) {
   private fun close() { kind = ""; closing = SystemClock.uptimeMillis(); val d = done; done = null; d?.invoke(-1); tv.invalidate() }
 
   private fun choose() {
+    if (kind == "tracks") {
+      val t = tShown.getOrNull(idx) ?: return
+      if (t.arg == OTHER) { tLevel = 1; tBuild(); tv.invalidate(); return }
+      val d = done; done = null; kind = ""; closing = SystemClock.uptimeMillis(); d?.invoke(t.arg); tv.invalidate(); return
+    }
     val r = rows.getOrNull(idx) ?: return
     if (kind == "pick") { val d = done; done = null; kind = ""; closing = SystemClock.uptimeMillis(); d?.invoke(idx); tv.invalidate(); return }
     val it = item ?: return
@@ -126,6 +161,9 @@ class Menu(private val tv: TvView) {
       "play" -> when (type) {
         "Series" -> tv.host.playSeries(id)
         "Season" -> tv.host.playSeries(it.optString("SeriesId").ifEmpty { id })
+        "BoxSet" -> Net.get("/Users/{userId}/Items?ParentId=${Card.enc(id)}&IncludeItemTypes=Movie,Video&SortBy=PremiereDate,ProductionYear,SortName") { v ->
+          Net.items(v).map { j -> j.optString("Id") }.filter { s -> s.isNotEmpty() }.takeIf { l -> l.isNotEmpty() }?.let { l -> tv.host.playQueue(l) }
+        }
         else -> tv.host.playFrom(id, false)
       }
       "restart" -> tv.host.playFrom(id, true)
@@ -141,13 +179,14 @@ class Menu(private val tv: TvView) {
     val down = e.action == KeyEvent.ACTION_DOWN
     when (e.keyCode) {
       KeyEvent.KEYCODE_DPAD_UP -> if (down) idx = max(0, idx - 1)
-      KeyEvent.KEYCODE_DPAD_DOWN -> if (down) idx = min(rows.size - 1, idx + 1)
-      KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {}
+      KeyEvent.KEYCODE_DPAD_DOWN -> if (down) idx = min((if (kind == "tracks") tShown.size else rows.size) - 1, idx + 1)
+      KeyEvent.KEYCODE_DPAD_LEFT -> if (down && kind == "tracks" && tLevel == 1) { tLevel = 0; tBuild() }
+      KeyEvent.KEYCODE_DPAD_RIGHT -> if (down && kind == "tracks" && tShown.getOrNull(idx)?.arg == OTHER) { tLevel = 1; tBuild() }
       KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
         if (down && e.repeatCount == 0) okArmed = true
         else if (!down && okArmed) { okArmed = false; choose() }
       }
-      KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> if (!down) close()
+      KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> if (!down) { if (kind == "tracks" && tLevel == 1) { tLevel = 0; tBuild() } else close() }
       else -> return false
     }
     tv.invalidate()
@@ -175,7 +214,7 @@ class Menu(private val tv: TvView) {
     val k = Ui.ease(((now - openedAt) / 160f).coerceIn(0f, 1f))
     // Dim what's behind.
     fill.color = Ui.alpha(0x8C080505.toInt(), k); c.drawRect(0f, 0f, Ui.W, Ui.H, fill)
-    if (kind == "hold") drawHold(c, now, k) else drawPick(c, k)
+    when (kind) { "hold" -> drawHold(c, now, k); "tracks" -> drawTracks(c, k); else -> drawPick(c, k) }
     return k < 1f
   }
 
@@ -227,6 +266,64 @@ class Menu(private val tv: TvView) {
     if (meta.isNotEmpty()) { Ui.line(c, Ui.fit(meta, pMeta, w - 56f), left + dx + 28f, y, 28f, pMeta); y += 28f }
     y += 14f
     rows.forEachIndexed { i, row -> drawRow(c, row, left + dx, left + dx + w, y, i == idx, a, false); y += 66f }
+  }
+
+  private val pSub = Ui.text(Ui.f500, 16f, Ui.MUTED)
+  private val pNote = Ui.text(Ui.f500, 16f, Ui.TEXT)
+  private val pVal = Ui.text(Ui.f500, 19f, Ui.TEXT)
+  private val pFoot = Ui.text(Ui.f400, 16f, Ui.MUTED)
+  private val P_PLUS = Path().apply { moveTo(12f, 5f); lineTo(12f, 19f); moveTo(5f, 12f); lineTo(19f, 12f) }
+  private val P_BACK = Path().apply { moveTo(15f, 5f); lineTo(8f, 12f); lineTo(15f, 19f) }
+
+  /** The player's Audio / Subtitles list, under the button that opened it. */
+  private fun drawTracks(c: Canvas, a: Float) {
+    val win = 8
+    val start = max(0, min(tShown.size - win, idx - 3))
+    val shown = tShown.subList(start, min(tShown.size, start + win))
+    val up = start > 0; val dn = start + win < tShown.size
+    val foot = if (tLevel == 0 && tShown.any { it.arg == OTHER }) "English and Spanish first. Other languages has the rest." else ""
+    val w = 480f
+    val h = 16f + 44f + (if (up) 22f else 0f) + shown.size * 66f - 4f + (if (dn) 22f else 0f) + (if (foot.isNotEmpty()) 34f else 0f) + 16f
+    val left = tAnchor.left.coerceIn(40f, Ui.W - 40f - w)
+    var top = tAnchor.bottom + 16f
+    if (top + h > Ui.H - 30f) top = max(30f, tAnchor.top - 16f - h)
+    top += (1f - a) * -12f
+    r.set(left, top, left + w, top + h); panel(c, a)
+    var y = top + 16f
+    val back = tLevel == 1
+    if (back) { icon.color = Ui.alpha(Ui.TEXT, a); icon.strokeWidth = 2.2f; Icons.drawPath(c, P_BACK, left + 10f, y + 10f, 24f, icon) }
+    val tx = left + if (back) 38f else 28f
+    val tt = if (back) "Other languages" else title
+    pTitle.alpha = (255 * a).toInt(); pSub.alpha = (255 * a).toInt()
+    Ui.line(c, tt, tx, y, 44f, pTitle)
+    val st = if (back) "Back returns" else tSub
+    if (st.isNotEmpty()) Ui.line(c, st, tx + pTitle.measureText(tt) + 12f, y + 4f, 44f, pSub)
+    y += 44f
+    icon.color = Ui.alpha(Ui.MUTED, a); icon.strokeWidth = 2f
+    if (up) { Icons.drawPath(c, P_UP, left + w / 2f - 11f, y, 22f, icon); y += 22f }
+    shown.forEachIndexed { j, t ->
+      val foc = start + j == idx
+      r.set(left + 12f, y, left + w - 12f, y + 62f)
+      if (foc) { fill.color = Ui.alpha(Ui.WHITE, a); c.drawRoundRect(r, 12f, 12f, fill) }
+      val col = if (foc) 0xFF1A0F10.toInt() else Ui.TEXT
+      var x = left + 30f
+      if (t.on && t.arg != OTHER) { icon.color = Ui.alpha(Ui.RED, a); icon.strokeWidth = 2.6f; Icons.drawPath(c, Icons.path("check"), x, y + 19f, 24f, icon) }
+      if (t.group == 2) { icon.color = Ui.alpha(if (foc) col else Ui.RED, a); icon.strokeWidth = 2.2f; Icons.drawPath(c, P_PLUS, x, y + 19f, 24f, icon) }
+      x += 36f
+      val value = if (t.arg == OTHER) t.note else ""
+      val valW = if (value.isNotEmpty()) pVal.measureText(value) + 14f else 0f
+      val avail = left + w - 30f - valW - x
+      pRow.color = Ui.alpha(col, a)
+      val label = Ui.fit(t.label, pRow, avail)
+      Ui.line(c, label, x, y, 62f, pRow)
+      val lw = pRow.measureText(label)
+      if (value.isEmpty() && t.note.isNotEmpty() && avail - lw > 40f) { pNote.color = Ui.alpha(col, a * 0.7f); Ui.line(c, Ui.fit(t.note, pNote, avail - lw - 12f), x + lw + 12f, y + 2f, 62f, pNote) }
+      if (value.isNotEmpty()) { pVal.color = Ui.alpha(col, a * 0.75f); Ui.line(c, value, left + w - 30f - pVal.measureText(value), y, 62f, pVal) }
+      y += 66f
+    }
+    y -= 4f
+    if (dn) { icon.color = Ui.alpha(Ui.MUTED, a); icon.strokeWidth = 2f; Icons.drawPath(c, P_DOWN, left + w / 2f - 11f, y, 22f, icon); y += 22f }
+    if (foot.isNotEmpty()) { pFoot.alpha = (255 * a).toInt(); Ui.line(c, Ui.fit(foot, pFoot, w - 56f), left + 28f, y + 10f, 24f, pFoot) }
   }
 
   private fun drawPick(c: Canvas, a: Float) {

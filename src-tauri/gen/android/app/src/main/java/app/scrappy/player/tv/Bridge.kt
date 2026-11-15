@@ -156,6 +156,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   override fun playSeries(id: String) = eval("window.__tvNative && window.__tvNative.playSeries(${js(id)})")
   override fun hold(id: String, inResume: Boolean) = view.menu.hold(id, inResume)
   override fun holdAct(id: String, act: String) = eval("window.__tvNative && window.__tvNative.holdAct(${js(id)}, ${js(act)})")
+  override fun playQueue(ids: List<String>) = eval("window.__tvNative && window.__tvNative.playQueue(${org.json.JSONArray(ids)})")
   override fun editHome(rowsJson: String) = eval("window.__tvNative && window.__tvNative.editHome($rowsJson)")
   override fun who() = eval("window.__tvNative && window.__tvNative.who()")
   override fun log(msg: String) { Log.i("ScrappyNative", msg) }

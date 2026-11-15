@@ -26,6 +26,8 @@ class Card(val it: JSONObject, val shape: Shape, val clickPlay: Boolean = false,
   var over: String? = null; private set
   val playable = type in PLAYABLE || (it.optString("MediaType") == "Video" && !it.optBoolean("IsFolder"))
   var pct = 0f; var badge = ""
+  /** A red label in the top-left corner (UP NEXT, YOU'RE HERE); here = a red ring while not focused. */
+  var flag = ""; var here = false
   val href: String get() = if (lib) "#/library/" + enc(id) else "#/item/" + enc(id)
   /** Focus animation 0..1. */
   var f = 0f
@@ -120,6 +122,9 @@ object CardArt {
   private val progFg = Ui.fill(Ui.RED)
   private val badgeBg = Ui.fill(Ui.RED)
   private val badgeTx = Ui.text(Ui.f700, 16f, Ui.WHITE).apply { textAlign = Paint.Align.CENTER }
+  private val flagBg = Ui.fill(Ui.RED)
+  private val flagTx = Ui.text(Ui.f800, 14f, Ui.WHITE, 1f)
+  private val hereRing = Ui.stroke(Ui.RED, 4f)
   val title = Ui.text(Ui.f700, 20f, Ui.TEXT)
   val sub = Ui.text(Ui.f400, 17.33f, Ui.MUTED)
   private val ph = Ui.text(Ui.f600, 20f, Ui.MUTED)
@@ -181,7 +186,14 @@ object CardArt {
       c.drawRoundRect(r, 16f, 16f, badgeBg)
       Ui.line(c, card.badge, r.centerX(), r.top, 32f, badgeTx)
     }
+    if (card.flag.isNotEmpty()) {
+      val fw = flagTx.measureText(card.flag) + 24f
+      r.set(x + 12f, y + 12f, x + 12f + fw, y + 12f + 30f)
+      c.drawRoundRect(r, 15f, 15f, flagBg)
+      Ui.line(c, card.flag, x + 24f, r.top, 30f, flagTx)
+    }
     r.set(x + 1f, y + 1f, x + w - 1f, y + h - 1f)
+    if (card.here && f < 1f) { hereRing.alpha = (255 * (1f - f)).toInt(); r.set(x - 4f, y - 4f, x + w + 4f, y + h + 4f); c.drawRoundRect(r, RADIUS + 4f, RADIUS + 4f, hereRing); r.set(x + 1f, y + 1f, x + w - 1f, y + h - 1f) }
     if (f > 0f) {
       redBorder.alpha = (255 * f).toInt(); c.drawRoundRect(r, RADIUS - 1f, RADIUS - 1f, border); c.drawRoundRect(r, RADIUS - 1f, RADIUS - 1f, redBorder)
       ring.alpha = (255 * f).toInt()

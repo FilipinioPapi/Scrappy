@@ -755,8 +755,20 @@ async function hideOverlay() {
 }
 
 // opts: { fromStart, startSecs, keepItem }
+// A collection's films played in a row (Play all / Shuffle): Next and auto-play walk this list.
+let filmQueue = [];
+export function playQueue(ids) {
+  const list = (ids || []).map(String).filter(Boolean);
+  if (!list.length) return;
+  filmQueue = list;
+  S.autoChain = 0;
+  startPlayback(list[0], { fromStart: true, queued: true });
+}
+
 export async function startPlayback(id, opts = {}) {
   if (S.starting) return;
+  // Starting something that isn't in the running queue ends the queue.
+  if (!opts.queued && !filmQueue.includes(String(id))) filmQueue = [];
   S.starting = true;
   window.dispatchEvent(new CustomEvent('video:start'));
   if (TVP) await invoke('tv_update', { what: pref('tvSoundThrough') === 'on' ? 'sound-through' : 'sound-plain' }).catch(() => {});
@@ -806,6 +818,13 @@ export async function exitPlayer() {
 
 // Find the episode after this one, for Next / auto-play.
 async function findNext(it) {
+  const qi = filmQueue.indexOf(String(it.Id));
+  if (qi >= 0) {
+    const nid = filmQueue[qi + 1];
+    if (!nid) return;
+    try { const n = await api.get(`/Users/{userId}/Items/${nid}`); if (S.item?.Id === it.Id) { S.next = n || null; drawButtons(); } } catch {}
+    return;
+  }
   if (it.Type !== 'Episode' || !it.SeriesId) return;
   try {
     const data = await api.get(`/Shows/${it.SeriesId}/Episodes?UserId={userId}&StartItemId=${it.Id}&Limit=2&Fields=PrimaryImageAspectRatio`);
@@ -840,6 +859,7 @@ function showUpNext(mode) {
   $('.p-up-meta').textContent = runtime(n.RunTimeTicks);
   $('.p-up-count').textContent = count;
   $('[data-act=up-cancel]').textContent = mode === 'credits' ? 'Watch credits' : 'Cancel';
+  $('[data-act=up-now]').textContent = n.Type === 'Episode' ? 'Next episode' : 'Next film';
   if (!S.embedded) { playNext(); return true; }
   reveal('.p-upnext', true);
   S.upNextTimer = setInterval(() => {

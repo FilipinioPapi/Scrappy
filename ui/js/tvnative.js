@@ -132,6 +132,7 @@ window.__tvNative = {
   pl: (a, v) => import('./player.js').then((m) => m.npAct(a, v)).catch(() => {}),
   subtitles: (id) => import('./menu.js').then((m) => m.subtitlesDialog(id)).catch(() => {}),
   hold,
+  playQueue: (ids) => import('./player.js').then((m) => m.playQueue(ids)).catch(() => {}),
   holdAct: (id, act) => import('./menu.js').then((m) => m.holdAct(id, act)).catch(() => {}),
   editHome: (rows) => editHome(rows),
   who: () => import('./tvwho.js').then((m) => m.who({ side: true })).catch(() => {}),

@@ -42,6 +42,8 @@ interface Host {
   fun keyboard(text: String, change: (String) -> Unit, done: (String?) -> Unit)
   /** Favourite / watched / leave Continue Watching for an item (the web side does it and tells every screen). */
   fun holdAct(id: String, act: String) {}
+  /** Play these films one after another (a collection's Play all / Shuffle). */
+  fun playQueue(ids: List<String>) {}
 }
 
 /** One glide per scroller, the same feel as the web screens (tv.js glideTo), in 1080p units. */
@@ -115,7 +117,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   companion object {
     /** Item id -> Emby type, as far as the native screens know (decides which pages are native). */
     val kinds = HashMap<String, String>()
-    private val NATIVE_TYPES = setOf("Movie", "Series", "Season")
+    private val NATIVE_TYPES = setOf("Movie", "Series", "Season", "Episode", "BoxSet")
   }
 
   private val screens = LinkedHashMap<String, Screen>(16, 0.75f, true)
