@@ -11,7 +11,7 @@ const IMG_OPTS = 'ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb';
 
 // ---------------- Sign in: one panel for all three servers ----------------
 
-const SERVERS = [
+export const SERVERS = [
   { kind: 'emby', name: 'Emby', what: 'Movies & TV', eg: '192.168.1.20:8096',
     icon: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M3 15h18M8 5v4M16 5v4M8 15v4M16 15v4"/>' },
   { kind: 'navidrome', name: 'Navidrome', what: 'Music', eg: '192.168.1.20:4533',

@@ -141,6 +141,8 @@ window.__tvNative = {
   whoClosed: () => import('./tvwho.js').then((m) => m.nativeClosed()).catch(() => {}),
   setAct: (seq, act, args) => import('./tvsettings.js').then((m) => m.act(act, args)).catch((e) => ({ ok: false, err: String(e?.message || e) }))
     .then((r) => { try { window.ScrappyNative.setReply(seq, JSON.stringify(r)); } catch {} }),
+  signAct: (seq, act, args) => import('./tvsignact.js').then((m) => m.act(act, args)).catch((e) => ({ ok: false, err: String(e?.message || e) }))
+    .then((r) => { try { window.ScrappyNative.signReply(seq, JSON.stringify(r)); } catch {} }),
   pick,
   genreLib: (id) => { try { localStorage.setItem('genreLib', id); } catch {} },
   sort: (key, i) => { try { localStorage.setItem(key, String(i)); } catch {} sendPrefs(); },

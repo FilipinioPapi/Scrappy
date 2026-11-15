@@ -181,6 +181,31 @@ class PreviewTest {
         .put(sec("about", "About & help", "APP", bt("tips", "Remote tips", "The handy things the remote can do in Scrappy.", "Show")))
       done(JSONObject().put("ok", true).put("model", JSONObject().put("sections", m)))
     }
+    val signed = mutableSetOf<String>()
+    var sharedOn = false
+    override fun signAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
+      calls.add("signAct $act ${if (args.has("pass")) "(pass hidden)" else args.toString()}")
+      fun model(): JSONObject {
+        val a = JSONArray()
+        for ((k, n, w) in listOf(Triple("emby", "Emby", "Movies & TV"), Triple("navidrome", "Navidrome", "Music"), Triple("audiobookshelf", "Audiobookshelf", "Audiobooks")))
+          a.put(JSONObject().put("kind", k).put("name", n).put("what", w).put("eg", "192.168.1.20:8096").put("signedIn", k in signed).put("user", if (k in signed) "jayden" else "").put("address", if (k in signed) "https://movies.myserver.com" else ""))
+        val qr = JSONArray(); for (y in 0 until 25) qr.put((0 until 25).joinToString("") { x -> if ((x < 7 && y < 7) || (x > 17 && y < 7) || (x < 7 && y > 17) || (x * 7 + y * 13) % 5 < 2) "1" else "0" })
+        val m = JSONObject().put("servers", a).put("qr", qr)
+        if (sharedOn) m.put("shared", JSONObject().put("from", "Emby").put("user", "jayden").put("pic", ""))
+        return m
+      }
+      when (act) {
+        "start", "model" -> done(model())
+        "check" -> done(JSONObject().put("ok", true).put("address", "https://" + args.optString("address")))
+        "login", "same" -> { signed.add(args.optString("kind")); sharedOn = true; done(JSONObject().put("ok", true).put("model", model())) }
+        else -> done(JSONObject().put("ok", true))
+      }
+    }
+    override fun field(text: String, mode: String, change: (String) -> Unit, done: (String?) -> Unit) {
+      calls.add("field $mode")
+      val v = when (mode) { "url" -> "movies.myserver.com"; "user" -> "jayden"; else -> "secret" }
+      change(v); done(v)
+    }
     override fun editHome(rowsJson: String) { calls.add("editHome") }
     override fun who() { calls.add("who") }
     override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title"); tv.menu.pick(title, options, cur) { i -> calls.add("picked $title $i"); done(i) } }
@@ -320,6 +345,19 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_DPAD_UP, 2); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("set-list")
     press(KeyEvent.KEYCODE_BACK); press(KeyEvent.KEYCODE_BACK); press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("set-tips")
     File(out, "settings-calls.txt").writeText(host.calls.joinToString("\n"))
+  }
+
+  @Test fun signin() {
+    start()
+    tv.route("#/login"); pump(800); shot("sign-addr")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); pump(300); shot("sign-user")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); pump(300); shot("sign-pass")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); pump(200); shot("sign-flash", 300)
+    pump(1300); shot("sign-next")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); pump(300); shot("sign-who")
+    press(KeyEvent.KEYCODE_BACK); pump(200); shot("sign-back-emby")
+    press(KeyEvent.KEYCODE_DPAD_UP); shot("sign-tiles")
+    File(out, "signin-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun pages() {

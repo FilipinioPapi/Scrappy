@@ -3,7 +3,8 @@
 //! While the sign-in screen is open the app serves one small page on the home
 //! network. The TV shows a QR code that links to it with a one-time code. What
 //! is typed on the phone is handed to the sign-in screen (event `pair-login`),
-//! which signs in exactly like the remote would. Nothing leaves the house, and
+//! which signs in exactly like the remote would. The page can also check an address
+//! first and skip a server (event `pair-act`). Nothing leaves the house, and
 //! the page stops the moment the sign-in screen closes.
 
 use serde_json::{json, Value};
@@ -74,10 +75,10 @@ fn handle(mut s: TcpStream, code: &str, state: &Arc<Mutex<String>>, app: &AppHan
     } else if method == "GET" && path == format!("{base}/state") {
         let st = state.lock().map(|g| g.clone()).unwrap_or_default();
         reply(&s, "200 OK", "application/json", if st.is_empty() { "{}" } else { &st });
-    } else if method == "POST" && path == format!("{base}/login") {
+    } else if method == "POST" && (path == format!("{base}/login") || path == format!("{base}/act")) {
         match serde_json::from_slice::<Value>(&body) {
             Ok(v) => {
-                let _ = app.emit("pair-login", v);
+                let _ = app.emit(if path.ends_with("/act") { "pair-act" } else { "pair-login" }, v);
                 reply(&s, "200 OK", "application/json", "{\"ok\":true}");
             }
             Err(_) => reply(&s, "400 Bad Request", "text/plain", "bad request"),
@@ -97,8 +98,15 @@ pub fn pair_start(app: AppHandle) -> Result<Value, String> {
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let code: String = uuid::Uuid::new_v4().simple().to_string()[..10].to_string();
     let url = format!("http://{ip}:{port}/{code}");
-    let qr = qrcode::QrCode::new(url.as_bytes())
-        .map_err(|e| e.to_string())?
+    let code_img = qrcode::QrCode::new(url.as_bytes()).map_err(|e| e.to_string())?;
+    // The same code as rows of 1 (dark) and 0, for screens that draw it themselves.
+    let w = code_img.width();
+    let colors = code_img.to_colors();
+    let modules: Vec<String> = colors
+        .chunks(w)
+        .map(|row| row.iter().map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' }).collect())
+        .collect();
+    let qr = code_img
         .render::<qrcode::render::svg::Color>()
         .min_dimensions(240, 240)
         .quiet_zone(false)
@@ -122,7 +130,7 @@ pub fn pair_start(app: AppHandle) -> Result<Value, String> {
     if let Ok(mut c) = CURRENT.lock() {
         *c = Some(Pairing { stop, state });
     }
-    Ok(json!({ "url": url, "qr": qr }))
+    Ok(json!({ "url": url, "qr": qr, "modules": modules }))
 }
 
 /// What the phone page shows: which servers are signed in, and the result of its last try.

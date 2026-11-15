@@ -14,7 +14,8 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
   let sel = SERVERS.find((x) => x.kind === pick) || SERVERS.find((x) => !srv()[x.kind]?.signedIn) || SERVERS[0];
   const st = {};                 // kind -> { step, address, user }
   let shared = null;             // { user, pass, from } from the latest sign-in on this screen
-  const results = {};            // kind -> { ok, error, n } for the phone page
+  const results = {};            // kind -> { ok, error, n, phase } for the phone page
+  const skipped = {};            // servers skipped from the phone
   let busy = false, err = '', alive = true;
   // A server address typed on the remote is kept if the app closes part-way (never a username or password).
   const SAVED = 'tvSigninAddr';
@@ -34,7 +35,8 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
     </div>`;
   const tiles = root.querySelector('#siTiles'), q = root.querySelector('#siQ');
 
-  const push = () => invoke('pair_state', { state: { servers: SERVERS.map((x) => ({ kind: x.kind, name: x.name, what: x.what, signedIn: !!srv()[x.kind]?.signedIn, user: srv()[x.kind]?.user || '', address: st[x.kind]?.address || srv()[x.kind]?.address || '' })), results } }).catch(() => {});
+  const push = () => invoke('pair_state', { state: { servers: SERVERS.map((x) => ({ kind: x.kind, name: x.name, what: x.what, signedIn: !!srv()[x.kind]?.signedIn, user: srv()[x.kind]?.user || '', address: st[x.kind]?.address || srv()[x.kind]?.address || '',
+    checked: !!st[x.kind] && st[x.kind].step !== 'addr', skipped: !!skipped[x.kind] })), results, same: !!shared, v: 2 } }).catch(() => {});
 
   function drawTiles() {
     tiles.innerHTML = SERVERS.map((x) => {
@@ -80,7 +82,7 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
 
   function next() {
     const i = SERVERS.indexOf(sel);
-    const rest = [...SERVERS.slice(i + 1), ...SERVERS.slice(0, i)].find((x) => !srv()[x.kind]?.signedIn);
+    const rest = [...SERVERS.slice(i + 1), ...SERVERS.slice(0, i)].find((x) => !srv()[x.kind]?.signedIn && !skipped[x.kind]);
     err = '';
     if (rest) { sel = rest; draw(); } else location.hash = firstTab(session);
   }
@@ -172,18 +174,37 @@ export function tvLoginView(root, ctx, SERVERS, pick, firstTab) {
   let unlisten = null;
   listen('pair-login', async ({ payload: p }) => {
     const x = SERVERS.find((y) => y.kind === p?.kind); if (!x || !alive) return;
-    try { await signIn(x.kind, String(p.address || ''), String(p.user || ''), String(p.pass || '')); delete st[x.kind]; remember(x.kind, null); results[x.kind] = { ok: true, n: p.n }; }
-    catch (e) { results[x.kind] = { ok: false, error: String(e), n: p.n }; }
+    const same = p.same && shared;
+    try { await signIn(x.kind, String(p.address || ''), same ? shared.user : String(p.user || ''), same ? shared.pass : String(p.pass || '')); delete st[x.kind]; remember(x.kind, null); results[x.kind] = { ok: true, n: p.n, phase: 'login' }; }
+    catch (e) { results[x.kind] = { ok: false, error: String(e), n: p.n, phase: 'login' }; }
     if (!alive) return;
     if (sel === x && srv()[x.kind]?.signedIn && SERVERS.some((y) => !srv()[y.kind]?.signedIn)) next(); else draw(!q.contains(document.activeElement) || !q.querySelector('#siIn'));
   }).then((u) => { if (alive) unlisten = u; else u(); });
+  // The phone checks an address first, and can skip a server or finish.
+  let unlistenAct = null;
+  listen('pair-act', async ({ payload: p }) => {
+    if (!alive) return;
+    if (p?.act === 'open') { location.hash = firstTab(session); return; }
+    const x = SERVERS.find((y) => y.kind === p?.kind); if (!x) return;
+    if (p.act === 'check') {
+      try {
+        const r = await api.serverCheck(x.kind, String(p.address || '').trim());
+        st[x.kind] = { step: shared ? 'who' : 'user', address: r.address, user: '' };
+        remember(x.kind, { address: r.address, ok: true });
+        results[x.kind] = { ok: true, n: p.n, phase: 'check', address: r.address };
+      } catch (e) { results[x.kind] = { ok: false, error: String(e), n: p.n, phase: 'check' }; }
+    } else if (p.act === 'skip') { skipped[x.kind] = true; if (sel === x) { next(); return; } }
+    else if (p.act === 'unskip') delete skipped[x.kind];
+    else if (p.act === 'change') { if (st[x.kind]) st[x.kind].step = 'addr'; }
+    if (alive) draw(!q.contains(document.activeElement) || !q.querySelector('#siIn'));
+  }).then((u) => { if (alive) unlistenAct = u; else u(); });
   invoke('pair_start').then((r) => {
     if (!alive || !r?.qr) return;
     root.querySelector('#siCode').innerHTML = r.qr;
     root.querySelector('#siQr').hidden = false;
     push();
   }).catch(() => {});
-  ctx.onLeave?.(() => { alive = false; removeEventListener('tv-ime', imeGone); unlisten?.(); invoke('pair_stop').catch(() => {}); });
+  ctx.onLeave?.(() => { alive = false; removeEventListener('tv-ime', imeGone); unlisten?.(); unlistenAct?.(); invoke('pair_stop').catch(() => {}); });
 
   draw();
 }

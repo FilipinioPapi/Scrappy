@@ -265,7 +265,9 @@ async function routeNow(opts = {}) {
     // Film and show pages are native; any other item (an episode, a collection...) stays a web page.
     const kind = name === 'item' && arg ? kindOf(decodeURIComponent(arg)) : '';
     const webItem = !!kind && !['Movie', 'Series', 'Season'].includes(kind);
-    if (!notSigned && name !== 'login' && !webItem && window.ScrappyNative.route(hash)) {
+    // Sign-in is native too where this build has it (Scrappy Native's Signin.kt).
+    const nativeSignin = typeof window.ScrappyNative.signPush === 'function';
+    if (!notSigned && (name !== 'login' || nativeSignin) && !webItem && window.ScrappyNative.route(hash)) {
       document.documentElement.classList.add('native');
       dropGhost(); leaveCtx(); restoreRun++; shownPage = null; lastRouteName = name;
       viewEl.replaceChildren();

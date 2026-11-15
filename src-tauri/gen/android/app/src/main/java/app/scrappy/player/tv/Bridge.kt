@@ -171,6 +171,21 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     val n = ++setN; setCalls[n] = done
     eval("window.__tvNative && window.__tvNative.setAct($n, ${js(act)}, $args)")
   }
+  private val signCalls = HashMap<Int, (JSONObject?) -> Unit>()
+  private var signN = 0
+  @JavascriptInterface fun signReply(seq: Int, json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { null }
+    act.runOnUiThread { signCalls.remove(seq)?.invoke(o) }
+  }
+  /** The phone signed in, checked an address or skipped a server: the sign-in screen catches up. */
+  @JavascriptInterface fun signPush(json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { return }
+    act.runOnUiThread { (view.screen as? Signin)?.push(o) }
+  }
+  override fun signAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
+    val n = ++signN; signCalls[n] = done
+    eval("window.__tvNative && window.__tvNative.signAct($n, ${js(act)}, $args)")
+  }
   override fun whoClosed() {
     modal = false; apply()
     eval("window.__tvNative && window.__tvNative.whoClosed()")
@@ -234,7 +249,10 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     }
   }
   private var watcher: android.text.TextWatcher? = null
-  override fun keyboard(text: String, change: (String) -> Unit, done: (String?) -> Unit) {
+  override fun keyboard(text: String, change: (String) -> Unit, done: (String?) -> Unit) = openBox(text, "search", change, done)
+  override fun field(text: String, mode: String, change: (String) -> Unit, done: (String?) -> Unit) = openBox(text, mode, change, done)
+
+  private fun openBox(text: String, mode: String, change: (String) -> Unit, done: (String?) -> Unit) {
     act.runOnUiThread {
       val parent = web.parent as? ViewGroup ?: return@runOnUiThread
       val b = box ?: KeyBox(act).also { k ->
@@ -247,6 +265,21 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
         box = k
       }
       watcher?.let { b.removeTextChangedListener(it) }
+      b.inputType = when (mode) {
+        "url" -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        "user" -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        "password" -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        else -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
+      }
+      b.imeOptions = when (mode) { "search" -> android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH; "password" -> android.view.inputmethod.EditorInfo.IME_ACTION_DONE; else -> android.view.inputmethod.EditorInfo.IME_ACTION_NEXT } or (if (mode == "search") 0 else android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI)
+      // Where the box is drawn (search box, or the sign-in box), so the keyboard sits the same way.
+      (b.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+        val sc = (if (view.width > 0) view.width else parent.width) / 1920f
+        val field = mode != "search"
+        lp.width = ((if (field) 1080 else 1739) * sc).toInt(); lp.height = ((if (field) 80 else 101) * sc).toInt()
+        lp.leftMargin = ((if (field) 96 else 149) * sc).toInt(); lp.topMargin = ((if (field) 206 else 64) * sc).toInt()
+        b.layoutParams = lp
+      }
       b.setText(text); b.setSelection(text.length)
       val imm = act.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
       var closed = false

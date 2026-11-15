@@ -50,6 +50,10 @@ interface Host {
   fun whoClosed() {}
   /** Settings: read the rows / change a setting / run a button (tvsettings.js act()). */
   fun setAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {}
+  /** Sign-in: check an address, sign in, skip, open (tvsignact.js). */
+  fun signAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {}
+  /** The TV keyboard for a sign-in box: mode = url, user or password. */
+  fun field(text: String, mode: String, change: (String) -> Unit, done: (String?) -> Unit) = keyboard(text, change, done)
 }
 
 /** One glide per scroller, the same feel as the web screens (tv.js glideTo), in 1080p units. */
@@ -90,6 +94,8 @@ abstract class Screen(val tv: TvView) {
   /** Data changed elsewhere (watched, favourite, after playing): fetch again. */
   open fun stale() {}
   open val railKey: String = "home"
+  /** A screen of its own with no side rail (sign-in). */
+  open val bare: Boolean = false
   /** Back: return true if the screen handled it (e.g. stepping out of a list), else the page goes back. */
   open fun back(): Boolean = false
 }
@@ -134,6 +140,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   fun grid(id: String, genre: String): Grid = screens.getOrPut("lib/$id/$genre") { Grid(this, id, genre) } as Grid
   fun genres(): Genres = screens.getOrPut("genres") { Genres(this) } as Genres
   fun search(): Search = screens.getOrPut("search") { Search(this) } as Search
+  fun signin(): Signin = screens.getOrPut("signin") { Signin(this) } as Signin
   fun favs(): Favs = screens.getOrPut("favorites") { Favs(this) } as Favs
   fun person(id: String): Person {
     val d = screens.getOrPut("person/$id") { Person(this, id) } as Person
@@ -178,6 +185,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     if (h == "#/favorites") return favs()
     if (h == "#/search") return search()
     if (p.size in 2..3 && p[1] == "settings") return screens.getOrPut("settings") { Settings(this) }
+    if (h == "#/login" || (p.size == 3 && p[1] == "servers")) return signin()
     if (p.size == 3 && p[1] == "person" && p[2].isNotEmpty()) return person(java.net.URLDecoder.decode(p[2], "UTF-8"))
     return null
   }
@@ -186,7 +194,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     val h = hash.substringBefore('?')
     if (h == "" || h == "#" || h == "#/" || h == "#/home") return true
     val p = h.split('/')
-    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" || h == "#/search" || (p.size in 2..3 && p[1] == "settings") ||
+    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" || h == "#/search" || (p.size in 2..3 && p[1] == "settings") || h == "#/login" || (p.size == 3 && p[1] == "servers") ||
       (p.size == 3 && p[1] == "person" && p[2].isNotEmpty())
   }
 
@@ -208,7 +216,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     c.save()
     c.scale(width / Ui.W, height / Ui.H)
     var anim = screen?.draw(c, now, dt) ?: false.also { c.drawColor(Ui.BG) }
-    if (screen != null) anim = rail.draw(c, now, dt) || anim
+    if (screen != null && screen?.bare != true) anim = rail.draw(c, now, dt) || anim
     anim = who.draw(c, now) || anim
     anim = menu.draw(c, now) || anim
     c.restore()
