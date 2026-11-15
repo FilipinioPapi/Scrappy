@@ -212,6 +212,20 @@ class Hero(private val home: Home) {
 
   fun moreX(): Float = 213f + (picks.getOrNull(i)?.layout?.let { playW(it.playLabel) } ?: 189f) + 8f
 
+  /** Left and Right step through the banners (approved banner option A). false = nowhere to go (Left on the first opens the side bar). */
+  fun step(d: Int): Boolean {
+    if (picks.size < 2) return false
+    if (d < 0 && i == 0) return false
+    prevUrl = picks[i].url
+    i = (i + d + picks.size) % picks.size
+    slideAt = SystemClock.uptimeMillis(); nextAt = slideAt + 8000
+    tv.invalidate()
+    return true
+  }
+  val first get() = i == 0
+  /** Previews only: show these banners. */
+  internal fun showForTest(l: List<Pick>) { picks = l; i = 0; waiting = false; slideAt = SystemClock.uptimeMillis(); home.heroChanged() }
+
   fun press(col: Int) {
     val p = picks.getOrNull(i) ?: return
     val it = p.it
@@ -250,6 +264,10 @@ class Hero(private val home: Home) {
   private val playTri = Path().apply { moveTo(8f, 5f); lineTo(8f, 19f); lineTo(19f, 12f); close() }
   private val white = Ui.fill(Ui.WHITE)
   private val r = RectF()
+  private val chev = Ui.stroke(Ui.WHITE, 5f)
+  private val chevPath = Path()
+  private val countP = Ui.text(Ui.f600, 20f, 0xFFD8C9CB.toInt())
+  private val countBg = Ui.fill(0x59000000)
 
   private fun playW(label: String) = 34.67f * 2 + 29.33f + 6f + btnP.measureText(label)
 
@@ -309,6 +327,8 @@ class Hero(private val home: Home) {
     // Next slide every 8 s.
     if (running && picks.size > 1) {
       if (nextAt == 0L) nextAt = now + 8000
+      // It stops changing by itself while the remote is on it.
+      if (focused) nextAt = maxOf(nextAt, now + 8000)
       if (now >= nextAt) { prevUrl = picks[i].url; i = (i + 1) % picks.size; slideAt = now; nextAt = now + 8000 }
       anim = true
     }
@@ -364,6 +384,16 @@ class Hero(private val home: Home) {
     if (focused && col == 1) { r.inset(-6f, -6f); c.drawRoundRect(r, 19.33f, 19.33f, outline) }
     btnP.color = 0xFFE9DADB.toInt()
     Ui.line(c, "More info", mx + 34.67f, btnTop, 67f, btnP)
+    // Arrows at the edges and "2 of 6", so it's clear you can move and where you are.
+    if (picks.size > 1) {
+      chev.color = Ui.alpha(Ui.WHITE, if (focused) 0.6f else 0.3f)
+      if (i > 0) { chevPath.reset(); chevPath.moveTo(166f, 330f); chevPath.lineTo(146f, 360f); chevPath.lineTo(166f, 390f); c.drawPath(chevPath, chev) }
+      chevPath.reset(); chevPath.moveTo(1864f, 330f); chevPath.lineTo(1884f, 360f); chevPath.lineTo(1864f, 390f); c.drawPath(chevPath, chev)
+      val label = "${i + 1} of ${picks.size}"
+      val cw = countP.measureText(label) + 36f
+      r.set(Ui.W - 56f - cw, 52f, Ui.W - 56f, 92f); c.drawRoundRect(r, 20f, 20f, countBg)
+      Ui.line(c, label, r.left + 18f, 52f, 40f, countP)
+    }
     // Dots.
     if (picks.size > 1) {
       var dx = 213f

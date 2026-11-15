@@ -29,7 +29,7 @@ class Home(tv: TvView) : Screen(tv) {
   }
 
   override val railKey = "home"
-  private val hero = Hero(this)
+  internal val hero = Hero(this)
   private var views: List<JSONObject> = emptyList()
   private val rows = LinkedHashMap<String, Row>()
   private var order: List<Row> = emptyList()
@@ -394,14 +394,15 @@ class Home(tv: TvView) : Screen(tv) {
       KeyEvent.KEYCODE_DPAD_LEFT -> {
         if (onSeeAll) { onSeeAll = false; aim(); return true }
         when (row.kind) {
-          Kind.HERO, Kind.GHEAD, Kind.CARDS, Kind.LIB, Kind.GROW -> { if (col == 0) return false; col--; aim(); return true }
+          Kind.HERO -> { if (col == 0) return hero.step(-1); col--; aim(); return true }
+          Kind.GHEAD, Kind.CARDS, Kind.LIB, Kind.GROW -> { if (col == 0) return false; col--; aim(); return true }
           Kind.EDIT -> return false
         }
       }
       KeyEvent.KEYCODE_DPAD_RIGHT -> {
         if (onSeeAll) return true
         val max = when (row.kind) { Kind.HERO -> 1; Kind.GHEAD -> genreLibs.size - 1; Kind.EDIT -> 0; else -> row.cards.size - 1 }
-        if (col < max) { col++; aim() }
+        if (col < max) { col++; aim() } else if (row.kind == Kind.HERO) hero.step(1)
         return true
       }
       KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_UP -> {

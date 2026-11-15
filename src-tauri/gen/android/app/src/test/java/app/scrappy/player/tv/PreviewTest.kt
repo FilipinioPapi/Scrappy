@@ -379,6 +379,19 @@ class PreviewTest {
     File(out, "signin-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
+  @Test fun banner() {
+    start()
+    tv.route("#/home"); pump(4000)
+    val h = tv.home()
+    h.hero.showForTest((0 until 5).map { n -> Hero.Pick(JSONObject().put("Id", "m$n").put("Name", listOf("The Fix", "Black Bag", "Heart of the Beast", "Tokyo Godfathers", "Donnie Darko")[n]).put("Type", "Movie").put("ProductionYear", 2020 + n).put("Overview", "A short line about this film."), "NEW FOR YOU", "Added this week", "") })
+    pump(800)
+    press(KeyEvent.KEYCODE_DPAD_UP, 4)
+    shot("banner")
+    press(KeyEvent.KEYCODE_DPAD_RIGHT, 2); shot("banner-next", 900)
+    press(KeyEvent.KEYCODE_DPAD_LEFT); press(KeyEvent.KEYCODE_DPAD_LEFT); shot("banner-prev", 900)
+    press(KeyEvent.KEYCODE_DPAD_LEFT); shot("banner-rail")
+  }
+
   @Test fun edithome() {
     start()
     tv.route("#/home"); pump(4000)
