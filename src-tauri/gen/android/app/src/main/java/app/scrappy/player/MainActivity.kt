@@ -37,9 +37,29 @@ class MainActivity : TauriActivity() {
 
   // Holding OK on the remote: tell the page once per press, so the quick menu opens on every remote
   // (some TVs don't pass the "still held" presses on to the page).
+  // Back goes back ONE step per press (Jayden): a held Back, or a remote that resends it while held, does nothing more.
+  private var backArmed = false
+  private var backUpAt = 0L
+
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+      if (event.action == KeyEvent.ACTION_DOWN) {
+        if (event.repeatCount > 0) return true
+        if (event.eventTime - backUpAt < 250) return true // a held key resent as quick separate presses
+        backArmed = true
+      } else if (event.action == KeyEvent.ACTION_UP) {
+        if (!backArmed) return true
+        backArmed = false; backUpAt = event.eventTime
+      }
+    }
     // A video is playing in Scrappy Native: its own controls take the remote.
-    native?.let { n -> if (n.playerKeys() && n.player.onKey(event)) return true }
+    native?.let { n ->
+      if (n.playerKeys() && n.player.onKey(event)) {
+        // The player acts on the press itself; its release must not go back a second step.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_DOWN) { backArmed = false; backUpAt = event.eventTime }
+        return true
+      }
+    }
     // A native screen is up with nothing from the web on top: the remote drives it directly.
     native?.let { n -> if (n.takesKeys() && n.view.onKey(event)) return true }
     val ok = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
