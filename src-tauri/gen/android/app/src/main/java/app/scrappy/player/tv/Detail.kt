@@ -243,9 +243,19 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     val a = o.optJSONArray("People") ?: return emptyList()
     val list = List(a.length()) { k -> a.getJSONObject(k) }.filter { p -> p.optString("Id").isNotEmpty() }
     fun rank(p: JSONObject) = when (p.optString("Type")) { "Actor", "GuestStar" -> 0; "Director" -> 1; "Writer" -> 2; else -> 3 }
-    return list.withIndex().sortedWith(compareBy({ rank(it.value) }, { it.index })).map { it.value }.take(40).map { p ->
+    fun roleOf(p: JSONObject) = p.optString("Role").trim().ifEmpty { p.optString("Type").takeIf { t -> t.isNotEmpty() && t != "Actor" }?.replace(Regex("([a-z])([A-Z])"), "$1 $2") ?: "" }
+    // One card per person: someone listed twice (two characters, or actor and director) gets one card with both roles.
+    val roles = LinkedHashMap<String, LinkedHashSet<String>>()
+    val firsts = LinkedHashMap<String, JSONObject>()
+    for (p in list.withIndex().sortedWith(compareBy({ rank(it.value) }, { it.index })).map { it.value }) {
+      val key = p.optString("Id").ifEmpty { p.optString("Name").trim().lowercase() }
+      if (key.isEmpty()) continue
+      firsts.getOrPut(key) { p }
+      roleOf(p).takeIf { r -> r.isNotEmpty() }?.let { r -> roles.getOrPut(key) { LinkedHashSet() }.add(r) }
+    }
+    return firsts.entries.take(40).map { (key, p) ->
       val name = p.optString("Name").ifEmpty { "?" }
-      val role = p.optString("Role").ifEmpty { p.optString("Type").takeIf { t -> t.isNotEmpty() && t != "Actor" }?.replace(Regex("([a-z])([A-Z])"), "$1 $2") ?: "" }
+      val role = roles[key].orEmpty().distinctBy { r -> r.lowercase() }.take(2).joinToString(" · ")
       val tag = p.optString("PrimaryImageTag")
       var n = 7; for (ch in name) n = (n * 31 + ch.code) % 997
       val w = name.trim().split(Regex("\\s+")).filter { s -> s.isNotEmpty() }
