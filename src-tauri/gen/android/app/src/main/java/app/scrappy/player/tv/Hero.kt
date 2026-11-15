@@ -32,6 +32,7 @@ class Hero(private val home: Home) {
   private var gen = 0
   private var nextAt = 0L
   private var running = false
+  private var wasFocused = false
 
   private val FIELDS = "PrimaryImageAspectRatio,ProductionYear,EndDate,BasicSyncInfo"
   private val IMG_OPTS = "ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop,Thumb"
@@ -248,6 +249,7 @@ class Hero(private val home: Home) {
   private val bottomFade = Paint().apply {
     shader = LinearGradient(0f, 0f, 0f, 799f, intArrayOf(Ui.alpha(Ui.BG, 0f), Ui.alpha(Ui.BG, 0f), Ui.BG, Ui.BG), floatArrayOf(0f, 0.5f, 0.94f, 1f), Shader.TileMode.CLAMP)
   }
+  private val fadeBoth: Paint? = Ui.over(sideFade.shader, bottomFade.shader)?.let { s -> Paint().apply { shader = s } }
   private val bgP = Ui.fill(Ui.BG)
   private val kicker = Ui.text(Ui.f800, 16f, 0xFFEDA7AA.toInt(), 2.67f)
   private val dot = Ui.fill(Ui.RED)
@@ -328,22 +330,27 @@ class Hero(private val home: Home) {
     // Next slide every 8 s.
     if (running && picks.size > 1) {
       if (nextAt == 0L) nextAt = now + 8000
-      // It stops changing by itself while the remote is on it.
-      if (focused) nextAt = maxOf(nextAt, now + 8000)
+      // It stops changing by itself while the remote is on it (and for 8 s after the remote leaves it).
+      if (focused || wasFocused) nextAt = maxOf(nextAt, now + 8000)
+      wasFocused = focused
       if (now >= nextAt) { prevUrl = picks[i].url; i = (i + 1) % picks.size; slideAt = now; nextAt = now + 8000 }
-      anim = true
+      // Nothing is drawn while waiting for the next slide: the screen is asked to draw once, when it is due.
+      if (!focused) tv.wakeAt(nextAt)
     }
     val p = picks[i]
-    c.drawRect(117f, 0f, Ui.W, 799f, bgP)
     r.set(117f, 0f, Ui.W, 799f)
     val prev = Img.peek(prevUrl)
     val pic = Img.get(p.url)
     val a = if (pic == null) 0f else ((now - maxOf(pic.at, slideAt)) / 300f).coerceIn(0f, 1f)
+    // Each thing drawn across the banner is a full pass over two thirds of the screen, and a TV's
+    // graphics chip is slow at exactly that: nothing is painted that a picture will cover anyway.
+    if (!((pic != null && a >= 1f) || (prev != null && a < 1f))) c.drawRect(117f, 0f, Ui.W, 799f, bgP)
     if (prev != null && a < 1f) Img.draw(c, prev, r, 0f, 1f, 0f)
     if (pic != null) Img.draw(c, pic, r, 0f, a, 0f)
     if (a < 1f) anim = true
-    c.drawRect(117f, 0f, Ui.W, 799f, sideFade)
-    c.drawRect(117f, 0f, Ui.W, 799f, bottomFade)
+    val fb = fadeBoth
+    if (fb != null) c.drawRect(117f, 0f, Ui.W, 799f, fb)
+    else { c.drawRect(117f, 0f, Ui.W, 799f, sideFade); c.drawRect(117f, 0f, Ui.W, 799f, bottomFade) }
     c.drawRect(117f, 799f - 8f, Ui.W, 799f, bgP)
     // Text, laid out from the buttons up (the block sits 85 above the banner's bottom edge).
     val L = layouts(p)

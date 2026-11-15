@@ -270,7 +270,7 @@ class Who(private val tv: TvView) {
   }
 
   private fun page(c: Canvas, a: Float) {
-    fill.color = Ui.alpha(Ui.BG, a); c.drawRect(0f, 0f, Ui.W, Ui.H, fill)
+    if (a < 1f) { fill.color = Ui.alpha(Ui.BG, a); c.drawRect(0f, 0f, Ui.W, Ui.H, fill) } // the glow below is solid and covers it
     if (bgGlow.shader == null) bgGlow.shader = RadialGradient(Ui.W / 2f, 0f, 1150f, intArrayOf(0xFF2A1214.toInt(), Ui.BG), floatArrayOf(0f, 1f), Shader.TileMode.CLAMP)
     bgGlow.alpha = (255 * a).toInt(); c.drawRect(0f, 0f, Ui.W, Ui.H, bgGlow)
   }
@@ -286,17 +286,21 @@ class Who(private val tv: TvView) {
       Ui.line(c, plus, cx, cy - d / 2f, d, tp)
       return false
     }
-    // A face with a picture waits for it (up to 0.7 s) instead of showing a letter first and swapping.
+    // A face with a picture waits for it (up to 0.7 s) on a quiet dark disc, and the picture fades in
+    // over that: no letter or bright colour first that then swaps.
     val pic0 = Img.get(p.pic)
-    if (pic0 == null && p.pic != null && now - openedAt < 700) return true
+    if (pic0 != null || (p.pic != null && now - openedAt < 700)) {
+      fill.color = Ui.alpha(0xFF241819.toInt(), a); c.drawOval(r, fill)
+      if (pic0 == null) return true
+      val pa = Img.fade(pic0, now, false)
+      Img.draw(c, pic0, RectF(r), d / 2f, pa * a)
+      return pa < 1f
+    }
     val g = COLORS[p.c]
     grad.shader = LinearGradient(r.left, r.top, r.right, r.bottom, g[0], g[1], Shader.TileMode.CLAMP); grad.alpha = (255 * a).toInt()
     c.drawOval(r, grad)
-    val pic = pic0
-    val pa = if (pic != null) Img.fade(pic, now, false) else 0f
-    if (pic == null) { pIni.textSize = d * 0.44f; pIni.alpha = (255 * a * (1f - pa)).toInt(); Ui.line(c, p.name.trim().take(1).uppercase(), cx, cy - d / 2f + d * 0.04f, d, pIni) }
-    if (pic != null) Img.draw(c, pic, RectF(r), d / 2f, pa * a)
-    return pic != null && pa < 1f
+    pIni.textSize = d * 0.44f; pIni.alpha = (255 * a).toInt(); Ui.line(c, p.name.trim().take(1).uppercase(), cx, cy - d / 2f + d * 0.04f, d, pIni)
+    return false
   }
 
   private fun drawFull(c: Canvas, now: Long, a: Float): Boolean {

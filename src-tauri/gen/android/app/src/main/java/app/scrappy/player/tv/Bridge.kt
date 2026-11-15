@@ -132,6 +132,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
       val wasPlaying = playing
       webVis = vis; webKeys = keys; playing = play
       if (wasPlaying && !play) view.stale()
+      if (!wasPlaying && play) Img.trimForPlayback()
       apply()
     }
   }
@@ -231,6 +232,9 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   override fun editHome(rowsJson: String) = eval("window.__tvNative && window.__tvNative.editHome($rowsJson)")
   override fun saveHomeRows(json: String) = eval("window.__tvNative && window.__tvNative.homeRows(${js(json)})")
   override fun who() = eval("window.__tvNative && window.__tvNative.who()")
+  /** The native view covers the window from now on: the opening picture behind it (a full-screen
+   *  picture kept in memory and painted under everything) is swapped for the plain page colour. */
+  override fun firstFrame() { try { act.window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Ui.BG)) } catch (_: Throwable) {} }
   override fun whoFull() = eval("window.__tvNative && window.__tvNative.whoFull && window.__tvNative.whoFull()")
   override fun log(msg: String) { Log.i("ScrappyNative", msg) }
   override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) {

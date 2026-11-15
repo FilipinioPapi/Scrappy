@@ -156,10 +156,12 @@ object CardArt {
       c.scale(s, s, x + w / 2f, y + h / 2f)
     }
     r.set(x, y, x + w, y + h)
-    c.drawRoundRect(r, RADIUS, RADIUS, panel)
     val pic = Img.get(card.img)
-    var a = 0f
-    if (pic != null) { a = Img.fade(pic, now, fast); Img.draw(c, pic, r, RADIUS, a); if (a < 1f) anim = true }
+    val a = if (pic != null) Img.fade(pic, now, fast) else 0f
+    // The grey card is only drawn while its picture isn't fully there: under a finished picture it
+    // would be painted and then painted over, on every card, every frame.
+    if (a < 1f) c.drawRoundRect(r, RADIUS, RADIUS, panel)
+    if (pic != null) { Img.draw(c, pic, r, RADIUS, a); if (a < 1f) anim = true }
     if (a < 1f) placeholder(c, card, r, 1f - a)
     if (card.over != null && pic != null) {
       if (overGrad.shader == null) overGrad.shader = LinearGradient(0f, Shape.WIDE.h, 0f, 0f, intArrayOf(0xD10A0606.toInt(), 0x590A0606, 0x000A0606, 0x000A0606), floatArrayOf(0f, 0.38f, 0.62f, 1f), Shader.TileMode.CLAMP)

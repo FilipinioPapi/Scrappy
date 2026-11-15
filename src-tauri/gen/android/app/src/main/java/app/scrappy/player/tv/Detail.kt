@@ -923,6 +923,9 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x00000000; setShadowLayer(48f, 0f, 32f, 0x99000000.toInt()) }
   private val sideGrad = Paint()
   private val bottomGrad = Paint()
+  private val bothGrad = Paint()
+  private val steadyGrad = Paint()
+  private var gradsH = 0f
   private val playTri = Path().apply { moveTo(8f, 5f); lineTo(8f, 19f); lineTo(19f, 12f); close() }
   private val heart = Path().apply {
     moveTo(12f, 20f); cubicTo(12f, 20f, 5f, 15.6f, 5f, 10f); cubicTo(5f, 7.8f, 6.8f, 6f, 9f, 6f); cubicTo(10.2f, 6f, 11.3f, 6.5f, 12f, 7.4f)
@@ -960,12 +963,26 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     var anim = false
     val pic = Img.get(url)
     r.set(117f, 0f, Ui.W, h)
-    if (pic != null) { val a = Img.fade(pic, now, false) * 0.9f; Img.draw(c, pic, r, 0f, a, 0f); if (a < 0.9f) anim = true }
-    if (sideGrad.shader == null) {
-      sideGrad.shader = LinearGradient(117f, 0f, Ui.W, 0f, intArrayOf(Ui.BG, 0xEB120C0C.toInt(), 0x33120C0C, 0x00120C0C), floatArrayOf(0f, 0.3f, 0.7f, 1f), Shader.TileMode.CLAMP)
+    // No picture (yet): the fades are the page's own colour over the page's own colour, nothing to draw.
+    if (pic == null) return false
+    if (gradsH != h) {
+      gradsH = h
+      val side = LinearGradient(117f, 0f, Ui.W, 0f, intArrayOf(Ui.BG, 0xEB120C0C.toInt(), 0x33120C0C, 0x00120C0C), floatArrayOf(0f, 0.3f, 0.7f, 1f), Shader.TileMode.CLAMP)
+      val bottom = LinearGradient(0f, h, 0f, 0f, intArrayOf(Ui.BG, 0xD9120C0C.toInt(), 0x00120C0C, 0x00120C0C), floatArrayOf(0f, 0.28f, 0.62f, 1f), Shader.TileMode.CLAMP)
+      sideGrad.shader = side; bottomGrad.shader = bottom
+      bothGrad.shader = Ui.over(side, bottom)
+      // The picture sits at 90% over the page colour: the same as the whole picture with 10% page colour over it.
+      val dim = LinearGradient(0f, 0f, 1f, 0f, 0x1A120C0C, 0x1A120C0C, Shader.TileMode.CLAMP)
+      steadyGrad.shader = Ui.over(Ui.over(dim, side), bottom)
     }
-    bottomGrad.shader = LinearGradient(0f, h, 0f, 0f, intArrayOf(Ui.BG, 0xD9120C0C.toInt(), 0x00120C0C, 0x00120C0C), floatArrayOf(0f, 0.28f, 0.62f, 1f), Shader.TileMode.CLAMP)
-    c.drawRect(r, sideGrad); c.drawRect(r, bottomGrad)
+    val fa = Img.fade(pic, now, false)
+    // Each full-page layer is a whole pass for the TV's graphics chip. Once the picture is in, it is
+    // drawn solid with all three fades in a single pass (same result as picture, fade, fade).
+    if (fa >= 1f && steadyGrad.shader != null) { Img.draw(c, pic, r, 0f, 1f, 0f); c.drawRect(r, steadyGrad) }
+    else {
+      Img.draw(c, pic, r, 0f, fa * 0.9f, 0f); if (fa < 1f) anim = true
+      if (bothGrad.shader != null) c.drawRect(r, bothGrad) else { c.drawRect(r, sideGrad); c.drawRect(r, bottomGrad) }
+    }
     return anim
   }
 
@@ -986,10 +1003,11 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
 
   private fun drawPoster(c: Canvas, o: JSONObject, box: RectF, radius: Float, now: Long): Boolean {
     c.drawRoundRect(box, radius, radius, shadow)
-    c.drawRoundRect(box, radius, radius, panel)
     val pic = Img.get(poster(o))
     var anim = false
-    if (pic != null) { val a = Img.fade(pic, now, tv.fast); Img.draw(c, pic, box, radius, a); if (a < 1f) anim = true }
+    val a = if (pic != null) Img.fade(pic, now, tv.fast) else 0f
+    if (a < 1f) c.drawRoundRect(box, radius, radius, panel) // not under a picture that covers it
+    if (pic != null) { Img.draw(c, pic, box, radius, a); if (a < 1f) anim = true }
     r.set(box); r.inset(1f, 1f); c.drawRoundRect(r, radius - 1f, radius - 1f, border)
     return anim
   }

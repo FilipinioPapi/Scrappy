@@ -11,6 +11,9 @@ import android.text.TextUtils
 /** Colours, fonts and small drawing helpers shared by the native TV screens.
  *  Everything is drawn in "1080p units": the canvas is scaled once so 1920 units span the screen. */
 object Ui {
+  /** `top` drawn over `under` as one paint: one pass over the screen instead of two (same result). Null on old Android, where the two are drawn one after the other. */
+  fun over(under: android.graphics.Shader?, top: android.graphics.Shader?): android.graphics.Shader? =
+    if (under == null || top == null || android.os.Build.VERSION.SDK_INT < 28) null else android.graphics.ComposeShader(under, top, android.graphics.PorterDuff.Mode.SRC_OVER)
   const val W = 1920f
   const val H = 1080f
   const val RED = 0xFFEC282E.toInt()

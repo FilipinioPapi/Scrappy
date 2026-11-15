@@ -320,7 +320,8 @@ class Search(tv: TvView) : Screen(tv) {
     if (typing) {
       val blink = (SystemClock.uptimeMillis() / 530) % 2 == 0L
       if (blink) { val x = 247f + minOf(1540f, inputP.measureText(text)) + 3f; c.drawRect(x, BOX_T + 30f, x + 2.67f, BOX_T + BOX_H - 30f, caretP) }
-      anim = true
+      // Drawn again only when the caret next blinks.
+      tv.wakeAt((SystemClock.uptimeMillis() / 530 + 1) * 530)
     }
     when {
       secs.isNotEmpty() -> anim = drawResults(c, now, dt) || anim

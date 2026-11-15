@@ -89,6 +89,13 @@ object Img {
   fun failed(url: String): Boolean = failed.containsKey(url)
   fun peek(url: String?): Pic? = if (url == null) null else mem.get(url)
   fun clearMemory() { mem.evictAll() }
+  /** A video is starting: the player needs the memory more than the pages do. Keep only the pictures
+   *  drawn last (the page you return to), give the rest back now; they come from the disk copy later. */
+  fun trimForPlayback() {
+    if (mem.size() <= 8 * 1024 * 1024) return
+    mem.trimToSize(8 * 1024 * 1024)
+    Net.main.postDelayed({ Runtime.getRuntime().gc() }, 600)
+  }
   /** Android is short of memory: keep only half (or nothing when the app is in the background). */
   fun trim(level: Int) { if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) mem.evictAll() else if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) mem.trimToSize(mem.maxSize() / 2) }
 

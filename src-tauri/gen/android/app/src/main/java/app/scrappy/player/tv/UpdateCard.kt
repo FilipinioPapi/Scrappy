@@ -142,7 +142,7 @@ class UpdateCard(private val tv: TvView) {
     val x0 = (Ui.W - W) / 2f
     val y0 = (Ui.H - h) / 2f + (1f - a) * 16f
     c.save()
-    c.saveLayerAlpha(x0 - 2f, y0 - 2f, x0 + W + 2f, y0 + h + 2f, (255 * a).toInt())
+    if (a < 1f) c.saveLayerAlpha(x0 - 2f, y0 - 2f, x0 + W + 2f, y0 + h + 2f, (255 * a).toInt()) else c.save() // a layer only while it fades
     r.set(x0, y0, x0 + W, y0 + h); fill.color = Ui.PANEL; c.drawRoundRect(r, 26f, 26f, fill); c.drawRoundRect(r, 26f, 26f, line)
     val lx = x0 + PAD
     var y = y0 + PAD

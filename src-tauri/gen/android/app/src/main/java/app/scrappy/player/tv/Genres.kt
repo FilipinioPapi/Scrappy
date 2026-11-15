@@ -48,6 +48,11 @@ class Genres(tv: TvView) : Screen(tv) {
   private val PX = TW + 26.67f
   private val PY = TH + 26.67f
 
+  /** Leaving the page: keep the finished tiles that were on screen (Back shows them at once), let the rest go. */
+  override fun hide() {
+    for ((i, t) in tiles.withIndex()) { val y = rowTop(i); if (y - sy.pos > 1080f || y + TH - sy.pos < 0f) { t.bmp?.recycle(); t.bmp = null } }
+  }
+
   override fun show(fresh: Boolean) {
     if (loaded) return
     loaded = true

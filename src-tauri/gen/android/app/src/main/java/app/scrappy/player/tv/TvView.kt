@@ -25,6 +25,8 @@ interface Host {
   fun who()
   /** The full Who's watching screen (Back from adding a person). Does nothing if nobody is saved yet. */
   fun whoFull() {}
+  /** The native view has drawn for the first time. */
+  fun firstFrame() {}
   fun log(msg: String) {}
   fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit)
   fun saveSort(key: String, i: Int)
@@ -134,7 +136,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     Net.init(ctx)
     Img.init(ctx)
     Img.onLoaded = { invalidate() }
-    setBackgroundColor(Ui.BG)
+    // (No background of its own: every screen paints the whole view itself, and a background would be a second full-screen pass each frame.)
     // Holds the remote's focus while a native screen has it (keys reach onKey from the activity).
     isFocusable = true
     isFocusableInTouchMode = true
@@ -149,7 +151,13 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
 
   private val screens = LinkedHashMap<String, Screen>(16, 0.75f, true)
   fun home(): Home = screens.getOrPut("home") { Home(this) } as Home
-  fun grid(id: String, genre: String): Grid = screens.getOrPut("lib/$id/$genre") { Grid(this, id, genre) } as Grid
+  fun grid(id: String, genre: String): Grid {
+    val g = screens.getOrPut("lib/$id/$genre") { Grid(this, id, genre) } as Grid
+    // Keep the last few lists for Back (each holds its whole library's entries); older ones are let go.
+    val libs = screens.keys.filter { it.startsWith("lib/") }
+    if (libs.size > 5) for (k in libs.take(libs.size - 5)) if (screens[k] !== screen && screens[k] !== g) screens.remove(k)
+    return g
+  }
   fun genres(): Genres = screens.getOrPut("genres") { Genres(this) } as Genres
   fun search(): Search = screens.getOrPut("search") { Search(this) } as Search
   fun signin(): Signin = screens.getOrPut("signin") { Signin(this) } as Signin
@@ -232,7 +240,9 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
 
   fun stale() { for (s in screens.values) s.stale(); invalidate() }
 
+  private var drawnOnce = false
   override fun onDraw(c: Canvas) {
+    if (!drawnOnce) { drawnOnce = true; post { host.firstFrame() } }
     val now = SystemClock.uptimeMillis()
     val dt = if (last == 0L) 16f else (now - last).coerceIn(1, 64).toFloat()
     last = now
@@ -248,6 +258,16 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     anim = drawExit(c, now) || anim
     c.restore()
     if (anim || fast) postInvalidateOnAnimation() else last = 0L
+  }
+
+  // ---------- waking up for something timed, without drawing in between ----------
+  private var wake = 0L
+  private val wakeRun = Runnable { wake = 0L; invalidate() }
+  /** Draw again at `at` (uptime ms). Nothing is drawn while waiting, so a still screen costs nothing. The earliest ask wins. */
+  fun wakeAt(at: Long) {
+    if (wake != 0L && wake <= at) return
+    removeCallbacks(wakeRun); wake = at
+    postDelayed(wakeRun, (at - SystemClock.uptimeMillis()).coerceAtLeast(1))
   }
 
   // ---------- "Press Back again to leave Scrappy" ----------
@@ -270,7 +290,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     val tw = exitP.measureText(p1) + exitB.measureText(p2) + exitP.measureText(p3)
     val w = 18f + 44f + 16f + tw + 34f
     val x = (Ui.W - w) / 2f; val y = Ui.H - 64f - 72f + (1f - a) * 16f
-    c.saveLayerAlpha(x - 40f, y - 40f, x + w + 40f, y + 112f, (255 * a).toInt())
+    if (a < 1f) c.saveLayerAlpha(x - 40f, y - 40f, x + w + 40f, y + 112f, (255 * a).toInt()) else c.save()
     exitR.set(x, y, x + w, y + 72f); c.drawRoundRect(exitR, 36f, 36f, exitBg); c.drawRoundRect(exitR, 36f, 36f, exitLine)
     c.drawCircle(x + 18f + 22f, y + 36f, 22f, exitDot)
     c.save(); c.translate(x + 18f + 10f, y + 24f); c.drawPath(exitPath, exitIcon); c.restore()
@@ -279,6 +299,8 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     Ui.line(c, p2, tx, y, 72f, exitB); tx += exitB.measureText(p2)
     Ui.line(c, p3, tx, y, 72f, exitP)
     c.restore()
+    // Still while it is fully shown: drawn again only when it is time to fade out.
+    if (t in 200..EXIT_MS) { wakeAt(exitAt + EXIT_MS + 1); return false }
     return true
   }
 

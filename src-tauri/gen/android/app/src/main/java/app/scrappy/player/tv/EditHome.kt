@@ -160,7 +160,7 @@ class EditHome(private val tv: TvView) {
     fill.color = Ui.alpha(Ui.BG, 0.6f * a); c.drawRect(0f, 0f, Ui.W, Ui.H, fill)
     val x0 = Ui.W - W + (1f - a) * 80f
     c.save()
-    c.saveLayerAlpha(x0 - 60f, 0f, Ui.W, Ui.H, (255 * a).toInt())
+    if (a < 1f) c.saveLayerAlpha(x0 - 60f, 0f, Ui.W, Ui.H, (255 * a).toInt()) else c.save() // a layer only while it fades
     // Drawer and its shadow.
     for (i in 0 until 6) { fill.color = Ui.alpha(0xFF000000.toInt(), 0.09f * (6 - i) / 6f); c.drawRect(x0 - 10f * (i + 1), 0f, x0, Ui.H, fill) }
     fill.color = DRAWER; c.drawRect(x0, 0f, Ui.W, Ui.H, fill)
