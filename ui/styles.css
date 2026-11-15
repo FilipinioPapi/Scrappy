@@ -36,8 +36,9 @@
 }
 
 * { box-sizing: border-box; }
-html { margin: 0; height: 100%; }
-body { margin: 0; min-height: 100%; }
+html { margin: 0; height: 100%; overscroll-behavior: none; }
+/* No rubber-band pull past the top or bottom (trackpad two-finger scroll on Windows). */
+body { margin: 0; min-height: 100%; overscroll-behavior: none; }
 body {
   background: var(--bg);
   color: var(--text);
