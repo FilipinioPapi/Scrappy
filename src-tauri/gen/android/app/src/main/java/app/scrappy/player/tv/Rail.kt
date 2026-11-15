@@ -36,6 +36,7 @@ class Rail(private val tv: TvView) {
   private val icon = Ui.stroke(0xFFB9A9A7.toInt(), 1.75f * 1.5f)
   private val label = Ui.text(Ui.f600, 26.7f, 0xFFB9A9A7.toInt())
   private val brand = Ui.text(Ui.display, 36f, Ui.RED, 0.72f)
+  private val brandSub = Ui.text(Ui.f800, 12f, Ui.MUTED, 4f)
   private val faceBg = Paint(Paint.ANTI_ALIAS_FLAG)
   private val faceTxt = Ui.text(Ui.f800, 20f, Ui.WHITE).apply { textAlign = Paint.Align.CENTER }
   private val shadow = Paint()
@@ -124,7 +125,10 @@ class Rail(private val tv: TvView) {
     val lg = logo ?: try { BitmapFactory.decodeResource(tv.resources, tv.resources.getIdentifier("tv_logo", "drawable", tv.context.packageName)) } catch (_: Throwable) { null }
     logo = lg
     if (lg != null) { r.set(24.3f, 34.7f, 24.3f + 69.3f, 34.7f + 69.3f); c.drawBitmap(lg, null, r, bmpPaint) }
-    if (labelT > 0f) { brand.alpha = (255 * labelT).toInt(); Ui.line(c, "SCRAPPY", 109f, 51f, 36f, brand) }
+    if (labelT > 0f) {
+      brand.alpha = (255 * labelT).toInt(); Ui.line(c, "SCRAPPY", 109f, 46f, 36f, brand)
+      brandSub.alpha = (255 * labelT).toInt(); Ui.line(c, "MEDIA CENTER", 111f, 82f, 16f, brandSub)
+    }
     val lab = labelT > 0f
     for (i in entries.indices) {
       val e = entries[i]; val y = tops[i]
