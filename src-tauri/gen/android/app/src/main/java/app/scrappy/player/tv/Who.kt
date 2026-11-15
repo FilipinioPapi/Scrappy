@@ -300,7 +300,7 @@ class Who(private val tv: TvView) {
   }
 
   private fun drawFull(c: Canvas, now: Long, a: Float): Boolean {
-    page(c, a)
+    page(c, 1f) // the backdrop is solid at once: nothing behind may show while the faces fade in
     var anim = false
     val n = people.size + 1
     val cw = 180f; val gap = 46f
