@@ -23,6 +23,8 @@ interface Host {
   /** A button on the update card: go, again, install, cancel, later (tvupdate.js does the work). */
   fun updAct(act: String) {}
   fun who()
+  /** The full Who's watching screen (Back from adding a person). Does nothing if nobody is saved yet. */
+  fun whoFull() {}
   fun log(msg: String) {}
   fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit)
   fun saveSort(key: String, i: Int)

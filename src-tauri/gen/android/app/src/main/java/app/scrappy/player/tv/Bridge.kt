@@ -231,6 +231,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   override fun editHome(rowsJson: String) = eval("window.__tvNative && window.__tvNative.editHome($rowsJson)")
   override fun saveHomeRows(json: String) = eval("window.__tvNative && window.__tvNative.homeRows(${js(json)})")
   override fun who() = eval("window.__tvNative && window.__tvNative.who()")
+  override fun whoFull() = eval("window.__tvNative && window.__tvNative.whoFull && window.__tvNative.whoFull()")
   override fun log(msg: String) { Log.i("ScrappyNative", msg) }
   override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) {
     view.menu.pick(title, options, cur, done)

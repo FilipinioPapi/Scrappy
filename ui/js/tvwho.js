@@ -183,6 +183,12 @@ export async function who({ side = false, must = false, onShow = null } = {}) {
   } finally { open = false; }
 }
 
+/** Back while adding a person: the full Who's watching screen, if anyone is saved on this TV. */
+export async function whoIfAny() {
+  const data = await people().catch(() => ({ people: [] }));
+  if (data.people.length) await who({});
+}
+
 /** When Scrappy opens: ask who is watching if more than one person is on this TV. */
 export async function whoAtStart(session, shown = () => {}) {
   // `shown` runs once the faces are on screen, or as soon as it is clear nobody will be asked:

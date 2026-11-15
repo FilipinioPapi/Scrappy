@@ -262,6 +262,8 @@ class Signin(tv: TvView) : Screen(tv) {
     val s = cur() ?: return false
     if (zone == 'B' && !s.signedIn && (s.step == "user" || s.step == "pass")) { press("back"); tv.invalidate(); return true }
     if (zone == 'B' && !s.signedIn && prevOf() >= 0) { press("prev"); tv.invalidate(); return true }
+    // Adding a person and nothing signed in yet: Back offers Who's watching, to pick someone already on this TV instead.
+    if (srv.none { it.signedIn }) { tv.host.whoFull(); return true }
     if (zone == 'B') { zone = 'T'; tv.invalidate(); return true }
     return false
   }
@@ -280,9 +282,15 @@ class Signin(tv: TvView) : Screen(tv) {
     return false
   }
 
+  private var logo: android.graphics.Bitmap? = null
+  private val logoR = RectF()
+  private val logoP = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
   private fun drawBrand(c: Canvas) {
-    fill.color = Ui.RED; c.drawCircle(X + 30f, 86f, 30f, fill)
-    Ui.line(c, "S", X + 30f, 66f, 44f, pLogo)
+    // The app's own dog icon (same picture as the side bar).
+    val lg = logo ?: try { android.graphics.BitmapFactory.decodeResource(tv.resources, tv.resources.getIdentifier("tv_logo", "drawable", tv.context.packageName)) } catch (_: Throwable) { null }
+    logo = lg
+    if (lg != null) { logoR.set(X - 4f, 52f, X + 64f, 120f); c.drawBitmap(lg, null, logoR, logoP) }
+    else { fill.color = Ui.RED; c.drawCircle(X + 30f, 86f, 30f, fill); Ui.line(c, "S", X + 30f, 66f, 44f, pLogo) }
     Ui.line(c, "SCRAPPY", X + 76f, 58f, 38f, pBrand)
     Ui.line(c, "MEDIA CENTER", X + 78f, 98f, 20f, pBrandSub)
   }
