@@ -143,6 +143,8 @@ const playing = () => { const p = document.getElementById('player'); return !!(p
 
 /** Look for a newer TV build. `manual` = asked for from Settings (always answers). */
 export async function checkNow(manual = false) {
+  // Scrappy Native looks for updates, downloads and installs with its own code.
+  try { if (N && typeof N.ownUpdates === 'function' && N.ownUpdates()) { N.updCheck(!!manual); return; } } catch {}
   if (box || natOpen) return;
   try {
     const r = await tv('check');

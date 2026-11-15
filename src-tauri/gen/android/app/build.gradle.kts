@@ -31,6 +31,8 @@ android {
         // the regular one (own name, icon and banner, own sign-in). Built when SCRAPPY_TV_NATIVE=1.
         if (nativeApp) applicationIdSuffix = ".native"
         buildConfigField("boolean", "NATIVE_APP", nativeApp.toString())
+        // Which release this build updates from (the same value the Rust side is built with).
+        buildConfigField("String", "TV_CHANNEL", "\"" + (System.getenv("SCRAPPY_TV_CHANNEL") ?: "tv-preview") + "\"")
     }
     // The phone sign-in page (one file, shared with the Rust side) rides along for the native sign-in.
     sourceSets.getByName("main").assets.srcDir("../../../pair")

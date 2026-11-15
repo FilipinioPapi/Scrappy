@@ -246,13 +246,31 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   /** The update prompt: tvupdate.js sends each card ({step:""} closes it). */
   @JavascriptInterface fun upd(json: String) {
     val o = try { JSONObject(json) } catch (_: Throwable) { return }
-    act.runOnUiThread {
-      attach()
-      view.upd.onClosed = { updModal = false; apply() }
-      if (o.optString("step").isNotEmpty()) { updModal = true; view.upd.show(o); apply() } else view.upd.show(o)
-    }
+    act.runOnUiThread { showUpd(o) }
   }
-  override fun updAct(act: String) = eval("window.__tvNative && window.__tvNative.updAct(${js(act)})")
+  private fun showUpd(o: JSONObject) {
+    attach()
+    view.upd.onClosed = { updModal = false; apply() }
+    if (o.optString("step").isNotEmpty()) { updModal = true; view.upd.show(o); apply() } else view.upd.show(o)
+  }
+  /** Updates are looked for, downloaded and handed to the TV's installer by the app itself (Updater). */
+  private val updater = Updater(object : Updater.Io {
+    override val base = "https://github.com/FilipinioPapi/Scrappy/releases/download/" + app.scrappy.player.BuildConfig.TV_CHANNEL
+    override val current: String = try { act.packageManager.getPackageInfo(act.packageName, 0).versionName ?: "0" } catch (e: Exception) { "0" }
+    override val cacheDir: java.io.File get() = act.cacheDir
+    override fun ui(work: () -> Unit) { act.runOnUiThread(work) }
+    override fun card(o: JSONObject) = showUpd(o)
+    override fun toast(msg: String, bad: Boolean) = this@Bridge.toast(msg, bad)
+    override fun playing() = playing
+    override fun install(apk: java.io.File) {
+      val uri = androidx.core.content.FileProvider.getUriForFile(act, act.packageName + ".fileprovider", apk)
+      act.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+  })
+  @JavascriptInterface fun ownUpdates(): Boolean = true
+  @JavascriptInterface fun updCheck(manual: Boolean) { act.runOnUiThread { updater.check(manual) } }
+  override fun updAct(act: String) = updater.act(act)
 
   @JavascriptInterface fun stale() { act.runOnUiThread { view.stale() } }
 
