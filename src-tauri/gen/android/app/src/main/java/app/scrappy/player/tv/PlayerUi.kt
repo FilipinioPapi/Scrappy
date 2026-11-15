@@ -115,9 +115,12 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     val base = (if (dir < 0) snap.optInt("back", 10) else snap.optInt("fwd", 10)).toDouble()
     var step = base
     if (held && now - lastSkip < 600) {
+      // Holding speeds up smoothly: about 15 s of video per second at first (precise), doubling every 1.5 s held,
+      // up to a top speed that crosses the whole video in about 10 s (2-hour film: ~20 s from start to end).
       val heldFor = (now - holdAt) / 1000.0
-      val pace = if (heldFor < 2) 20.0 else if (heldFor < 5) 45.0 else if (heldFor < 9) 90.0 else 180.0
-      step = pace * min(0.15, (now - lastSkip) / 1000.0)
+      val top = max(300.0, dur / 10.0)
+      val pace = min(top, 15.0 * Math.pow(2.0, heldFor / 1.5))
+      step = pace * ((now - lastSkip) / 1000.0)
     } else holdAt = now
     lastSkip = now
     val from = if (seekTo >= 0) seekTo else pos
