@@ -40,6 +40,8 @@ interface Host {
   fun search(text: String, done: (JSONObject?) -> Unit)
   /** The TV keyboard (with voice) for a text box: change = each edit, done = Search/Done (null = closed with Back). */
   fun keyboard(text: String, change: (String) -> Unit, done: (String?) -> Unit)
+  /** Favourite / watched / leave Continue Watching for an item (the web side does it and tells every screen). */
+  fun holdAct(id: String, act: String) {}
 }
 
 /** One glide per scroller, the same feel as the web screens (tv.js glideTo), in 1080p units. */
@@ -88,6 +90,8 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   // Fonts first: the side rail's paints are made right below and keep whatever font exists then.
   init { Ui.init(ctx) }
   val rail = Rail(this)
+  /** The hold-OK quick menu and the pick lists, drawn over the screen. */
+  val menu = Menu(this)
   private var last = 0L
   /** Holding a direction or tapping fast: pictures appear at once, no fades (tv-fast on the web). */
   var fast = false; private set
@@ -193,6 +197,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     c.scale(width / Ui.W, height / Ui.H)
     var anim = screen?.draw(c, now, dt) ?: false
     anim = rail.draw(c, now, dt) || anim
+    anim = menu.draw(c, now) || anim
     c.restore()
     if (anim || fast) postInvalidateOnAnimation() else last = 0L
   }
@@ -204,6 +209,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   /** Keys from the activity while a native screen is showing and nothing from the web is on top. */
   fun onKey(e: KeyEvent): Boolean {
     val s = screen ?: return false
+    if (menu.open) return menu.key(e)
     val code = e.keyCode
     when (code) {
       KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {

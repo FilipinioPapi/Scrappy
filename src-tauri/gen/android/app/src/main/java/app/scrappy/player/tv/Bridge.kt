@@ -143,9 +143,6 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
 
   @JavascriptInterface fun stale() { act.runOnUiThread { view.stale() } }
 
-  private val picks = HashMap<Int, (Int) -> Unit>()
-  private var pickN = 0
-  @JavascriptInterface fun picked(req: Int, i: Int) { act.runOnUiThread { picks.remove(req)?.invoke(i) } }
 
   // ---------- from the native screens ----------
 
@@ -157,13 +154,13 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   }
   override fun play(id: String) = eval("window.__tvNative && window.__tvNative.play(${js(id)})")
   override fun playSeries(id: String) = eval("window.__tvNative && window.__tvNative.playSeries(${js(id)})")
-  override fun hold(id: String, inResume: Boolean) = eval("window.__tvNative && window.__tvNative.hold(${js(id)}, $inResume)")
+  override fun hold(id: String, inResume: Boolean) = view.menu.hold(id, inResume)
+  override fun holdAct(id: String, act: String) = eval("window.__tvNative && window.__tvNative.holdAct(${js(id)}, ${js(act)})")
   override fun editHome(rowsJson: String) = eval("window.__tvNative && window.__tvNative.editHome($rowsJson)")
   override fun who() = eval("window.__tvNative && window.__tvNative.who()")
   override fun log(msg: String) { Log.i("ScrappyNative", msg) }
   override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) {
-    val n = ++pickN; picks[n] = done
-    eval("window.__tvNative && window.__tvNative.pick($n, ${js(title)}, ${JSONArray(options)}, $cur)")
+    view.menu.pick(title, options, cur, done)
   }
   override fun saveSort(key: String, i: Int) = eval("window.__tvNative && window.__tvNative.sort(${js(key)}, $i)")
   override fun playFrom(id: String, fromStart: Boolean) = eval("window.__tvNative && window.__tvNative.play(${js(id)}, $fromStart)")

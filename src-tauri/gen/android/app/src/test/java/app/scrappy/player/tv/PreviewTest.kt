@@ -145,10 +145,11 @@ class PreviewTest {
     override fun back() { calls.add("back") }
     override fun play(id: String) { calls.add("play $id") }
     override fun playSeries(id: String) { calls.add("playSeries $id") }
-    override fun hold(id: String, inResume: Boolean) { calls.add("hold $id") }
+    override fun hold(id: String, inResume: Boolean) { calls.add("hold $id"); tv.menu.hold(id, inResume) }
+    override fun holdAct(id: String, act: String) { calls.add("holdAct $id $act") }
     override fun editHome(rowsJson: String) { calls.add("editHome") }
     override fun who() { calls.add("who") }
-    override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title") }
+    override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title"); tv.menu.pick(title, options, cur) { i -> calls.add("picked $title $i"); done(i) } }
     override fun saveSort(key: String, i: Int) {}
     override fun playFrom(id: String, fromStart: Boolean) {}
     override fun playSeriesFrom(id: String, fromStart: Boolean) {}
@@ -274,6 +275,30 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_DPAD_DOWN, 3); shot("grid-d3")
     press(KeyEvent.KEYCODE_DPAD_UP, 4); shot("grid-chip")
     press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT, 7); shot("grid-az")
+  }
+
+  @Test fun menus() {
+    start()
+    tv.route("#/library/v1")
+    pump(3000)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT, 2)
+    fun holdOk() {
+      val t = SystemClock.uptimeMillis()
+      tv.onKey(KeyEvent(t, t, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 0))
+      ShadowSystemClock.advanceBy(Duration.ofMillis(650))
+      tv.onKey(KeyEvent(t, t + 650, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 1))
+      pump(600)
+      tv.onKey(KeyEvent(t, t + 900, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER, 0))
+    }
+    holdOk(); shot("menu-hold")
+    press(KeyEvent.KEYCODE_DPAD_DOWN, 2); shot("menu-hold-d2")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); shot("menu-hold-done")
+    press(KeyEvent.KEYCODE_DPAD_RIGHT, 4); holdOk(); shot("menu-hold-right")
+    press(KeyEvent.KEYCODE_BACK)
+    press(KeyEvent.KEYCODE_DPAD_UP, 4); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("menu-pick-sort")
+    press(KeyEvent.KEYCODE_DPAD_DOWN, 2); press(KeyEvent.KEYCODE_DPAD_CENTER); pump(800); shot("menu-picked")
+    press(KeyEvent.KEYCODE_DPAD_RIGHT, 2); press(KeyEvent.KEYCODE_DPAD_CENTER); pump(1500); press(KeyEvent.KEYCODE_DPAD_DOWN, 9); shot("menu-pick-genre")
+    File(out, "menus-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun player() {

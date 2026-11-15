@@ -631,3 +631,12 @@ function deleteDialog(it) {
 }
 
 export { subtitlesDialog, dialog };
+
+/** Scrappy Native's quick menu: favourite / watched / leave Continue Watching, done here so every screen hears about it. */
+export async function holdAct(id, act) {
+  try {
+    const it = await api.get(`/Users/{userId}/Items/${id}`);
+    await ACTIONS[act]?.(it, null);
+    if (act === 'unresume') stale();
+  } catch (e) { toast(String(e?.message || e), true); }
+}

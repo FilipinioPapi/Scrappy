@@ -143,6 +143,7 @@ object CardArt {
     val w = card.shape.w; val h = card.shape.h
     val f = Ui.ease(card.f)
     var anim = false
+    if (card.f >= 1f) Menu.noteFocus(c, card, x, y)
     c.save()
     if (f > 0f) {
       val s = 1f + 0.04f * f
