@@ -183,7 +183,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       val pick = seasons.firstOrNull { s -> s.optString("Id") == selected.ifEmpty { wantSeason } }
         ?: seasons.firstOrNull { s -> s.optInt("IndexNumber", -1) != 0 && (s.optJSONObject("UserData")?.optInt("UnplayedItemCount") ?: 0) > 0 }
         ?: seasons[0]
-      if (!epViewSet) epView = if (pick.optInt("ChildCount") > 30) "grid" else "row"
+      // Row is the default (Jayden): Grid is picked with the Episodes button and shows the whole show.
       if (selected != "all") selected = pick.optString("Id")
       buildButtons(); loadEpisodes(false)
     }
@@ -197,9 +197,17 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
   }
 
   private var epGen = 0
+  /** Grid on a show = every episode of every season in one grid, 50 at a time (no season bar). */
+  private val gridAll get() = epView == "grid" && !isEp
+  private fun blocked() = epView == "grid" && (gridAll || selected != "all")
+  private var multiSeason = false
+  private fun epLabel(e: JSONObject): String {
+    if (!e.has("IndexNumber")) return "•"
+    return if (multiSeason && e.has("ParentIndexNumber")) "S${e.optInt("ParentIndexNumber")}E${e.optInt("IndexNumber")}" else e.optInt("IndexNumber").toString()
+  }
   private fun loadEpisodes(live: Boolean) {
     val my = ++epGen
-    val all = selected == "all"
+    val all = selected == "all" || gridAll
     val sid = showId
     if (sid.isEmpty()) { lowerReady = true; layout(); tv.invalidate(); return }
     Net.load("/Shows/$sid/Episodes?" + (if (all) "" else "SeasonId=$selected&") + "UserId={userId}&Fields=Overview,PrimaryImageAspectRatio") { v, _ ->
@@ -209,6 +217,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       else if (all) list = list.filter { e -> e.optInt("ParentIndexNumber", -1) != 0 } + list.filter { e -> e.optInt("ParentIndexNumber", -1) == 0 }
       val keepF = eps.associate { c -> c.id to c.f }
       epData = list
+      multiSeason = list.map { e -> e.optInt("ParentIndexNumber", -1) }.distinct().size > 1
       eps = list.map { e -> Card(e, Shape.WIDE).also { c -> c.f = keepF[c.id] ?: 0f } }
       lowerReady = true
       upNext = list.indexOfFirst { e -> (e.optJSONObject("UserData")?.optLong("PlaybackPositionTicks") ?: 0L) > 0 && !(e.optJSONObject("UserData")?.optBoolean("Played") ?: false) }
@@ -216,8 +225,8 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       // An episode page marks itself; a show marks the episode that's up next.
       if (isEp) upNext = list.indexOfFirst { e -> e.optString("Id") == itemId }
       for ((k, c) in eps.withIndex()) { c.flag = if (k == upNext) (if (isEp) "YOU'RE HERE" else "UP NEXT") else ""; c.here = isEp && k == upNext }
-      blocks = if (epView == "grid" && !all) maxOf(1, (list.size + GRID_BLOCK - 1) / GRID_BLOCK) else 1
-      if (live || block >= blocks) block = if (epView == "grid" && !all) maxOf(0, maxOf(0, upNext) / GRID_BLOCK) else 0
+      blocks = if (blocked()) maxOf(1, (list.size + GRID_BLOCK - 1) / GRID_BLOCK) else 1
+      if (live || block >= blocks || !visited.contains('E')) block = if (blocked()) maxOf(0, maxOf(0, upNext) / GRID_BLOCK) else 0
       if (!visited.contains('E') || live) {
         val here = maxOf(0, upNext)
         if (isEp) epsX.set(scrollFor(here, 400f, EP_PITCH, eps.size), true)
@@ -505,7 +514,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
         var k = 0
         var lastSeason: String? = null
         while (k < idx.size) {
-          if (selected == "all") {
+          if (selected == "all" && !gridAll) {
             val e = epData[idx[k]]
             val sk = e.optString("SeasonId").ifEmpty { e.optInt("ParentIndexNumber").toString() }
             if (sk != lastSeason) {
@@ -535,7 +544,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     val order = ArrayList<Char>()
     order.add('B')
     if (hasEps && seasons.isNotEmpty()) {
-      if (seasons.size > 1 || seasons.size >= 8) order.add('T')
+      if ((seasons.size > 1 || seasons.size >= 8) && !gridAll) order.add('T')
       if (blocks > 1 && epView == "grid") order.add('K')
       if (eps.isNotEmpty()) order.add('E')
     }
@@ -567,7 +576,7 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
 
   /** The episodes on screen (Grid: the current block of 50). */
   private fun epIndexes(): List<Int> {
-    if (epView == "grid" && selected != "all" && blocks > 1) { val a = block * GRID_BLOCK; return (a until minOf(eps.size, a + GRID_BLOCK)).toList() }
+    if (blocked() && blocks > 1) { val a = block * GRID_BLOCK; return (a until minOf(eps.size, a + GRID_BLOCK)).toList() }
     return eps.indices.toList()
   }
 
@@ -792,11 +801,9 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
         tv.host.setLocal("epView:$itemId", epView)
         b.label = "Episodes: " + if (epView == "grid") "Grid" else "Row"
         buildButtons()
-        blocks = if (epView == "grid" && selected != "all") maxOf(1, (eps.size + GRID_BLOCK - 1) / GRID_BLOCK) else 1
-        block = if (blocks > 1) maxOf(0, upNext) / GRID_BLOCK else 0
         visited.remove('E')
-        if (epView == "row") epsX.set(maxOf(0f, minOf(maxOf(0, upNext) * EP_PITCH + 4f, epMaxScroll())), true)
         layout()
+        loadEpisodes(true) // Grid holds the whole show, Row the picked season
       }
     }
     tv.invalidate()
@@ -1033,7 +1040,11 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     drawButtons(c, btnTop)
     if (playSub.isNotEmpty()) Ui.line(c, Ui.fit(playSub, subP, 1300f), x0, subTop, 27f, subP)
     // Season bar (an episode page names its season and where you are).
-    if (seasons.isNotEmpty() && isEp) {
+    if (seasons.isNotEmpty() && gridAll) {
+      // Grid: the whole show in one grid, so no season tabs.
+      Ui.line(c, "All episodes", 149f, barTop, 61f, oneP)
+      if (eps.isNotEmpty()) Ui.line(c, "${eps.size} episodes" + (if (seasons.size > 1) " · ${seasons.size} seasons" else ""), 149f + oneP.measureText("All episodes") + 16f, barTop + 3f, 61f, hereP)
+    } else if (seasons.isNotEmpty() && isEp) {
       val name = seasons[0].optString("Name")
       Ui.line(c, name, 149f, barTop, 61f, oneP)
       val n = it?.optInt("IndexNumber", -1) ?: -1
@@ -1173,10 +1184,16 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
       c.restore()
     } else {
       if (blocksTop >= 0) {
-        var x = 149f
-        for (b in 0 until blocks) {
+        val labels = (0 until blocks).map { b ->
           val a = epData.getOrNull(b * GRID_BLOCK); val z = epData.getOrNull(minOf(epData.size, (b + 1) * GRID_BLOCK) - 1)
-          val label = "${a?.optInt("IndexNumber", b * GRID_BLOCK + 1) ?: (b * GRID_BLOCK + 1)}–${z?.optInt("IndexNumber", (b + 1) * GRID_BLOCK) ?: ((b + 1) * GRID_BLOCK)}"
+          if (multiSeason && a != null && z != null) "${epLabel(a)}–${epLabel(z)}" else "${a?.optInt("IndexNumber", b * GRID_BLOCK + 1) ?: (b * GRID_BLOCK + 1)}–${z?.optInt("IndexNumber", (b + 1) * GRID_BLOCK) ?: ((b + 1) * GRID_BLOCK)}"
+        }
+        // Many blocks (a long show): slide the chips so the highlighted one stays on screen.
+        val want = if (row == 'K') col else block
+        var endX = 149f; for (b in 0..minOf(want, blocks - 1)) endX += blockP.measureText(labels[b]) + 48f + 13.33f
+        var x = 149f - maxOf(0f, endX - 1860f)
+        for (b in 0 until blocks) {
+          val label = labels[b]
           val w = blockP.measureText(label) + 48f
           r.set(x, blocksTop, x + w, blocksTop + 53f)
           val foc = row == 'K' && col == b
@@ -1229,11 +1246,14 @@ class Detail(tv: TvView, val itemId: String) : Screen(tv) {
     c.save()
     val s = GRID_W / 400f
     c.translate(x, y); c.scale(s, s)
+    // The red number badge marks Up next in the grid, so the card's own tag stays off (it covered the badge).
+    val flag = card.flag; card.flag = ""
     val a = CardArt.draw(c, card, 0f, 0f, now, tv.fast, text = false)
+    card.flag = flag
     val watched = e.optJSONObject("UserData")?.optBoolean("Played") ?: false
     if (watched && card.f == 0f) { r.set(2f, 2f, 398f, 222.7f); c.drawRoundRect(r, CardArt.RADIUS, CardArt.RADIUS, dimArt) }
     c.restore()
-    val n = if (e.has("IndexNumber")) e.optInt("IndexNumber").toString() else "•"
+    val n = epLabel(e)
     val w = maxOf(32f, numP.measureText(n) + 16f)
     r.set(x + 9.33f, y + 9.33f, x + 9.33f + w, y + 9.33f + 28f)
     c.drawRoundRect(r, 8f, 8f, if (i == upNext) numRed else numBg)

@@ -61,6 +61,8 @@ class PreviewTest {
         }
       }).toString()
       p.contains("Series50/Seasons") -> JSONObject().put("Items", JSONArray().apply { for (n in 1..36) put(JSONObject().put("Id", "Season$n").put("Name", "$n. Arc name $n").put("Type", "Season").put("IndexNumber", n).put("ChildCount", 6).put("UserData", JSONObject())) }).toString()
+      p.contains("/Episodes?") && !p.contains("SeasonId=") -> JSONObject().put("Items", JSONArray().apply { for (i in 0 until 130) put(item(i % 8 + 2, "Episode").put("Id", "Episode${i + 1}").put("IndexNumber", i % 6 + 1).put("ParentIndexNumber", i / 6 + 1).put("SeasonId", "Season${i / 6 + 1}")
+        .put("UserData", JSONObject().put("Played", i < 57).put("PlaybackPositionTicks", if (i == 57) 20000000000L else 0L).put("PlayedPercentage", if (i == 57) 33 else 0))) }).toString()
       p.contains("/Episodes?") -> JSONObject().put("Items", JSONArray().apply { for (i in 0 until 8) put(item(i + 2, "Episode").put("Id", "Episode${i + 1}").put("IndexNumber", i + 1)
         .put("UserData", JSONObject().put("Played", i < 3).put("PlaybackPositionTicks", if (i == 3) 20000000000L else 0L).put("PlayedPercentage", if (i == 3) 33 else 0))) }).toString()
       p.contains("ParentId=Box") -> JSONObject().put("Items", JSONArray().apply { listOf("The Matrix", "The Matrix Reloaded", "The Matrix Revolutions", "The Matrix Resurrections").forEachIndexed { i, n ->
@@ -234,7 +236,7 @@ class PreviewTest {
     override fun playSeriesFrom(id: String, fromStart: Boolean) {}
     override fun toast(msg: String, error: Boolean) {}
     override fun changed() {}
-    override fun local(key: String, done: (String?) -> Unit) { done(if (key == "tvSearchRecent" && recentsOn) "[\"dune\",\"the amateur\",\"breaking bad\",\"one pace\"]" else null) }
+    override fun local(key: String, done: (String?) -> Unit) { done(if (key == "epView:Series50" && gridOn) "grid" else if (key == "tvSearchRecent" && recentsOn) "[\"dune\",\"the amateur\",\"breaking bad\",\"one pace\"]" else null) }
     override fun setLocal(key: String, value: String) {}
     override fun replace(hash: String, go: Boolean) {}
     override fun reroute() {}
@@ -253,6 +255,7 @@ class PreviewTest {
   }
 
   private var recentsOn = false
+  private var gridOn = false
   private lateinit var tv: TvView
 
   private fun pump(ms: Long) {
@@ -439,6 +442,14 @@ class PreviewTest {
     tv.route("#/person/p0"); pump(3000); shot("person")
     press(KeyEvent.KEYCODE_DPAD_DOWN); shot("person-d1", 1200)
     File(out, "pages-calls.txt").writeText(host.calls.joinToString("\n") + "\n---\n" + synchronized(log) { log.joinToString("\n") })
+  }
+
+  @Test fun showGrid() {
+    gridOn = true
+    start()
+    tv.route("#/item/Series50"); pump(3000); shot("showgrid")
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("showgrid-blocks", 800)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("showgrid-eps", 800)
   }
 
   @Test fun searchClear() {
