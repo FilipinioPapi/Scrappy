@@ -9,9 +9,9 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ### Preview 44 · Nov 15, 10:09 AM
 **General**
-- Fixed: scrolling past the top with a trackpad no longer pulls the top bar down
+- Fixed: scrolling past the top with a trackpad no longer pulls the top bar down, and the side menu, panels and pop-ups don't stretch either
 
-<sub>Built from 8eff294 · includes: General</sub>
+<sub>Built from 641af53 · includes: General</sub>
 
 ### Preview 43 · Nov 14, 8:38 PM
 **Stats**
