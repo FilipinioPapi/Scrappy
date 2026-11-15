@@ -111,6 +111,8 @@ class Who(private val tv: TvView) {
   }
 
   private fun switchTo(p: P, pin: String, tries: Int) {
+    // A wrong PIN is answered here straight away; the page is only asked once it is right.
+    if (p.hasPin && tries < 2 && tv.host.pinCheck(p.id, pin) == false) { pickPerson(p, tries + 1); tv.invalidate(); return }
     busy = true; tv.invalidate()
     tv.host.whoAct("switch", JSONObject().put("id", p.id).put("pin", pin)) { r ->
       busy = false

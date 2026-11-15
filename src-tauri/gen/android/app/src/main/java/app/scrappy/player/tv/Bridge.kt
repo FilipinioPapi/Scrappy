@@ -99,6 +99,20 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     return JSONObject().put("side", false).put("must", false).put("ask", ask).put("active", j.optString("activeProfile")).put("people", people)
   }
 
+  /** The saved PIN sum is read fresh each time: the page's side rewrites the file when a PIN changes. */
+  override fun pinCheck(id: String, pin: String): Boolean? = try {
+    val arr = JSONObject(java.io.File(act.dataDir, "config.json").readText()).optJSONArray("profiles")
+    var r: Boolean? = null
+    for (i in 0 until (arr?.length() ?: 0)) {
+      val p = arr!!.optJSONObject(i) ?: continue
+      if (p.optString("id") != id) continue
+      val sum = p.optString("pinHash")
+      r = if (sum.isEmpty()) null else Pins.matches(p.optString("pinSalt"), pin, sum)
+      break
+    }
+    r
+  } catch (e: Exception) { null }
+
   private fun startEarlyWho() {
     val o = savedPeople() ?: return
     early = true; modal = true

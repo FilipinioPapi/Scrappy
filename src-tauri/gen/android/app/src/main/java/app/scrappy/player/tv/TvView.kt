@@ -27,6 +27,8 @@ interface Host {
   fun whoFull() {}
   /** True while a chosen person must wait on the faces screen (the page isn't up yet). */
   fun whoHold(): Boolean = false
+  /** Checks a person's PIN on this TV: true/false, or null when it can't be told here (the page decides). */
+  fun pinCheck(id: String, pin: String): Boolean? = null
   /** The native view has drawn for the first time. */
   fun firstFrame() {}
   fun log(msg: String) {}
