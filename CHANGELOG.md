@@ -7,6 +7,15 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 47 · Nov 15, 11:12 AM
+**Speed**
+- Lighter and smoother: Scrappy no longer burns CPU while sitting idle. Loading placeholders stop animating after a few seconds (about 20% of a core less on a 120 Hz laptop)
+- Scrolling past posters no longer sets off their hover effects
+- The playing bar glow and equaliser bars are cheaper, and the visualiser draws at most 60 times a second
+- The Home banner pauses while you're in another window
+
+<sub>Built from 8bafc11 · includes: Speed</sub>
+
 ### Preview 46 · Nov 15, 10:41 AM
 **General**
 - New: hover Scrappy's icon on the taskbar to get Previous, Play/Pause and Next under the preview. They work for music, and for audiobooks they jump by chapter. They're greyed out when nothing is playing
