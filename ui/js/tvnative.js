@@ -20,15 +20,39 @@ function sorts() {
   return o;
 }
 
+// What the app's own player reads: the playback settings, and (handed over once) what the page's
+// player remembered: sound and subtitle picks per video, speed per show, subtitle timing.
+const PLAYER_KEYS = ['autoplay', 'upNextSecs', 'skipIntro', 'skipCredits', 'quality', 'skipBack', 'skipFwd', 'tvSoundThrough', 'subStart', 'subLang', 'subScale', 'audioLang'];
+function playerPrefs() {
+  const o = {};
+  for (const k of PLAYER_KEYS) o[k] = pref(k);
+  const s = localStorage.getItem('stillWatching');
+  if (s !== null) o.stillWatching = s;
+  return o;
+}
+function playerSaved() {
+  if (localStorage.getItem('nativePlayerMoved')) return undefined;
+  const o = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && (k.startsWith('tracks:') || k.startsWith('show:') || k === 'subDelays' || k === 'subSearchLang')) o[k] = localStorage.getItem(k);
+  }
+  return o;
+}
+
 // Settings that native screens need, kept by the web side.
 function sendPrefs() {
   try {
+    const saved = playerSaved();
     N.prefs(JSON.stringify({
+      player: playerPrefs(),
+      saved,
       homeRows: localStorage.getItem('homeRows:tv') || '',
       heroMode: pref('heroMode'),
       genreLib: localStorage.getItem('genreLib') || '',
       sorts: sorts(),
     }));
+    if (saved) localStorage.setItem('nativePlayerMoved', '1');
   } catch {}
 }
 sendPrefs();

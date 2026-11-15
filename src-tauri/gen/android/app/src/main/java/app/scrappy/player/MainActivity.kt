@@ -29,6 +29,7 @@ class MainActivity : TauriActivity() {
 
   private fun nativeSwitch(i: Intent?) {
     if (i?.hasExtra("native") == true) app.scrappy.player.tv.Bridge.set(this, i.getBooleanExtra("native", false))
+    if (i?.hasExtra("webplayer") == true) app.scrappy.player.tv.Bridge.setWebPlayer(this, i.getBooleanExtra("webplayer", false))
   }
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)

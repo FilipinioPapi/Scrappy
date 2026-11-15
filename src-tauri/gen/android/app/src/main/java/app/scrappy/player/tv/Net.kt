@@ -95,6 +95,25 @@ object Net {
     } finally { c.disconnect() }
   }
 
+  /** Blocking POST that gives the answer back (the player asks Emby how to play a video this way). Throws on failure. */
+  fun post(path: String, body: String?): Any? {
+    val s = session
+    if (!s.ok) throw IllegalStateException("Not signed in")
+    val c = URL(url(path)).openConnection() as HttpURLConnection
+    c.connectTimeout = 8000; c.readTimeout = 30000
+    c.requestMethod = "POST"
+    c.setRequestProperty("X-Emby-Token", s.token)
+    c.setRequestProperty("Accept", "application/json")
+    try {
+      c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write((body ?: "").toByteArray()) }
+      val code = c.responseCode
+      if (code == 401) throw IllegalStateException("SESSION_EXPIRED")
+      if (code !in 200..299) throw IllegalStateException("HTTP $code")
+      val text = try { c.inputStream.bufferedReader().use { it.readText() } } catch (_: Throwable) { "" }
+      return if (text.isBlank()) null else try { parse(text) } catch (_: Throwable) { null }
+    } finally { c.disconnect() }
+  }
+
   /** The last saved copy, or null. */
   fun cachedNow(path: String): Any? = try {
     val f = cacheFile(path); if (f.exists()) parse(f.readText()) else null

@@ -18,13 +18,18 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     private const val PREFS = "scrappy_native"
     fun isOn(ctx: Context) = ctx.getSharedPreferences(PREFS, 0).getBoolean("on", app.scrappy.player.BuildConfig.NATIVE_APP)
     fun set(ctx: Context, on: Boolean) = ctx.getSharedPreferences(PREFS, 0).edit().putBoolean("on", on).apply()
+    fun setWebPlayer(ctx: Context, on: Boolean) = ctx.getSharedPreferences(PREFS, 0).edit().putBoolean("web_player", on).apply()
     private fun js(s: String) = JSONObject.quote(s)
+    /** The page's defaults for the settings the player reads (prefs.js DEFAULTS, plus Still watching after 3). */
+    private val PLAYER_DEFAULTS = mapOf("autoplay" to "on", "upNextSecs" to "10", "skipIntro" to "off", "skipCredits" to "off", "quality" to "", "skipBack" to "10", "skipFwd" to "10",
+      "tvSoundThrough" to "off", "subStart" to "default", "subLang" to "eng", "subScale" to "1", "audioLang" to "", "stillWatching" to "3")
   }
 
   val view = TvView(act, this)
   /** Scrappy Native's own player controls, over the video and under the page. */
   val player = PlayerUi(act, object : PlayerHost {
-    override fun act(action: String, value: String) = eval("window.__tvNative && window.__tvNative.pl(${js(action)}, ${js(value)})")
+    override fun act(action: String, value: String) { if (ownPlayer) core.act(action, value) else eval("window.__tvNative && window.__tvNative.pl(${js(action)}, ${js(value)})") }
+    override fun there() { if (ownPlayer) core.someoneThere() }
     override fun clock(): DoubleArray? {
       val p = app.scrappy.player.Exo.current ?: return null
       val d = p.duration
@@ -38,7 +43,64 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   /** Something from the web is showing on top (keys go to the web while `webKeys`). */
   private var webVis = true
   private var webKeys = true
-  private var playing = false
+  /** The page's own player is up. */
+  private var pagePlaying = false
+  /** A video is up, whoever plays it. */
+  private val playing get() = pagePlaying || core.open
+
+  // ---------- the player's own logic (PlayerCore) ----------
+  /** Videos are started and looked after by the app's own code. Off (the page's player does it, as before): adb ... --ez webplayer true. */
+  private val ownPlayer get() = !act.getSharedPreferences(PREFS, 0).getBoolean("web_player", false)
+  /** The player's settings and remembered choices (sound and subtitles per video, speed per show, subtitle timing). */
+  private val pstore by lazy { act.getSharedPreferences("scrappy_player", 0) }
+  private val playerWork = java.util.concurrent.Executors.newFixedThreadPool(2)
+  private val exo get() = app.scrappy.player.Exo.of(act).also { if (it.webView == null) it.webView = web }
+  val core: PlayerCore = PlayerCore(object : PlayerCore.Io {
+    override val server get() = Net.session.server
+    override val userId get() = Net.session.userId
+    override val token get() = Net.session.token
+    override val deviceId: String get() = try { JSONObject(java.io.File(act.dataDir, "config.json").readText()).optString("deviceId") } catch (e: Exception) { "" }
+    override fun get(path: String): Any = Net.getNow(path, false)
+    override fun post(path: String, body: JSONObject?): Any? = Net.post(path, body?.toString())
+    override fun pref(key: String): String = pstore.getString(key, null) ?: PLAYER_DEFAULTS[key] ?: ""
+    override fun load(key: String): String? = pstore.getString(key, null)
+    // Kept by the app, and copied to the page so its Settings show the same thing.
+    override fun save(key: String, value: String) { pstore.edit().putString(key, value).apply(); setLocal(key, value) }
+    override fun bg(work: () -> Unit) { playerWork.execute { try { work() } catch (e: Throwable) { Log.e("ScrappyNative", "player work", e) } } }
+    override fun ui(work: () -> Unit) { act.runOnUiThread(work) }
+    override fun later(ms: Long, work: () -> Unit): () -> Unit { val r = Runnable { work() }; Net.main.postDelayed(r, ms); return { Net.main.removeCallbacks(r) } }
+    override fun now() = SystemClock.elapsedRealtime()
+    override fun push(snap: JSONObject) {
+      val was = player.open
+      attach(); player.state(snap)
+      if (player.open != was) { if (player.open) Img.trimForPlayback(); apply() }
+    }
+    override fun toast(msg: String, error: Boolean) = this@Bridge.toast(msg, error)
+    override fun closed() { view.stale(); changed(); apply() }
+    override fun soundThrough(on: Boolean) { app.scrappy.player.PlayerLog.passthrough = on }
+    override fun details(): String = app.scrappy.player.PlayerLog.text()
+    override fun log(msg: String) { Log.i("ScrappyNative", "player: $msg") }
+  }, object : PlayerCore.Engine {
+    override fun open(url: String, start: Double, subs: JSONArray): Int = exo.open(url, start, subs)
+    override fun control(what: String, a: JSONObject) = exo.control(what, a)
+    override fun state(): JSONObject = exo.state()
+    override fun caps(): JSONObject = exo.caps()
+  })
+
+  /** Play on a show: the episode you are part-way through, else the next one, else the first (the page's seriesTarget). */
+  private fun startSeries(id: String, fromStart: Boolean) = playerWork.execute {
+    fun one(path: String): JSONObject? = try { Net.items(Net.getNow(path, false)).firstOrNull() } catch (_: Throwable) { null }
+    val sid = Card.enc(id)
+    val first = try { Net.items(Net.getNow("/Shows/$sid/Episodes?UserId={userId}&Limit=40", false)).let { all -> all.firstOrNull { it.optInt("ParentIndexNumber", -1) != 0 } ?: all.firstOrNull() } } catch (_: Throwable) { null }
+    val ep = if (fromStart) first else
+      one("/Users/{userId}/Items/Resume?ParentId=$sid&Recursive=true&MediaTypes=Video&Limit=1")
+        ?: one("/Shows/NextUp?SeriesId=$sid&UserId={userId}&Limit=1")?.takeIf { it.optString("Id") != first?.optString("Id") }
+        ?: first
+    act.runOnUiThread {
+      if (ep != null) core.start(ep.optString("Id"), fromStart)
+      else if (!fromStart) toast("No episodes to play yet.", true)
+    }
+  }
 
   init {
     view.visibility = View.GONE
@@ -190,14 +252,15 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     // hides while holding the focus.
     if (nativeKeys && !view.isFocused) view.requestFocus()
     // With nothing on top, the web view is put away entirely, so it costs nothing while you browse.
-    val webShown = early || ((!active || webVis || playing) && !modal && !updModal)
+    val webShown = early || ((!active || webVis || pagePlaying) && !modal && !updModal)
     val wasHidden = webHidden
     webHidden = !webShown
     web.visibility = if (webShown) View.VISIBLE else View.INVISIBLE
     // Keys go back to the web page: hiding the web view leaves its page unfocused even while Android
     // still counts the view as focused (the remote then did nothing on the next web screen). Take the
     // focus away and give it back, so the page itself is focused again.
-    if (!nativeKeys && (hadNativeKeys || wasHidden || !web.hasFocus())) {
+    // (Not while the app's own player has the remote: MainActivity hands it the keys directly.)
+    if (!nativeKeys && !core.open && (hadNativeKeys || wasHidden || !web.hasFocus())) {
       if (web.hasFocus()) web.clearFocus()
       web.requestFocus()
       // Taking the focus moves the page's highlight to its first element; put it back.
@@ -225,8 +288,8 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
 
   @JavascriptInterface fun layer(vis: Boolean, keys: Boolean, play: Boolean) {
     act.runOnUiThread {
-      val wasPlaying = playing
-      webVis = vis; webKeys = keys; playing = play
+      val wasPlaying = pagePlaying
+      webVis = vis; webKeys = keys; pagePlaying = play
       if (wasPlaying && !play) view.stale()
       if (!wasPlaying && play) Img.trimForPlayback()
       apply()
@@ -234,13 +297,23 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   }
 
   @JavascriptInterface fun prefs(json: String) {
-    act.runOnUiThread { try { view.home().setPrefs(JSONObject(json)); view.invalidate() } catch (_: Throwable) {} }
+    act.runOnUiThread {
+      try {
+        val o = JSONObject(json)
+        view.home().setPrefs(o); view.invalidate()
+        // The player's settings as the page has them now, and (once) the choices its player remembered.
+        val e = pstore.edit()
+        o.optJSONObject("player")?.let { p -> for (k in p.keys()) e.putString(k, p.optString(k)) }
+        o.optJSONObject("saved")?.let { p -> for (k in p.keys()) if (!pstore.contains(k)) e.putString(k, p.optString(k)) }
+        e.apply()
+      } catch (_: Throwable) {}
+    }
   }
 
   /** The player's state from the page (title, tracks, menus), whenever it changes. */
   @JavascriptInterface fun pstate(json: String) {
     val o = try { JSONObject(json) } catch (_: Throwable) { return }
-    act.runOnUiThread { attach(); player.state(o) }
+    act.runOnUiThread { if (!core.open) { attach(); player.state(o) } }
   }
 
   /** The update prompt: tvupdate.js sends each card ({step:""} closes it). */
@@ -375,7 +448,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     override fun phonePage(): String = try { act.assets.open("pair.html").bufferedReader().use { it.readText() } } catch (e: Exception) { "" }
     override fun ui(work: () -> Unit) { act.runOnUiThread(work) }
     override fun changed(then: () -> Unit) {
-      if (Net.reload()) view.signedInChanged(keepCurrent = true)
+      if (Net.reload()) { view.signedInChanged(keepCurrent = true); core.signedInChanged() }
       val n = ++cfgN; cfgCalls[n] = then
       eval("(window.__tvNative && window.__tvNative.cfgChanged) ? window.__tvNative.cfgChanged($n) : window.ScrappyNative.cfgDone($n)")
     }
@@ -396,8 +469,8 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
       web.evaluateJavascript("(window.__tvBack ? window.__tvBack() : false)") { handled -> if (handled != "true") act.moveTaskToBack(true) }
     }
   }
-  override fun play(id: String) = eval("window.__tvNative && window.__tvNative.play(${js(id)})")
-  override fun playSeries(id: String) = eval("window.__tvNative && window.__tvNative.playSeries(${js(id)})")
+  override fun play(id: String) = playFrom(id, false)
+  override fun playSeries(id: String) = playSeriesFrom(id, false)
   override fun hold(id: String, inResume: Boolean) = view.menu.hold(id, inResume)
   /** The quick menu's favourite / watched / leave Continue Watching, done by the app itself; every screen then hears about it. */
   override fun holdAct(id: String, act: String) = Net.bg {
@@ -432,7 +505,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     } catch (e: Throwable) { Net.main.post { toast("Couldn't reach the server. Try again.", true) }; null }
     if (said != null) Net.main.post { toast(said, false); changed() }
   }
-  override fun playQueue(ids: List<String>) = eval("window.__tvNative && window.__tvNative.playQueue(${org.json.JSONArray(ids)})")
+  override fun playQueue(ids: List<String>) = if (ownPlayer) act.runOnUiThread { core.playQueue(ids) } else eval("window.__tvNative && window.__tvNative.playQueue(${org.json.JSONArray(ids)})")
   override fun editHome(rowsJson: String) = eval("window.__tvNative && window.__tvNative.editHome($rowsJson)")
   override fun saveHomeRows(json: String) = eval("window.__tvNative && window.__tvNative.homeRows(${js(json)})")
   override fun who() = eval("window.__tvNative && window.__tvNative.who()")
@@ -445,8 +518,8 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     view.menu.pick(title, options, cur, done)
   }
   override fun saveSort(key: String, i: Int) = eval("window.__tvNative && window.__tvNative.sort(${js(key)}, $i)")
-  override fun playFrom(id: String, fromStart: Boolean) = eval("window.__tvNative && window.__tvNative.play(${js(id)}, $fromStart)")
-  override fun playSeriesFrom(id: String, fromStart: Boolean) = eval("window.__tvNative && window.__tvNative.playSeries(${js(id)}, $fromStart)")
+  override fun playFrom(id: String, fromStart: Boolean) { if (ownPlayer) act.runOnUiThread { core.start(id, fromStart) } else eval("window.__tvNative && window.__tvNative.play(${js(id)}, $fromStart)") }
+  override fun playSeriesFrom(id: String, fromStart: Boolean) { if (ownPlayer) startSeries(id, fromStart) else eval("window.__tvNative && window.__tvNative.playSeries(${js(id)}, $fromStart)") }
   override fun toast(msg: String, error: Boolean) = eval("window.__tvNative && window.__tvNative.toast(${js(msg)}, $error)")
   override fun changed() = eval("window.dispatchEvent(new Event('scrappy:stale'))")
   override fun local(key: String, done: (String?) -> Unit) {
