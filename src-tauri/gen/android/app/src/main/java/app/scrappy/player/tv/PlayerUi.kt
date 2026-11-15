@@ -48,7 +48,8 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     if (open && !wasOpen) start()
     if (!open && wasOpen) stop()
     if (open && oldId != j.optString("id") && oldId.isNotEmpty()) { closeMenus(); epsOpen = false; seasons = emptyList(); episodes = emptyList(); epsFor = "" }
-    if (mode == Mode.POP && pop.isNotEmpty()) { rows = rowsFor(); popIdx = popIdx.coerceIn(0, max(0, rows.size - 1)) }
+    if (mode == Mode.POP && pop == "dl") dlState()
+    else if (mode == Mode.POP && pop.isNotEmpty()) { rows = rowsFor(); popIdx = popIdx.coerceIn(0, max(0, rows.size - 1)) }
     visibility = if (open) VISIBLE else GONE
     invalidate()
   }
@@ -201,6 +202,7 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
         }
       }
       Mode.POP -> {
+        if (pop == "dl") { dlPress(k); kick(); return }
         if (k == "back" || (k == "left" && pop == "sub" && subLevel == 1)) {
           if (pop == "sub" && subLevel == 1) { subLevel = 0; rows = rowsFor(); popIdx = rows.indexOfFirst { it.kind == "other" }.coerceAtLeast(0) }
           else if (k == "back") closeMenus()
@@ -287,12 +289,83 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     when (r.kind) {
       "sub" -> host.act("sub", r.arg)
       "other" -> { subLevel = 1; rows = rowsFor(); popIdx = rows.indexOfFirst { it.on }.coerceAtLeast(0); return }
-      "dl" -> { host.act("dl"); pop = ""; mode = Mode.BAR; focus = opener; return }
+      "dl" -> { openDl(); return }
       "audio" -> host.act("audio", r.arg)
       "speed" -> host.act("speed", r.arg)
       "size", "shape", "quality" -> host.act(r.kind)
       "reload" -> { host.act("reload"); pop = ""; mode = Mode.IDLE; return }
       "details" -> host.act("details")
+    }
+  }
+
+  // ---------- download subtitles (approved mock "Download subtitles") ----------
+  // English / Spanish / Other languages along the top; picking one searches straight away.
+  // The page does the searching and downloading; we draw what it reports in snap.dl.
+  private val OTHER = listOf("Arabic" to "ara", "Dutch" to "dut", "French" to "fre", "German" to "ger", "Italian" to "ita", "Japanese" to "jpn",
+    "Korean" to "kor", "Polish" to "pol", "Portuguese" to "por", "Russian" to "rus", "Swedish" to "swe", "Turkish" to "tur")
+  private var dlArea = 0      // 0 languages, 1 other-language grid, 2 results
+  private var dlLang = 0      // 0 English, 1 Spanish, 2 another language
+  private var dlOther = 3
+  private var dlOIdx = 3
+  private var dlIdx = 0
+  private var dlGotSeen = -1
+  private val dlBack = Runnable { if (mode == Mode.POP && pop == "dl") backToSubs() }
+  private fun dl(): JSONObject = snap.optJSONObject("dl") ?: JSONObject()
+  private fun dlRows() = dl().optJSONArray("rows")
+  private fun dlCode() = when (dlLang) { 0 -> "eng"; 1 -> "spa"; else -> OTHER[dlOther].second }
+  private fun dlName() = when (dlLang) { 0 -> "English"; 1 -> "Spanish"; else -> OTHER[dlOther].first }
+
+  private fun openDl() {
+    pop = "dl"; opener = "cc"; mode = Mode.POP
+    val d = dl()
+    val code = d.optString("lang", "eng")
+    when (code) { "eng" -> dlLang = 0; "spa" -> dlLang = 1; else -> { val i = OTHER.indexOfFirst { it.second == code }; if (i >= 0) { dlLang = 2; dlOther = i } else dlLang = 0 } }
+    dlGotSeen = d.optInt("got", -1)
+    val have = d.optString("state") != "idle" && d.optString("lang") == dlCode()
+    if (!have) host.act("dlsearch", dlCode())
+    dlArea = if (have && (dlRows()?.length() ?: 0) > 0) 2 else 0; dlIdx = 0
+  }
+  private fun dlSearch(lang: Int, other: Int = dlOther) {
+    dlLang = lang; dlOther = other; dlIdx = 0; dlGotSeen = -1
+    host.act("dlsearch", dlCode())
+  }
+  private fun dlState() {
+    val n = dlRows()?.length() ?: 0
+    dlIdx = dlIdx.coerceIn(0, max(0, n - 1))
+    if (dlArea == 2 && n == 0 && dl().optString("state") != "searching") dlArea = 0
+    // Downloaded and switched on: show the tick a moment, then back to the Subtitles menu.
+    val got = dl().optInt("got", -1)
+    if (got >= 0 && got != dlGotSeen) { dlGotSeen = got; h.removeCallbacks(dlBack); h.postDelayed(dlBack, 1300) }
+  }
+  private fun backToSubs() {
+    h.removeCallbacks(dlBack)
+    pop = "sub"; subLevel = 0; rows = rowsFor()
+    popIdx = rows.indexOfFirst { it.kind == "dl" }.coerceAtLeast(0)
+  }
+  private fun dlPress(k: String) {
+    val n = dlRows()?.length() ?: 0
+    val searching = dl().optString("state") == "searching"
+    h.removeCallbacks(dlBack) // moving on your own cancels the trip back to Subtitles
+    if (k == "back") { if (dlArea == 1) dlArea = 0 else backToSubs(); return }
+    when (dlArea) {
+      2 -> when (k) {
+        "up" -> if (dlIdx > 0) dlIdx-- else dlArea = 0
+        "down" -> dlIdx = min(max(0, n - 1), dlIdx + 1)
+        "ok" -> if (!searching && n > 0 && dl().optInt("busy", -1) < 0 && dl().optInt("got", -1) != dlIdx) host.act("dlget", dlIdx.toString())
+      }
+      0 -> when (k) {
+        "left" -> if (dlLang > 0) dlSearch(dlLang - 1)
+        "right" -> if (dlLang < 1) dlSearch(dlLang + 1) else if (dlLang == 1) { dlArea = 1; dlOIdx = dlOther }
+        "down" -> if (dlLang == 2) { dlArea = 1; dlOIdx = dlOther } else if (n > 0 && !searching) { dlArea = 2; dlIdx = 0 }
+        "ok" -> if (dlLang == 2) { dlArea = 1; dlOIdx = dlOther }
+      }
+      1 -> when (k) {
+        "left" -> dlOIdx = max(0, dlOIdx - 1)
+        "right" -> dlOIdx = min(OTHER.size - 1, dlOIdx + 1)
+        "up" -> if (dlOIdx >= 4) dlOIdx -= 4 else dlArea = 0
+        "down" -> if (dlOIdx + 4 < OTHER.size) dlOIdx += 4 else if (n > 0 && !searching && dlLang == 2) { dlArea = 2; dlIdx = 0 }
+        "ok" -> { dlSearch(2, dlOIdx); dlArea = 2 }
+      }
     }
   }
 
@@ -451,7 +524,8 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
       if (paused) drawPausedChip(c, a)
       drawBar(c, a)
       if (epsA.v > 0.01f) drawEps(c, a * epsA.v)
-      if (popA.v > 0.01f && pop.isNotEmpty()) drawPop(c, a * popA.v)
+      if (popA.v > 0.01f && pop == "dl") drawDl(c, a * popA.v)
+      else if (popA.v > 0.01f && pop.isNotEmpty()) drawPop(c, a * popA.v)
     }
     c.restore()
 
@@ -461,6 +535,7 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     val lift = (100 - ((Ui.H - target) / Ui.H) * 100).toInt().coerceIn(50, 100)
     if (lift != liftedTo) { liftedTo = lift; host.act("subpos", lift.toString()) }
 
+    if (mode == Mode.POP && pop == "dl" && (dl().optString("state") == "searching" || dl().optInt("busy", -1) >= 0)) moving = true
     if (moving) postInvalidateOnAnimation()
     else if (a > 0.01f || seekTo >= 0) postInvalidateDelayed(250)
     else postInvalidateDelayed(if (paused) 500 else 1000)
@@ -668,6 +743,107 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     y -= 4f
     if (start + win < rows.size) { iconLine.color = Ui.alpha(Ui.MUTED, a); iconLine.strokeWidth = 2f; Icons.drawPath(c, PATH_DOWN, left + w / 2f - 11f, y, 22f, iconLine); y += 22f }
     if (footL != null) { pFoot.alpha = al; c.save(); c.translate(left + 28f, y + 12f); footL.draw(c); c.restore() }
+  }
+
+  private val pDlName = Ui.text(Ui.f600, 20f, Ui.TEXT)
+  private val pDlNote = Ui.text(Ui.f500, 16f, Ui.TEXT)
+  private val pDlMatch = Ui.text(Ui.f800, 13f, 0xFF5FD18F.toInt(), 0.8f)
+  private val pDlState = Ui.text(Ui.f700, 17f, Ui.TEXT)
+  private val pDlChip = Ui.text(Ui.f600, 19f, Ui.TEXT)
+  private val pDlOther = Ui.text(Ui.f600, 17f, Ui.TEXT)
+  private val spin = Ui.stroke(Ui.RED, 4f)
+
+  private fun drawDl(c: Canvas, a: Float) {
+    val al = (255 * a).toInt()
+    val d = dl(); val rowsJ = dlRows(); val n = rowsJ?.length() ?: 0
+    val state = d.optString("state"); val busy = d.optInt("busy", -1); val got = d.optInt("got", -1); val msg = d.optString("msg")
+    val win = 5; val rowH = 78f
+    val w = 660f
+    val gridH = if (dlArea == 1) 3 * 52f + 12f else 0f
+    val listH = win * rowH - 4f
+    val footH = if (msg.isNotEmpty() && state != "err") 40f else 0f
+    val h = 16f + 44f + 22f + 12f + 54f + 14f + gridH + listH + footH + 16f
+    val right = (btnRight[opener] ?: (Ui.W - 64f)).coerceIn(w + 64f, Ui.W - 64f)
+    val bottom = rowTop() - 26f + (1f - popA.v) * 16f
+    val left = right - w; val top = bottom - h
+    r.set(left, top, right, bottom)
+    fill.color = Ui.alpha(0xF71E1415.toInt(), a); c.drawRoundRect(r, 20f, 20f, fill)
+    ring.color = Ui.alpha(Ui.LINE, a); ring.strokeWidth = 1.5f; c.drawRoundRect(r, 20f, 20f, ring); ring.strokeWidth = 4f
+    var y = top + 16f
+    // Title with a back arrow, and where the subtitles come from.
+    iconLine.color = Ui.alpha(Ui.TEXT, a); iconLine.strokeWidth = 2.2f
+    Icons.drawPath(c, Path().apply { moveTo(15f, 5f); lineTo(8f, 12f); lineTo(15f, 19f) }, left + 10f, y + 10f, 24f, iconLine)
+    pPopT.alpha = al; pPopS.alpha = al
+    Ui.line(c, "Download subtitles", left + 38f, y, 44f, pPopT); y += 44f
+    Ui.line(c, "From the subtitle sites your Emby server uses (like OpenSubtitles)", left + 38f, y - 4f, 22f, pPopS); y += 22f + 12f
+    // Language chips
+    var x = left + 24f
+    val labels = listOf("English", "Spanish", if (dlLang == 2) OTHER[dlOther].first + "  ▾" else "Other languages")
+    labels.forEachIndexed { i, lab ->
+      val cw = pDlChip.measureText(lab) + 44f
+      r.set(x, y, x + cw, y + 54f)
+      fill.color = Ui.alpha(if (i == dlLang) Ui.RED else 0x1AFFFFFF, a); c.drawRoundRect(r, 27f, 27f, fill)
+      if (dlArea == 0 && i == dlLang) { ring.color = Ui.alpha(Ui.WHITE, a); r.set(x - 5f, y - 5f, x + cw + 5f, y + 59f); c.drawRoundRect(r, 32f, 32f, ring) }
+      pDlChip.color = Ui.alpha(if (i == dlLang) Ui.WHITE else Ui.TEXT, a)
+      Ui.line(c, lab, x + 22f, y, 54f, pDlChip)
+      x += cw + 12f
+    }
+    y += 54f + 14f
+    // Other languages grid (4 across)
+    if (gridH > 0f) {
+      val gw = (w - 48f - 3 * 10f) / 4f
+      OTHER.forEachIndexed { i, (lab, _) ->
+        val gx = left + 24f + (i % 4) * (gw + 10f); val gy = y + (i / 4) * 52f
+        r.set(gx, gy, gx + gw, gy + 42f)
+        val on = dlLang == 2 && i == dlOther
+        fill.color = Ui.alpha(if (on) Ui.RED else 0x14FFFFFF, a); c.drawRoundRect(r, 21f, 21f, fill)
+        if (i == dlOIdx) { ring.color = Ui.alpha(Ui.WHITE, a); r.set(gx - 4f, gy - 4f, gx + gw + 4f, gy + 46f); c.drawRoundRect(r, 25f, 25f, ring) }
+        pDlOther.color = Ui.alpha(if (on) Ui.WHITE else Ui.TEXT, a)
+        Ui.line(c, lab, gx + (gw - pDlOther.measureText(lab)) / 2f, gy, 42f, pDlOther)
+      }
+      y += gridH
+    }
+    // Results
+    val listTop = y
+    if (state == "searching" || state == "idle") {
+      val cx = left + w / 2f; val cy = listTop + listH / 2f - 20f
+      val ang = ((SystemClock.uptimeMillis() % 900L) / 900f) * 360f
+      spin.color = Ui.alpha(Ui.RED, a); r.set(cx - 18f, cy - 18f, cx + 18f, cy + 18f); c.drawArc(r, ang, 270f, false, spin)
+      pRowNote.color = Ui.alpha(Ui.MUTED, a); val t = "Searching ${dlName()}…"
+      Ui.line(c, t, cx - pRowNote.measureText(t) / 2f, cy + 30f, 30f, pRowNote)
+    } else if (state == "err" || n == 0) {
+      pRow.color = Ui.alpha(Ui.MUTED, a)
+      Ui.line(c, Ui.fit(if (state == "err") "Couldn't search" else "Nothing found in ${dlName()}", pRow, w - 56f), left + 28f, listTop + 10f, 40f, pRow)
+      pRowNote.color = Ui.alpha(Ui.MUTED, a * 0.8f)
+      Ui.line(c, Ui.fit(if (state == "err") msg else "Try another language", pRowNote, w - 56f), left + 28f, listTop + 50f, 26f, pRowNote)
+    } else {
+      val start = max(0, min(n - win, dlIdx - 2))
+      for (i in start until min(n, start + win)) {
+        val row = rowsJ!!.getJSONObject(i)
+        val foc = dlArea == 2 && i == dlIdx
+        val ry = listTop + (i - start) * rowH
+        r.set(left + 12f, ry, right - 12f, ry + rowH - 4f)
+        if (foc) { fill.color = Ui.alpha(Ui.WHITE, a); c.drawRoundRect(r, 12f, 12f, fill) }
+        val col = if (foc) 0xFF1A0F10.toInt() else Ui.TEXT
+        val st = when { got == i -> "✓ Added, now on"; busy == i -> "Downloading…"; foc -> "OK to download"; else -> "" }
+        pDlState.color = Ui.alpha(when { got == i -> if (foc) 0xFF1F7A45.toInt() else 0xFF5FD18F.toInt(); foc -> col; else -> Ui.MUTED }, a)
+        val stW = if (st.isNotEmpty()) pDlState.measureText(st) + 20f else 0f
+        val tx = left + 30f; val avail = right - 30f - stW - tx
+        pDlName.color = Ui.alpha(col, a)
+        Ui.line(c, Ui.fit(row.optString("name"), pDlName, avail), tx, ry + 8f, 32f, pDlName)
+        var nx = tx
+        if (row.optBoolean("match")) {
+          pDlMatch.color = if (foc) Ui.alpha(0xFF1F7A45.toInt(), a) else Ui.alpha(0xFF5FD18F.toInt(), a)
+          Ui.line(c, "MATCHES YOUR FILE", nx, ry + 42f, 24f, pDlMatch); nx += pDlMatch.measureText("MATCHES YOUR FILE") + 12f
+        }
+        pDlNote.color = Ui.alpha(col, a * 0.7f)
+        Ui.line(c, Ui.fit(row.optString("note"), pDlNote, tx + avail - nx), nx, ry + 42f, 24f, pDlNote)
+        if (st.isNotEmpty()) c.drawText(st, right - 30f - pDlState.measureText(st), ry + (rowH - 4f) / 2f - (pDlState.fontMetrics.ascent + pDlState.fontMetrics.descent) / 2f, pDlState)
+      }
+      if (start > 0) { iconLine.color = Ui.alpha(Ui.MUTED, a); iconLine.strokeWidth = 2f; Icons.drawPath(c, PATH_UP, right - 44f, listTop - 24f, 22f, iconLine) }
+      if (start + win < n) { iconLine.color = Ui.alpha(Ui.MUTED, a); iconLine.strokeWidth = 2f; Icons.drawPath(c, PATH_DOWN, right - 44f, listTop + listH - 2f, 22f, iconLine) }
+    }
+    if (footH > 0f) { pFoot.color = 0xFFF08A8C.toInt(); pFoot.alpha = al; Ui.line(c, Ui.fit(msg, pFoot, w - 56f), left + 28f, listTop + listH + 8f, 28f, pFoot); pFoot.color = Ui.MUTED }
   }
 
   private fun drawPaused(c: Canvas, a: Float) {

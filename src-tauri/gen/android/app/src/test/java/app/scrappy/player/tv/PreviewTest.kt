@@ -292,10 +292,11 @@ class PreviewTest {
     listOf("Arabic", "Dutch", "French", "German", "Italian", "Japanese", "Korean", "Polish", "Portuguese", "Russian", "Swedish", "Turkish").forEachIndexed { i, n -> subs.put(sub(10 + i, n, "", 1)) }
     val audio = JSONArray().put(JSONObject().put("id", "1").put("label", "German").put("note", "Dolby 5.1").put("on", true)).put(JSONObject().put("id", "2").put("label", "English").put("note", "Dolby 5.1"))
       .put(JSONObject().put("id", "3").put("label", "Japanese").put("note", "AAC Stereo")).put(JSONObject().put("id", "4").put("label", "English").put("note", "Commentary · AAC Stereo"))
-    ui.state(JSONObject().put("open", true).put("id", "Episode3").put("series", "Series4").put("season", "Season2").put("isEp", true)
+    val base = JSONObject().put("open", true).put("id", "Episode3").put("series", "Series4").put("season", "Season2").put("isEp", true)
       .put("t1", "Gundam II").put("t2", "S2:E3 · The Gundam Rises").put("ov", "The crew lands on the moon base and finds it already taken. Amuro has to decide whether to launch alone before the others are ready, while the captain weighs a retreat.")
       .put("dur", 3100).put("next", "4. Second Front").put("subs", subs).put("subOn", true).put("audio", audio).put("speed", 1.0)
-      .put("size", "Medium").put("shape", "Auto").put("quality", "Original (direct play)").put("back", 10).put("fwd", 10).put("canDl", true))
+      .put("size", "Medium").put("shape", "Auto").put("quality", "Original (direct play)").put("back", 10).put("fwd", 10).put("canDl", true)
+    ui.state(base)
     val bmp = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888); val c = Canvas(bmp)
     val bg = android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 1920f, 1080f, 0xFF4F6E62.toInt(), 0xFF16222A.toInt(), android.graphics.Shader.TileMode.CLAMP) }
     fun frames(ms: Long) { val end = System.currentTimeMillis() + ms; while (System.currentTimeMillis() < end) { ShadowSystemClock.advanceBy(Duration.ofMillis(16)); shadowOf(Looper.getMainLooper()).idle(); c.drawRect(0f, 0f, 1920f, 1080f, bg); ui.draw(c); Thread.sleep(4) } }
@@ -306,7 +307,25 @@ class PreviewTest {
     key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("subs")
     key(KeyEvent.KEYCODE_DPAD_DOWN, 5); snap("subs-other")
     key(KeyEvent.KEYCODE_DPAD_CENTER); snap("other")
-    key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("audio")
+    // Download subtitles
+    fun dl(state: String, busy: Int = -1, got: Int = -1, lang: String = "eng") {
+      val rows = JSONArray()
+      if (state == "ok") listOf("Gundam.II.S02E03.1080p.BluRay.x264-GRP" to true, "Gundam II S02E03 WEB-DL English" to false, "Gundam.II.2x03.HDTV.eng" to false,
+        "Gundam II 2x03 (English, hearing impaired)" to false, "Gundam II - 2x03 forced eng" to false, "Gundam.II.S02E03.720p" to false).forEachIndexed { i, (n, m) ->
+        rows.put(JSONObject().put("name", n).put("note", "OpenSubtitles · SRT · ${4210 - i * 700} downloads").put("match", m)) }
+      ui.state(JSONObject(base.toString()).put("dl", JSONObject().put("lang", lang).put("state", state).put("msg", "").put("busy", busy).put("got", got).put("rows", rows)))
+    }
+    dl("idle")
+    key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_DOWN); key(KeyEvent.KEYCODE_DPAD_CENTER)
+    dl("searching"); snap("dl-search")
+    dl("ok"); snap("dl")
+    key(KeyEvent.KEYCODE_DPAD_DOWN, 2); snap("dl-list")
+    key(KeyEvent.KEYCODE_DPAD_CENTER); dl("ok", busy = 1); snap("dl-busy")
+    dl("ok", got = 1); snap("dl-got", 300); snap("dl-returned", 1400); key(KeyEvent.KEYCODE_DPAD_CENTER)
+    key(KeyEvent.KEYCODE_DPAD_UP, 2); key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_RIGHT); snap("dl-other")
+    key(KeyEvent.KEYCODE_DPAD_CENTER); dl("ok", lang = "fre"); snap("dl-german")
+    key(KeyEvent.KEYCODE_BACK); snap("dl-back")
+    key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("audio")
     key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_RIGHT, 2); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("settings")
     key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_DOWN); snap("eps", 2500)
     key(KeyEvent.KEYCODE_DPAD_RIGHT); snap("eps-r")

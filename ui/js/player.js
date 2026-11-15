@@ -682,28 +682,35 @@ async function searchSubs() {
 
 const subStreams = (item) => (item?.MediaSources?.[0]?.MediaStreams || item?.MediaStreams || []).filter((s) => s.Type === 'Subtitle');
 
+/** Downloads search result r for item it on the server, waits for it to show up, and turns it on. Returns the language. */
+async function addRemoteSub(it, r, code) {
+  // What subtitles the server knows about before, so the new one can be spotted after.
+  const before = new Set(subStreams(await api.get(`/Users/{userId}/Items/${it.Id}`)).map((s) => s.Index));
+  await api.post(`/Items/${it.Id}/RemoteSearch/Subtitles/${encodeURIComponent(r.Id)}`);
+  // The server can take a moment to list the new file.
+  let added = null;
+  for (let i = 0; i < 8 && !added; i++) {
+    await new Promise((ok) => setTimeout(ok, i ? 1500 : 600));
+    const fresh = await api.get(`/Users/{userId}/Items/${it.Id}`).catch(() => null);
+    added = subStreams(fresh).find((s) => s.IsExternal && !before.has(s.Index)) || null;
+  }
+  if (S.item?.Id !== it.Id) return null; // moved on to another video meanwhile
+  if (!added) throw new Error('Downloaded, but the server hasn\'t listed the new subtitles yet. Try reopening the video in a moment.');
+  letGoOfSubs();
+  const title = added.DisplayTitle || added.Title || 'Downloaded';
+  const lang = added.Language || code;
+  await invoke('player_add_sub', { index: added.Index, codec: added.Codec || r.Format || 'srt', title, lang });
+  saveTrackPrefs({ sub: { lang, title, forced: false } });
+  return lang;
+}
+
 async function downloadSub(it, r, b, code) {
   if (b.classList.contains('busy') || b.classList.contains('done')) return;
   b.classList.add('busy');
   b.textContent = 'Downloading…';
   try {
-    // What subtitles the server knows about before, so the new one can be spotted after.
-    const before = new Set(subStreams(await api.get(`/Users/{userId}/Items/${it.Id}`)).map((s) => s.Index));
-    await api.post(`/Items/${it.Id}/RemoteSearch/Subtitles/${encodeURIComponent(r.Id)}`);
-    // The server can take a moment to list the new file.
-    let added = null;
-    for (let i = 0; i < 8 && !added; i++) {
-      await new Promise((ok) => setTimeout(ok, i ? 1500 : 600));
-      const fresh = await api.get(`/Users/{userId}/Items/${it.Id}`).catch(() => null);
-      added = subStreams(fresh).find((s) => s.IsExternal && !before.has(s.Index)) || null;
-    }
-    if (S.item?.Id !== it.Id) return; // moved on to another video meanwhile
-    if (!added) throw new Error('Downloaded, but the server hasn\'t listed the new subtitles yet. Try reopening the video in a moment.');
-    letGoOfSubs();
-    const title = added.DisplayTitle || added.Title || 'Downloaded';
-    const lang = added.Language || code;
-    await invoke('player_add_sub', { index: added.Index, codec: added.Codec || r.Format || 'srt', title, lang });
-    saveTrackPrefs({ sub: { lang, title, forced: false } });
+    const lang = await addRemoteSub(it, r, code);
+    if (lang == null) return;
     b.classList.remove('busy');
     b.classList.add('done');
     b.textContent = '✓ Turned on';
@@ -1342,9 +1349,53 @@ function npSnap() {
     ov: it?.Overview || '', dur: dur(), next: S.next ? [S.next.IndexNumber != null ? `${S.next.IndexNumber}.` : '', S.next.Name || ''].filter(Boolean).join(' ') : '',
     subs: npSubs(), subOn: S.sid != null, audio: npAudio(), speed: S.speed,
     size: lab(SUB_SIZES, S.subScale), shape: lab(ASPECTS, S.aspect), quality: lab(QUALITIES, S.quality),
-    skip: skipMode || '', back: skipBack(), fwd: skipFwd(), canDl: canDownloadSubs !== false && !!it,
+    skip: skipMode || '', back: skipBack(), fwd: skipFwd(), canDl: canDownloadSubs !== false && !!it, dl: npDlSnap(),
     card: !!($('.p-upnext.show') || S.stillOpen || S.settingsOpen), details: !!el.querySelector('.p-details'),
   };
+}
+// Download subtitles for the native menu: the page searches and downloads, native draws.
+const npDl = { item: '', lang: '', state: 'idle', msg: '', list: [], busy: -1, got: -1, run: 0 };
+function npDlSnap() {
+  if (npDl.item !== (S.item?.Id || '')) Object.assign(npDl, { item: S.item?.Id || '', state: 'idle', msg: '', list: [], busy: -1, got: -1 });
+  return {
+    lang: npDl.lang || localStorage.getItem('subSearchLang') || 'eng', state: npDl.state, msg: npDl.msg, busy: npDl.busy, got: npDl.got,
+    rows: npDl.list.map((r) => ({ name: r.Name || r.Id, note: [r.ProviderName, (r.Format || '').toUpperCase(), r.DownloadCount ? `${r.DownloadCount.toLocaleString()} downloads` : ''].filter(Boolean).join(' · '), match: !!r.IsHashMatch })),
+  };
+}
+async function npDlSearch(code) {
+  const it = S.item;
+  if (!it || !code) return;
+  localStorage.setItem('subSearchLang', code);
+  const run = ++npDl.run;
+  Object.assign(npDl, { item: it.Id, lang: code, state: 'searching', msg: '', list: [], busy: -1, got: -1 });
+  npPush();
+  try {
+    const res = await api.get(`/Items/${it.Id}/RemoteSearch/Subtitles/${code}?IsPerfectMatch=false`);
+    if (run !== npDl.run) return;
+    // Subtitles made for this exact file (hash match) go first.
+    npDl.list = (Array.isArray(res) ? res : []).map((r, n) => ({ r, n }))
+      .sort((a, b) => (b.r.IsHashMatch ? 1 : 0) - (a.r.IsHashMatch ? 1 : 0) || a.n - b.n).map((x) => x.r).slice(0, 30);
+    npDl.state = 'ok';
+  } catch (e) {
+    if (run !== npDl.run) return;
+    Object.assign(npDl, { state: 'err', msg: String(e?.message || e) });
+  }
+  npPush();
+}
+async function npDlGet(i) {
+  const it = S.item, r = npDl.list[i];
+  if (!it || !r || npDl.busy >= 0 || npDl.got === i) return;
+  const run = npDl.run;
+  npDl.busy = i; npDl.msg = ''; npPush();
+  try {
+    const lang = await addRemoteSub(it, r, npDl.lang);
+    if (run !== npDl.run || lang == null) return;
+    Object.assign(npDl, { busy: -1, got: i });
+  } catch (e) {
+    if (run !== npDl.run) return;
+    Object.assign(npDl, { busy: -1, msg: String(e?.message || e) });
+  }
+  npPush();
 }
 let npLast = '';
 function npPush() {
@@ -1354,7 +1405,7 @@ function npPush() {
   npLast = j;
   try { window.ScrappyNative.pstate(j); } catch {}
 }
-if (NP) setInterval(() => { if (S.open || npLast.includes('"open":true')) npPush(); }, 300);
+if (NP) setInterval(() => { if (S.open) checkSubRights(); if (S.open || npLast.includes('"open":true')) npPush(); }, 300);
 /** What the native controls ask for. */
 export function npAct(a, v) {
   const find = (type) => S.tracks.find((t) => t.type === type && String(t.id) === String(v));
@@ -1374,7 +1425,8 @@ export function npAct(a, v) {
     }
     case 'reload': el.querySelector('[data-act=reload]')?.click(); break;
     case 'details': el.querySelector('[data-act=details]')?.click(); break;
-    case 'dl': toggleSettings(true); showDlPage(true); setTimeout(() => $('.p-set-dl select, .p-set-dl button')?.focus({ preventScroll: true }), 80); break;
+    case 'dlsearch': npDlSearch(String(v)); break;
+    case 'dlget': npDlGet(Number(v)); break;
     case 'skip': doSkip(); break;
     case 'exit': exitPlayer(); break;
     case 'subpos': setProp('sub-pos', Math.round(Number(v) || 100)); break;
