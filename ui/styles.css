@@ -3367,3 +3367,5 @@ label.set-row { cursor: pointer; }
 .section-head.pg-head { align-items: center; margin-bottom: 20px; }
 .pg-t { margin: 0; font-size: 40px; padding-top: 4px; }
 .msearch.wide { min-width: 360px; }
+/* Inner scroll areas don't rubber-band on a trackpad either. */
+.maside, .mpanel, .tdrop, .dlg-body, .dr-list, .vset, .qlist, .lyr, .mdlg-list, .mn-body { overscroll-behavior: none; }
