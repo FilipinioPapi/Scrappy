@@ -83,8 +83,61 @@ pub async fn upd_install(app: AppHandle, channel: String) -> Result<(), String> 
         Some(b) => b,
         None => u.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?,
     };
-    crate::music::quit(&app);
+    finish(&app, u, bytes, &path)
+}
+
+/// Windows: run the installer ourselves, so a blocked installer (removed by antivirus, or not
+/// allowed to start) is reported in the app instead of Scrappy closing and never coming back.
+#[cfg(windows)]
+fn finish(app: &AppHandle, u: tauri_plugin_updater::Update, bytes: Vec<u8>, saved_marker: &std::path::Path) -> Result<(), String> {
+    let exe = write_installer(&u.version, &bytes)?;
+    crate::music::quit(app);
+    crate::follow::shutdown();
+    // /S quiet, /UPDATE keep settings, /R open Scrappy again when done.
+    if let Err(e) = std::process::Command::new(&exe).args(["/S", "/UPDATE", "/R"]).spawn() {
+        return Err(format!("BLOCKED Windows didn't let the installer start ({e})."));
+    }
+    let _ = std::fs::remove_file(saved_marker);
+    std::process::exit(0)
+}
+
+#[cfg(not(windows))]
+fn finish(app: &AppHandle, u: tauri_plugin_updater::Update, bytes: Vec<u8>, saved_marker: &std::path::Path) -> Result<(), String> {
+    crate::music::quit(app);
+    crate::follow::shutdown();
     u.install(bytes).map_err(|e| e.to_string())?;
-    let _ = std::fs::remove_file(&path);
-    app.restart();
+    let _ = std::fs::remove_file(saved_marker);
+    app.restart()
+}
+
+/// Save the (already signature-checked) installer to a temp folder and make sure it's
+/// still there a moment later: antivirus that doesn't trust it deletes it straight away.
+#[cfg(windows)]
+fn write_installer(version: &str, bytes: &[u8]) -> Result<std::path::PathBuf, String> {
+    let safe: String = version.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' { c } else { '_' }).collect();
+    let dir = std::env::temp_dir().join(format!("scrappy-update-{safe}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let exe = dir.join(format!("Scrappy-{safe}-setup.exe"));
+    std::fs::write(&exe, bytes).map_err(|e| format!("BLOCKED Couldn't save the installer ({e})."))?;
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    match std::fs::metadata(&exe) {
+        Ok(m) if m.len() == bytes.len() as u64 => Ok(exe),
+        _ => Err("BLOCKED Windows Security removed the installer before it could run.".into()),
+    }
+}
+
+/// Open the release page in the browser, to download the installer by hand.
+#[tauri::command]
+pub fn upd_open_page(channel: String) {
+    let tag = if channel == "preview" { "preview" } else { "latest" };
+    let url = format!("https://github.com/FilipinioPapi/Scrappy/releases/tag/{tag}");
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer").arg(url).spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+    }
 }

@@ -14,13 +14,14 @@ const back = ls.get('updReturn');
 if (back) { ls.set('updReturn', ''); if (back.startsWith('#')) location.hash = back; }
 
 let admin = ls.get('isAdmin') === '1';
-let current = '', found = null, checking = false, waitTimer = null;
+let current = '', found = null, checking = false, waitTimer = null, installing = false, failed = '';
 const channel = () => (admin && ls.get('updChannel') !== 'stable' ? 'preview' : 'stable');
 const autoInstall = () => ls.get('updAuto') !== 'off';
 /** For Settings: this version, a found update, and whether the request service says admin. */
 export const updInfo = () => ({ current, found: found ? found.version : '', admin });
 export const refreshAdmin = () => checkAdmin().then(() => admin);
 const fmtDay = (ms) => (ms ? new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
+const triedBefore = () => !!found && ls.get('updTried') === found.version;
 const chName = () => (channel() === 'preview' ? 'Preview' : 'Stable');
 
 // Is the request service saying we're an admin? Remember the answer for next time.
@@ -55,8 +56,9 @@ function drawCard() {
     <div class="upd-t">Scrappy ${chName()}${found.date ? ' · ' + fmtDay(found.date) : ''}</div>
     <div class="t2">You have version ${esc(current)}, this is ${esc(found.version)}</div>
     ${lines.length ? `<ul>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="t2">Fixes and improvements.</p>'}
-    ${busy() ? '<div class="upd-wait">Playing something? It\'ll wait until you stop.</div>' : ''}
-    <div class="upd-btns"><button type="button" class="btn secondary" id="updLater">Later</button><button type="button" class="btn upd-go" id="updNow">${waitTimer ? 'Waiting for you to stop…' : 'Restart now'}</button></div>`;
+    ${triedBefore() ? `<div class="upd-wait">The last try to install this update didn't finish${failed && failed !== 'timeout' ? ` (${esc(failed)})` : ''}. You can download it and run it yourself.</div>` : busy() ? '<div class="upd-wait">Playing something? It\'ll wait until you stop.</div>' : ''}
+    <div class="upd-btns"><button type="button" class="btn secondary" id="updLater">Later</button>${triedBefore() ? '<button type="button" class="btn secondary" id="updGet">Download</button>' : ''}<button type="button" class="btn upd-go" id="updNow">${waitTimer ? 'Waiting for you to stop…' : triedBefore() ? 'Try again' : 'Restart now'}</button></div>`;
+  card.querySelector('#updGet')?.addEventListener('click', () => { card.hidden = true; invoke('upd_open_page', { channel: channel() }).catch(() => {}); });
   card.querySelector('#updLater').onclick = () => { card.hidden = true; toast(autoInstall() ? 'It will install the next time Scrappy starts.' : 'You can install it from Settings any time.'); };
   card.querySelector('#updNow').onclick = () => { card.hidden = true; restartWhenFree(); };
 }
@@ -69,14 +71,22 @@ function restartWhenFree() {
 
 // ---------- Restart splash ----------
 async function install() {
-  if (!found) return;
+  if (!found || installing) return;
+  installing = true;
   const s = document.createElement('div');
   s.className = 'upd-splash';
   s.innerHTML = `<div class="upd-logo">SCRAPPY</div><div class="upd-st">Updating to the ${fmtDay(found.date) || esc(found.version)} ${chName()}…</div><div class="t2">Back in a few seconds</div><div class="upd-bar"><i></i></div>`;
   document.body.appendChild(s);
   ls.set('updReturn', location.hash);
+  // Remember the try: if Scrappy opens again still on the old version, the install didn't
+  // work, and it won't be tried again by itself (no closing on every start).
+  ls.set('updTried', found.version);
+  const fail = (why) => { s.remove(); ls.set('updReturn', ''); installing = false; failed = String(why || ''); toast('The update couldn\'t install. Open "Update ready" to download it instead.', true); };
+  // Normally Scrappy closes within seconds (a fresh download can take a while). If it's still
+  // here after three minutes, give the app back instead of leaving the update screen up.
+  const guard = setTimeout(() => fail('timeout'), 180000);
   try { await invoke('upd_install', { channel: channel() }); }
-  catch (e) { s.remove(); ls.set('updReturn', ''); toast('Update failed: ' + e, true); }
+  catch (e) { clearTimeout(guard); fail(String(e).replace(/^BLOCKED /, '')); }
 }
 
 // ---------- Checking ----------
@@ -88,7 +98,9 @@ async function check(manual = false, atStart = false) {
     current = r.current || current;
     found = r.available ? r : null;
     btn.hidden = !found;
-    if (found && atStart && found.wasSaved && autoInstall() && !busy()) { install(); return; }
+    if (!found || ls.get('updTried') !== found.version) ls.set('updTried', '');
+    if (found && atStart && found.wasSaved && autoInstall() && !busy() && !triedBefore()) { install(); return; }
+    if (found && atStart && triedBefore()) toast('The last update didn\'t install. Open "Update ready" to try again or download it.', true);
     if (manual) toast(found ? 'An update is ready.' : "You're up to date.");
   } catch (e) {
     if (manual) toast("Couldn't check for updates: " + e, true);

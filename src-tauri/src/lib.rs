@@ -1500,6 +1500,7 @@ pub fn run() {
             updates::app_version,
             updates::upd_check,
             updates::upd_install,
+            updates::upd_open_page,
             set_zoom,
             get_session,
             login,

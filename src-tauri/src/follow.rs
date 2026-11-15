@@ -237,6 +237,22 @@ pub fn fa_pos(pos: f64) {
     }
 }
 
+/// Speech-engine processes running right now (they live in the install folder).
+static ENGINES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Before Scrappy exits (an update is about to replace its files): stop the follow-along
+/// work and wait briefly until no speech engine is left running. An engine still running
+/// keeps its files in the install folder locked, and the silent installer then gives up.
+pub fn shutdown() {
+    fa_stop();
+    for _ in 0..30 {
+        if ENGINES.load(Ordering::SeqCst) == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// The panel closed: stop at once.
 #[tauri::command]
 pub fn fa_stop() {
@@ -455,17 +471,25 @@ impl Worker {
             cmd.creation_flags(0x0800_0000); // no console window
         }
         let mut child = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().map_err(|e| format!("ENGINE couldn't start the speech engine: {e}"))?;
+        ENGINES.fetch_add(1, Ordering::SeqCst);
         let status = loop {
             if self.stopped() {
                 let _ = child.kill();
+                let _ = child.wait();
+                ENGINES.fetch_sub(1, Ordering::SeqCst);
                 return Err("stopped".into());
             }
             match child.try_wait() {
                 Ok(Some(st)) => break st,
-                Ok(None) => std::thread::sleep(Duration::from_millis(100)),
-                Err(e) => return Err(format!("ENGINE {e}")),
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                Err(e) => {
+                    let _ = child.kill();
+                    ENGINES.fetch_sub(1, Ordering::SeqCst);
+                    return Err(format!("ENGINE {e}"));
+                }
             }
         };
+        ENGINES.fetch_sub(1, Ordering::SeqCst);
         if !status.success() {
             return Err("ENGINE The speech engine stopped with an error.".into());
         }
