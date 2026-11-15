@@ -29,12 +29,16 @@ class Genres(tv: TvView) : Screen(tv) {
     var prev: android.graphics.Bitmap? = null
     var withPics = false
     var at = 0L
-    fun drop() { bmp?.recycle(); bmp = null; prev?.recycle(); prev = null; withPics = false }
+    /** One is being made right now (off the main thread); `ver` changes when the tile is let go, so a late one is thrown away. */
+    var busy = false
+    var ver = 0
+    fun drop() { ver++; busy = false; bmp?.recycle(); bmp = null; prev?.recycle(); prev = null; withPics = false }
   }
 
   private var libs: List<JSONObject> = emptyList()
   private var cur = ""
   private var tiles: List<Tile> = emptyList()
+  private val kept = HashMap<String, List<Tile>>()
   private var loadedLib = ""
   private var learned = JSONObject()
   private var loaded = false
@@ -218,8 +222,10 @@ class Genres(tv: TvView) : Screen(tv) {
       val l = libs.getOrNull(tab) ?: return
       if (l.optString("Id") == cur) return
       cur = l.optString("Id"); tv.host.setLocal("tvGenLib", cur); fanArt.put("lib", cur)
-      for (t in tiles) t.drop()
-      tiles = emptyList(); draw(); tv.invalidate(); return
+      // The library you leave keeps its top rows ready, so coming back shows them at once.
+      for ((i, t) in tiles.withIndex()) if (rowTop(i) > 1080f) t.drop()
+      kept[loadedLib] = tiles
+      tiles = kept[cur] ?: emptyList(); draw(); tv.invalidate(); return
     }
     val t = tiles.getOrNull(focus) ?: return
     tv.host.go("#/library/" + Card.enc(cur) + "/" + Card.enc(t.id))
@@ -262,12 +268,10 @@ class Genres(tv: TvView) : Screen(tv) {
       Ui.line(c, libs[i].optString("Name"), x + 26.67f, 95f, 61f, tabP)
     }
     if (empty.isNotEmpty()) Ui.line(c, empty, (117f + 1920f) / 2f, 260f, 29f, emptyP)
-    // Making a tile's picture takes a few milliseconds: at least one per frame, more while there is time,
-    // and the row just off screen is made ahead so scrolling never waits for one.
-    val t0 = System.nanoTime()
-    var made = 0
+    // A tile's picture is made off the main thread (a few milliseconds each: gradient, clip, big text,
+    // soft shadows), so the screen never waits for one. Until it is ready the tile is a plain block of
+    // its colour. The row just off screen is made ahead.
     var waiting = false
-    fun time() = made == 0 || System.nanoTime() - t0 < 6_000_000L
     for ((i, t) in tiles.withIndex()) {
       val x = 149f + (i % 4) * PX; val y = rowTop(i)
       // Far off screen: let the finished picture go (keeps memory low on small boxes).
@@ -277,16 +281,12 @@ class Genres(tv: TvView) : Screen(tv) {
       val pics = if (t.withPics) null else t.fans?.takeIf { f -> f.isNotEmpty() }?.map { u -> Img.get(u) }
       val ready = pics != null && pics.all { p -> p != null }
       if (pics != null && !ready && on) waiting = true
-      if (t.bmp == null) {
-        if (time()) { t.bmp = bake(t, if (ready) pics else null); t.withPics = ready; t.at = 0L; made++ } else anim = true
-      } else if (ready && t.prev == null) {
-        if (time()) bake(t, pics)?.let { b -> if (on && !tv.fast) { t.prev = t.bmp; t.at = now } else t.bmp?.recycle(); t.bmp = b; t.withPics = true; made++ } else anim = true
-      }
+      if (!t.busy && (t.bmp == null || (ready && t.prev == null))) make(t, if (ready) pics else null)
       if (!on) continue
       r.set(x, y, x + TW, y + TH)
       val b = t.bmp
       val p = t.prev
-      if (b == null) { tileP.shader = null; tileP.color = t.c[1]; c.drawRoundRect(r, 26.67f, 26.67f, tileP) }
+      if (b == null) { phP.color = t.c[1]; c.drawRoundRect(r, 26.67f, 26.67f, phP) }
       else if (p == null) c.drawBitmap(b, null, r, bmpP)
       else {
         val a = if (tv.fast) 1f else ((now - t.at) / 260f).coerceIn(0f, 1f)
@@ -302,16 +302,41 @@ class Genres(tv: TvView) : Screen(tv) {
   }
 
   private val bmpP = Paint(Paint.FILTER_BITMAP_FLAG)
-  private fun bake(t: Tile, pics: List<Pic?>?): android.graphics.Bitmap? {
+  private val phP = Paint(Paint.ANTI_ALIAS_FLAG)
+
+  private fun make(t: Tile, pics: List<Pic?>?) {
     val k = (tv.width / Ui.W).takeIf { it > 0f } ?: 1f
-    val b = try { android.graphics.Bitmap.createBitmap((TW * k).toInt() + 1, (TH * k).toInt() + 1, android.graphics.Bitmap.Config.RGB_565) } catch (_: Throwable) { return null }
+    val v = t.ver
+    t.busy = true
+    baker.execute {
+      val b = try { bake(t, pics, k) } catch (_: Throwable) { null }
+      Net.main.post {
+        if (v != t.ver) { b?.recycle(); return@post }
+        t.busy = false
+        if (b == null) return@post
+        val old = t.bmp
+        if (old != null && pics != null && !tv.fast && tv.screen === this) { t.prev?.recycle(); t.prev = old; t.at = android.os.SystemClock.uptimeMillis() } else old?.recycle()
+        t.bmp = b; t.withPics = pics != null
+        tv.invalidate()
+      }
+    }
+  }
+
+  // Everything below runs on the one tile-making thread only (its own paints and boxes).
+  private val br = RectF()
+  private val bsrc = android.graphics.Rect()
+  private val picP = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+  private fun bake(t: Tile, pics: List<Pic?>?, k: Float): android.graphics.Bitmap {
+    val b = android.graphics.Bitmap.createBitmap((TW * k).toInt() + 1, (TH * k).toInt() + 1, android.graphics.Bitmap.Config.RGB_565)
     val bc = Canvas(b)
     bc.scale(k, k); bc.drawColor(Ui.BG)
-    drawTile(bc, t, 0f, 0f, pics)
+    drawTile(bc, t, pics)
     return b
   }
 
-  private fun drawTile(c: Canvas, t: Tile, x: Float, y: Float, pics: List<Pic?>?) {
+  private fun drawTile(c: Canvas, t: Tile, pics: List<Pic?>?) {
+    val x = 0f; val y = 0f
+    val r = br
     r.set(x, y, x + TW, y + TH)
     tileP.shader = LinearGradient(x, y, x + TW, y + TH, t.c, floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
     c.save()
@@ -329,7 +354,14 @@ class Genres(tv: TvView) : Screen(tv) {
       c.save(); c.rotate(if (k == 0) -11f else 10f, (left + right) / 2f, (top + bottom) / 2f)
       r.set(left, top, right, bottom)
       c.drawRoundRect(r, 12f, 12f, fanShadow)
-      Img.draw(c, pic, RectF(r), 12f, 1f)
+      // The poster covering its box (cropped around the middle), with rounded corners.
+      val bw = pic.bmp.width.toFloat(); val bh = pic.bmp.height.toFloat()
+      val sc = maxOf(r.width() / bw, r.height() / bh)
+      val sw = r.width() / sc; val sh = r.height() / sc
+      bsrc.set(((bw - sw) / 2f).toInt(), ((bh - sh) / 2f).toInt(), ((bw + sw) / 2f).toInt(), ((bh + sh) / 2f).toInt())
+      c.save(); c.clipPath(android.graphics.Path().apply { addRoundRect(r, 12f, 12f, android.graphics.Path.Direction.CW) })
+      c.drawBitmap(pic.bmp, bsrc, r, picP)
+      c.restore()
       c.drawRoundRect(r, 12f, 12f, fanBd)
       c.restore()
     }
@@ -341,6 +373,7 @@ class Genres(tv: TvView) : Screen(tv) {
   }
 
   companion object {
+    private val baker = java.util.concurrent.Executors.newSingleThreadExecutor { run -> Thread(run, "genre-tiles").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 } }
     private val MOODS: List<Triple<List<String>, List<String>, String>> = listOf(
       Triple(listOf("horror", "scary", "ghost", "zombie", "vampire", "paranormal", "supernatural"), listOf("#B3121B", "#2A0405", "#0A0000"), "☠"),
       Triple(listOf("thriller", "suspense", "spy", "espionage", "psychological"), listOf("#5E6B7A", "#1A1E26", "#07080B"), "◉"),
