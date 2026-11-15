@@ -222,11 +222,19 @@ class Search(tv: TvView) : Screen(tv) {
     if (s.sec < 0 && s.k < 0) { recents = emptyList(); tv.host.setLocal(RECENT, "[]"); focus = -1; layout(); aim(); tv.invalidate(); return }
     if (s.sec < 0) { val q = recents.getOrNull(s.k) ?: return; text = q; run(q); return }
     val sec = secs.getOrNull(s.sec) ?: return
+    remember(lastRun ?: text)
     when (sec.kind) {
       "people" -> sec.people.getOrNull(s.k)?.let { p -> tv.host.go("#/person/" + Card.enc(p.id)) }
       "rows" -> sec.rows.getOrNull(s.k)?.let { r -> if (r.href.isNotEmpty()) tv.host.go(r.href) }
       else -> sec.cards.getOrNull(s.k)?.let { c -> tv.open(c) }
     }
+  }
+
+  /** A search goes on the recent list only once you open something it found. */
+  private fun remember(q0: String) {
+    val q = q0.trim(); if (q.isEmpty()) return
+    recents = (listOf(q) + recents.filter { r -> !r.equals(q, ignoreCase = true) }).take(8)
+    tv.host.setLocal(RECENT, JSONArray(recents).toString())
   }
 
   override fun hold() {

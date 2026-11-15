@@ -413,7 +413,7 @@ export async function tvSearchData(text) {
   if (restPeople.length) secs.push({ title: 'People', kind: 'people', items: restPeople });
   if (eps.length) secs.push({ title: 'Episodes', kind: 'wide', items: eps });
   for (const k of ['music', 'audiobooks']) for (const g of GROUPS[k](res[k])) if (g.rows.length) secs.push({ title: g.title, kind: 'rows', rows: g.rows.map(({ data, ...r }) => r) });
-  if (secs.length) tvRemember(text);
+  // Native TV remembers a search only when you open something from it (no half-typed words).
   return { failed: res.failed || [], sections: secs };
 }
 

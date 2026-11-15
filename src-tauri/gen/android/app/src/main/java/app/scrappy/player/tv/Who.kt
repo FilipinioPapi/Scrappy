@@ -286,12 +286,15 @@ class Who(private val tv: TvView) {
       Ui.line(c, plus, cx, cy - d / 2f, d, tp)
       return false
     }
+    // A face with a picture waits for it (up to 0.7 s) instead of showing a letter first and swapping.
+    val pic0 = Img.get(p.pic)
+    if (pic0 == null && p.pic != null && now - openedAt < 700) return true
     val g = COLORS[p.c]
     grad.shader = LinearGradient(r.left, r.top, r.right, r.bottom, g[0], g[1], Shader.TileMode.CLAMP); grad.alpha = (255 * a).toInt()
     c.drawOval(r, grad)
-    val pic = Img.get(p.pic)
+    val pic = pic0
     val pa = if (pic != null) Img.fade(pic, now, false) else 0f
-    if (pa < 1f) { pIni.textSize = d * 0.44f; pIni.alpha = (255 * a * (1f - pa)).toInt(); Ui.line(c, p.name.trim().take(1).uppercase(), cx, cy - d / 2f + d * 0.04f, d, pIni) }
+    if (pic == null) { pIni.textSize = d * 0.44f; pIni.alpha = (255 * a * (1f - pa)).toInt(); Ui.line(c, p.name.trim().take(1).uppercase(), cx, cy - d / 2f + d * 0.04f, d, pIni) }
     if (pic != null) Img.draw(c, pic, RectF(r), d / 2f, pa * a)
     return pic != null && pa < 1f
   }

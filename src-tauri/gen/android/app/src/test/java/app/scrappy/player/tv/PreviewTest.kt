@@ -60,6 +60,8 @@ class PreviewTest {
             .apply { if (m == 1) { put("ParentLogoItemId", "Series$i"); put("ParentLogoImageTag", "lg") } else if (m == 2) { put("ParentThumbItemId", "Series$i"); put("ParentThumbImageTag", "th") } })
         }
       }).toString()
+      p.contains("Series51/Seasons") -> JSONObject().put("Items", JSONArray().put(JSONObject().put("Id", "Season1").put("Name", "Season 1").put("Type", "Season").put("IndexNumber", 1).put("ChildCount", 12).put("UserData", JSONObject()))).toString()
+      p.contains("Shows/Series51/Episodes") -> JSONObject().put("Items", JSONArray().apply { for (i in 0 until 12) put(item(i % 8 + 2, "Episode").put("Id", "Episode${i + 1}").put("IndexNumber", i + 1).put("ParentIndexNumber", 1).put("SeasonId", "Season1").put("UserData", JSONObject().put("Played", i < 2))) }).toString()
       p.contains("Series50/Seasons") -> JSONObject().put("Items", JSONArray().apply { for (n in 1..36) put(JSONObject().put("Id", "Season$n").put("Name", "$n. Arc name $n").put("Type", "Season").put("IndexNumber", n).put("ChildCount", 6).put("UserData", JSONObject())) }).toString()
       p.contains("/Episodes?") && !p.contains("SeasonId=") -> JSONObject().put("Items", JSONArray().apply { for (i in 0 until 130) put(item(i % 8 + 2, "Episode").put("Id", "Episode${i + 1}").put("IndexNumber", i % 6 + 1).put("ParentIndexNumber", i / 6 + 1).put("SeasonId", "Season${i / 6 + 1}")
         .put("UserData", JSONObject().put("Played", i < 57).put("PlaybackPositionTicks", if (i == 57) 20000000000L else 0L).put("PlayedPercentage", if (i == 57) 33 else 0))) }).toString()
@@ -67,7 +69,7 @@ class PreviewTest {
         .put("UserData", JSONObject().put("Played", i < 3).put("PlaybackPositionTicks", if (i == 3) 20000000000L else 0L).put("PlayedPercentage", if (i == 3) 33 else 0))) }).toString()
       p.contains("ParentId=Box") -> JSONObject().put("Items", JSONArray().apply { listOf("The Matrix", "The Matrix Reloaded", "The Matrix Revolutions", "The Matrix Resurrections").forEachIndexed { i, n ->
         put(item(i + 10).put("Name", n).put("ProductionYear", listOf(1999, 2003, 2003, 2021)[i]).put("UserData", JSONObject().put("Played", i < 2).put("PlaybackPositionTicks", if (i == 2) 20000000000L else 0L))) } }).toString()
-      Regex("/Users/[^/]+/Items/(it\\d+|Series50|Episode\\d+|Box\\d+)(\\?|$)").containsMatchIn(p) -> {
+      Regex("/Users/[^/]+/Items/(it\\d+|Series50|Series51|Episode\\d+|Box\\d+)(\\?|$)").containsMatchIn(p) -> {
         val id = Regex("/Items/([^/?]+)").find(p)!!.groupValues[1]
         val n = id.filter { it.isDigit() }.toInt()
         item(n, if (id.startsWith("Series")) "Series" else if (id.startsWith("Episode")) "Episode" else if (id.startsWith("Box")) "BoxSet" else "Movie").put("Id", id).put("ChildCount", 3)
@@ -236,7 +238,7 @@ class PreviewTest {
     override fun playSeriesFrom(id: String, fromStart: Boolean) {}
     override fun toast(msg: String, error: Boolean) {}
     override fun changed() {}
-    override fun local(key: String, done: (String?) -> Unit) { done(if (key == "epView:Series50" && gridOn) "grid" else if (key == "tvSearchRecent" && recentsOn) "[\"dune\",\"the amateur\",\"breaking bad\",\"one pace\"]" else null) }
+    override fun local(key: String, done: (String?) -> Unit) { done(if ((key == "epView:Series50" || key == "epView:Series51") && gridOn) "grid" else if (key == "tvSearchRecent" && recentsOn) "[\"dune\",\"the amateur\",\"breaking bad\",\"one pace\"]" else null) }
     override fun setLocal(key: String, value: String) {}
     override fun replace(hash: String, go: Boolean) {}
     override fun reroute() {}
@@ -450,6 +452,9 @@ class PreviewTest {
     tv.route("#/item/Series50"); pump(3000); shot("showgrid")
     press(KeyEvent.KEYCODE_DPAD_DOWN); shot("showgrid-blocks", 800)
     press(KeyEvent.KEYCODE_DPAD_DOWN); shot("showgrid-eps", 800)
+    tv.route("#/item/Series51"); pump(3000)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("grid1-a", 600)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); shot("grid1-b", 600)
   }
 
   @Test fun backExit() {
