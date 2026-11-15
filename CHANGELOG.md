@@ -7,6 +7,16 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 48 · Nov 15, 12:05 PM
+**Speed**
+- Optimization pass for weaker PCs: big blurred backgrounds (album, playlist and book pages, Now playing, follow-along) are drawn once instead of on every frame
+- Glass blur is gone where nothing showed through it
+- Home rows off screen aren't drawn until you scroll near them, and genre rows no longer make the page jump when they load
+- Follow-along updates at most 60 times a second
+- While Scrappy is minimised, the visualiser and animations pause
+
+<sub>Built from 99d888e · includes: Speed</sub>
+
 ### Preview 47 · Nov 15, 11:12 AM
 **Speed**
 - Lighter and smoother: Scrappy no longer burns CPU while sitting idle. Loading placeholders stop animating after a few seconds (about 20% of a core less on a 120 Hz laptop)
