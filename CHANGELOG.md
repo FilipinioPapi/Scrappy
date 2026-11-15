@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 43 · Nov 14, 8:38 PM
+**Stats**
+- Changed: Movies & TV stats no longer offer a Year in Review, because it needed an Emby plugin that's been removed. Music and Audiobooks still have theirs
+
+<sub>Built from 4686b6c · includes: Stats</sub>
+
 ### Preview 42 · Nov 14, 4:07 PM
 **Movies & TV**
 - Changed: page titles (Movies, Shows, Anime, Collections, Genres, Favorites) use the big Scrappy font with a count beside them, matching Music and Audiobooks
