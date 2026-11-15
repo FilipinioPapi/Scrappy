@@ -195,6 +195,15 @@ async fn logout_emby(state: &AppState) -> Result<(), String> {
     Ok(())
 }
 
+/// Scrappy Native signs in with its own code and writes the saved sign-ins itself; this makes the
+/// copy held here catch up with the file.
+#[tauri::command]
+fn config_reload(state: State<'_, AppState>) -> Value {
+    let c = Config::load(&state.cfg_path);
+    *state.cfg.lock().unwrap() = c;
+    get_session(state)
+}
+
 // ---------- Who's watching ----------
 
 fn save_cfg(state: &AppState, c: &emby::Config) -> Result<(), String> {
@@ -1497,6 +1506,7 @@ pub fn run() {
             updates::tv_update,
             set_zoom,
             get_session,
+            config_reload,
             profiles_get,
             profile_switch,
             profile_new,

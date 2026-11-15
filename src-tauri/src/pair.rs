@@ -22,7 +22,7 @@ struct Pairing {
 
 static CURRENT: Mutex<Option<Pairing>> = Mutex::new(None);
 
-const PAGE: &str = include_str!("pair.html");
+const PAGE: &str = include_str!("../pair/pair.html");
 
 fn local_ip() -> Option<String> {
     // No packet is sent: this only asks the system which address it would use.

@@ -322,10 +322,35 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     val n = ++statsN; statsCalls[n] = done
     eval("window.__tvNative && window.__tvNative.stats($n)")
   }
+  /** Sign-in runs in the app's own code (SignLogic). Only leaving the screen still goes through the page, which owns the way around. */
   override fun signAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
+    if (act == "open") { pageSign(act, args, done); return }
+    sign.act(act, args) { r -> done(r) }
+  }
+  private fun pageSign(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
     val n = ++signN; signCalls[n] = done
     eval("window.__tvNative && window.__tvNative.signAct($n, ${js(act)}, $args)")
   }
+  private val cfgCalls = HashMap<Int, () -> Unit>()
+  private var cfgN = 0
+  @JavascriptInterface fun cfgDone(seq: Int) { act.runOnUiThread { cfgCalls.remove(seq)?.invoke() } }
+  private val sign = SignLogic(object : SignLogic.Io {
+    override val file = java.io.File(act.dataDir, "config.json")
+    // The same device name the Rust side gives Emby, so the TV stays one entry in Emby's device list.
+    override val device = System.getenv("COMPUTERNAME") ?: System.getenv("HOSTNAME") ?: "Windows PC"
+    override val version: String = try { act.packageManager.getPackageInfo(act.packageName, 0).versionName ?: "1.0" } catch (e: Exception) { "1.0" }
+    override fun savedAddrs(): JSONObject = try { JSONObject(prefs.getString("sign_addrs", "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
+    override fun saveAddrs(o: JSONObject) { prefs.edit().putString("sign_addrs", o.toString()).apply() }
+    override fun phonePage(): String = try { act.assets.open("pair.html").bufferedReader().use { it.readText() } } catch (e: Exception) { "" }
+    override fun ui(work: () -> Unit) { act.runOnUiThread(work) }
+    override fun changed(then: () -> Unit) {
+      Net.reload()
+      val n = ++cfgN; cfgCalls[n] = then
+      eval("(window.__tvNative && window.__tvNative.cfgChanged) ? window.__tvNative.cfgChanged($n) : window.ScrappyNative.cfgDone($n)")
+    }
+    override fun push(model: JSONObject) { (view.screen as? Signin)?.push(model) }
+    override fun open() { pageSign("open", JSONObject()) { _ -> } }
+  })
   override fun whoClosed() {
     modal = false; apply()
     eval("window.__tvNative && window.__tvNative.whoClosed()")

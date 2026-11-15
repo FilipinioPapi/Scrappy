@@ -32,6 +32,8 @@ android {
         if (nativeApp) applicationIdSuffix = ".native"
         buildConfigField("boolean", "NATIVE_APP", nativeApp.toString())
     }
+    // The phone sign-in page (one file, shared with the Rust side) rides along for the native sign-in.
+    sourceSets.getByName("main").assets.srcDir("../../../pair")
     if (nativeApp) {
         sourceSets.getByName("debug").res.srcDir("src/nativeApp/res")
         sourceSets.getByName("release").res.srcDir("src/nativeApp/res")
