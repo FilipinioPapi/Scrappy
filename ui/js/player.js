@@ -862,6 +862,8 @@ function showUpNext(mode) {
   $('[data-act=up-now]').textContent = n.Type === 'Episode' ? 'Next episode' : 'Next film';
   if (!S.embedded) { playNext(); return true; }
   reveal('.p-upnext', true);
+  // TV: the highlight starts on Next episode, so the first OK plays it (no extra press to reach the card).
+  if (TVP) setTimeout(() => tvFocus('[data-act=up-now]'), 50);
   S.upNextTimer = setInterval(() => {
     count--;
     $('.p-up-count').textContent = count;

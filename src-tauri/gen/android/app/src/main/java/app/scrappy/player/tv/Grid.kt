@@ -276,7 +276,7 @@ class Grid(tv: TvView, val libId: String, val genreId: String) : Screen(tv) {
     when {
       focus == -2 -> { val l = LETTERS[az].toString(); letter = if (l == "#") "" else l; lit = l; jump(letter) }
       focus == -1 -> openChip(chip)
-      else -> items.getOrNull(focus)?.let { c -> if (c.playable && c.type == "Episode") tv.host.play(c.id) else tv.open(c) }
+      else -> items.getOrNull(focus)?.let { c -> if (c.playable && c.type == "Episode") { tv.pageFirst(c.it); tv.host.play(c.id) } else tv.open(c) }
     }
   }
 

@@ -169,6 +169,7 @@ class Menu(private val tv: TvView) {
     val it = item ?: return
     val id = it.optString("Id"); val type = it.optString("Type")
     kind = ""; closing = SystemClock.uptimeMillis(); tv.invalidate()
+    if (r.act == "play" || r.act == "restart") tv.pageFirst(it)
     when (r.act) {
       "play" -> when (type) {
         "Series" -> tv.host.playSeries(id)

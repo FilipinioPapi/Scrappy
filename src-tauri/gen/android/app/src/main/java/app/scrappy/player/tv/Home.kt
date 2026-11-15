@@ -452,7 +452,7 @@ class Home(tv: TvView) : Screen(tv) {
   private fun open(row: Row) {
     val c = row.cards.getOrNull(col) ?: return
     if (c.lib) { tv.host.go(c.href); return }
-    if (c.playable && (c.clickPlay || c.type == "Episode")) tv.host.play(c.id) else tv.open(c)
+    if (c.playable && (c.clickPlay || c.type == "Episode")) { tv.pageFirst(c.it); tv.host.play(c.id) } else tv.open(c)
   }
 
   override fun hold() {

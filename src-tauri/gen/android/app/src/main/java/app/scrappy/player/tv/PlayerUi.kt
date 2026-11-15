@@ -168,15 +168,19 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     }
     when (mode) {
       Mode.IDLE -> when (k) {
-        "ok" -> { if (snap.optString("skip").isNotEmpty()) host.act("skip") else host.act("pause"); showBar("play") }
+        "ok" -> { if (snap.optString("skip").isNotEmpty()) host.act("skip") else { host.act("pause"); showBar("play") } }
         "up", "down" -> showBar("play")
         "left", "right" -> { showBar("seek"); skip(if (k == "left") -1 else 1, held) }
         "back" -> host.act("exit")
       }
       Mode.BAR -> {
         if (k == "back") { if (paused) host.act("exit") else mode = Mode.IDLE; kick(); return }
-        if (focus == "seek") when (k) {
+        if (focus == "skipbtn") when (k) {
+          "down" -> focus = "seek"
+          "ok" -> { host.act("skip"); mode = Mode.IDLE; focus = "play" }
+        } else if (focus == "seek") when (k) {
           "left", "right" -> skip(if (k == "left") -1 else 1, held)
+          "up" -> if (snap.optString("skip").isNotEmpty()) focus = "skipbtn"
           "down" -> focus = "play"
           "ok" -> host.act("pause")
         } else {
@@ -519,6 +523,7 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     // Controls hide by themselves after a few seconds of nothing (not while paused or a menu is open).
     if (mode == Mode.BAR && !paused && seekTo < 0 && now - lastKey > 5000) mode = Mode.IDLE
     if (card && mode == Mode.POP) closeMenus()
+    if (focus == "skipbtn" && snap.optString("skip").isEmpty()) focus = "seek"
 
     vis.set(if (mode == Mode.IDLE || card) 0f else 1f, now, 260f)
     epsA.set(if (mode == Mode.EPS) 1f else 0f, now, 320f)
@@ -547,6 +552,7 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
       if (popA.v > 0.01f && pop == "dl") drawDl(c, a * popA.v)
       else if (popA.v > 0.01f && pop.isNotEmpty()) drawPop(c, a * popA.v)
     }
+    if (!card && !pinfo && mode != Mode.EPS && mode != Mode.POP && snap.optString("skip").isNotEmpty()) drawSkip(c)
     c.restore()
 
     // Subtitles sit above the bar while it shows.
@@ -574,6 +580,26 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     fill.color = Ui.alpha(0x80000000.toInt(), a); c.drawRoundRect(r, 22f, 22f, fill)
     iconFill.color = Ui.alpha(Ui.TEXT, a); Icons.drawPath(c, PATH_PAUSE, r.left + 16f, 68f, 20f, iconFill)
     pChipPaused.alpha = (255 * a).toInt(); Ui.line(c, "Paused", r.left + 44f, 56f, 44f, pChipPaused)
+  }
+
+  // Skip Intro / Skip Credits: OK presses it while you just watch; with the bar up it sits above the time bar (Up reaches it).
+  private val pSkip = Ui.text(Ui.f700, 24f, Ui.WHITE)
+  private val skipTri = Path().apply { moveTo(5f, 5.5f); lineTo(5f, 18.5f); lineTo(15f, 12f); close(); addRect(16f, 5f, 18f, 19f, Path.Direction.CW) }
+  private fun drawSkip(c: Canvas) {
+    val label = if (snap.optString("skip") == "credits") "Skip Credits" else "Skip Intro"
+    val w = 28f + 26f + 12f + pSkip.measureText(label) + 30f
+    val idle = mode == Mode.IDLE
+    val foc = mode == Mode.BAR && focus == "skipbtn"
+    val v = vis.v
+    val bottom = Ui.mix(Ui.H - 72f, barTop() - 30f, v)
+    r.set(Ui.W - 64f - w, bottom - 64f, Ui.W - 64f, bottom)
+    fill.color = if (foc) Ui.WHITE else if (idle) Ui.RED else 0xD91E1415.toInt()
+    c.drawRoundRect(r, 32f, 32f, fill)
+    val col = if (foc) 0xFF1A0F10.toInt() else Ui.WHITE
+    fill.color = col
+    c.save(); c.translate(r.left + 28f, r.top + 19f); c.scale(26f / 24f, 26f / 24f); c.drawPath(skipTri, fill); c.restore()
+    pSkip.color = col
+    Ui.line(c, label, r.left + 28f + 26f + 12f, r.top, 64f, pSkip)
   }
 
   private fun drawBar(c: Canvas, a: Float) {

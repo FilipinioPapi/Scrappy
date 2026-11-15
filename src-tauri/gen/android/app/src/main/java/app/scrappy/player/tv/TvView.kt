@@ -166,6 +166,17 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     return d
   }
 
+  /** Before playing straight from a menu (banner, Continue watching, hold-OK...): go to the item's own page
+   *  (the show's page for an episode), so Back from the player lands there instead of on Home. */
+  fun pageFirst(it: JSONObject) {
+    val type = it.optString("Type"); val series = it.optString("SeriesId")
+    val id = if ((type == "Episode" || type == "Season") && series.isNotEmpty()) series else it.optString("Id")
+    if (id.isEmpty()) return
+    kinds[id] = if (id == series) "Series" else type
+    val h = "#/item/" + Card.enc(id)
+    if (routeHash.substringBefore('?') != h) host.go(h)
+  }
+
   /** Open a poster: its page (native when it is a film or show), noting what kind of item it is. */
   fun open(c: Card) { if (c.type.isNotEmpty()) kinds[c.id] = c.type; host.go(c.href) }
 

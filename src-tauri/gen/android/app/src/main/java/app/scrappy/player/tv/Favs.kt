@@ -82,7 +82,7 @@ class Favs(tv: TvView) : Screen(tv) {
       return
     }
     val c = list.getOrNull(focus) ?: return
-    if (c.type == "Episode") tv.host.play(c.id) else tv.open(c)
+    if (c.type == "Episode") { tv.pageFirst(c.it); tv.host.play(c.id) } else tv.open(c)
   }
 
   override fun hold() { list.getOrNull(focus)?.let { c -> tv.host.hold(c.id, false) } }

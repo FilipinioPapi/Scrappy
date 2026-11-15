@@ -22,6 +22,8 @@ class Genres(tv: TvView) : Screen(tv) {
   private class Tile(val id: String, val name: String, val count: Int, val c: IntArray, val sym: String) {
     var fans: List<String>? = null
     var nameL: StaticLayout? = null
+    /** The finished tile, drawn once: scrolling just copies it (gradients, clip, shadows and big text cost a lot per frame on a TV chip). */
+    var bmp: android.graphics.Bitmap? = null
   }
 
   private var libs: List<JSONObject> = emptyList()
@@ -73,6 +75,14 @@ class Genres(tv: TvView) : Screen(tv) {
     val lib = libs.firstOrNull { j -> j.optString("Id") == cur } ?: return
     val my = ++gen
     loadedLib = cur
+    // Last visit's list shows straight away (Emby's genre counts can take seconds); the fresh one replaces it.
+    if (tiles.isEmpty()) fanArt.optJSONArray("list/$cur")?.let { a ->
+      tiles = List(a.length()) { k -> a.optJSONObject(k) }.filterNotNull().map { g ->
+        val look = look(g.optString("n"))
+        Tile(g.optString("id"), g.optString("n"), g.optInt("c"), look.first, look.second).also { t -> t.fans = fanArt.optJSONArray("$cur/${t.id}")?.let { f -> List(f.length()) { k -> f.optString(k) } } }
+      }
+      tv.invalidate()
+    }
     Net.load("/Genres?ParentId=$cur&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${types(lib)}&Fields=ItemCounts") { v, _ ->
       if (my != gen) return@load
       val gs = Net.items(v).filter { g -> val n = cnt(g); n == 0 || n >= 5 }
@@ -82,6 +92,7 @@ class Genres(tv: TvView) : Screen(tv) {
         Tile(g.optString("Id"), g.optString("Name"), cnt(g), look.first, look.second).also { t -> t.fans = old[t.id]?.fans ?: fanArt.optJSONArray("$cur/${t.id}")?.let { a -> List(a.length()) { k -> a.optString(k) } } }
       }
       empty = if (tiles.isEmpty()) "No genres in this library yet." else ""
+      fanArt.put("list/$cur", JSONArray(tiles.map { t -> JSONObject().put("id", t.id).put("n", t.name).put("c", t.count) }))
       if (focus >= tiles.size) focus = tiles.size - 1
       fans()
       tv.invalidate()
@@ -95,15 +106,17 @@ class Genres(tv: TvView) : Screen(tv) {
     val lib = libs.firstOrNull { j -> j.optString("Id") == cur } ?: return
     val my = gen
     val want = tiles.filter { t -> t.fans == null }
-    if (want.isEmpty()) return
-    Net.bg {
-      for (t in want) {
+    if (want.isEmpty()) { val txt = fanArt.toString(); Net.bg { try { fanFile?.writeText(txt) } catch (_: Throwable) {} }; return }
+    // Two at a time (both network threads), and saved once both are done.
+    var left = 2
+    for (part in listOf(want.filterIndexed { i, _ -> i % 2 == 0 }, want.filterIndexed { i, _ -> i % 2 == 1 })) Net.bg {
+      for (t in part) {
         if (my != gen) return@bg
         val d = try { Net.getNow("/Users/{userId}/Items?ParentId=$cur&GenreIds=${t.id}&Recursive=true&IncludeItemTypes=${types(lib)}&SortBy=Random&Limit=2&ImageTypes=Primary") } catch (_: Throwable) { continue }
         val urls = Net.items(d).mapNotNull { i -> i.optJSONObject("ImageTags")?.optString("Primary")?.takeIf { s -> s.isNotEmpty() }?.let { tag -> Net.image(i.optString("Id"), "Primary", tag, 200) } }
-        Net.main.post { t.fans = urls; fanArt.put("$cur/${t.id}", JSONArray(urls)); tv.invalidate() }
+        Net.main.post { t.fans = urls; t.bmp?.recycle(); t.bmp = null; fanArt.put("$cur/${t.id}", JSONArray(urls)); tv.invalidate() }
       }
-      Net.main.post { try { fanFile?.writeText(fanArt.toString()) } catch (_: Throwable) {} }
+      Net.main.post { if (--left == 0) try { fanFile?.writeText(fanArt.toString()) } catch (_: Throwable) {} }
     }
   }
 
@@ -218,14 +231,33 @@ class Genres(tv: TvView) : Screen(tv) {
       Ui.line(c, libs[i].optString("Name"), x + 26.67f, 95f, 61f, tabP)
     }
     if (empty.isNotEmpty()) Ui.line(c, empty, (117f + 1920f) / 2f, 260f, 29f, emptyP)
+    var baked = 0
     for ((i, t) in tiles.withIndex()) {
       val x = 149f + (i % 4) * PX; val y = rowTop(i)
+      // Far off screen: let the finished picture go (keeps memory low on small boxes).
+      if (y - sy.pos > 2200f || y + TH - sy.pos < -1200f) { t.bmp?.recycle(); t.bmp = null; continue }
       if (y - sy.pos > 1080f || y + TH - sy.pos < 0f) continue
-      anim = drawTile(c, t, x, y, now) || anim
+      val b = t.bmp
+      if (b != null) { r.set(x, y, x + TW, y + TH); c.drawBitmap(b, null, r, bmpP) }
+      else {
+        val moving = drawTile(c, t, x, y, now)
+        anim = moving || anim
+        if (!moving && t.fans != null && baked < 2) { bake(t); baked++ }
+      }
       if (i == focus) { r.set(x - 5.33f, y - 5.33f, x + TW + 5.33f, y + TH + 5.33f); c.drawRoundRect(r, 32f, 32f, outline) }
     }
     c.restore()
     return anim
+  }
+
+  private val bmpP = Paint(Paint.FILTER_BITMAP_FLAG)
+  private fun bake(t: Tile) {
+    val k = (tv.width / Ui.W).takeIf { it > 0f } ?: 1f
+    val b = try { android.graphics.Bitmap.createBitmap((TW * k).toInt() + 1, (TH * k).toInt() + 1, android.graphics.Bitmap.Config.RGB_565) } catch (_: Throwable) { return }
+    val bc = Canvas(b)
+    bc.scale(k, k); bc.drawColor(Ui.BG)
+    drawTile(bc, t, 0f, 0f, Long.MAX_VALUE / 2)
+    t.bmp = b
   }
 
   private fun drawTile(c: Canvas, t: Tile, x: Float, y: Float, now: Long): Boolean {

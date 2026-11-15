@@ -520,6 +520,9 @@ class PreviewTest {
     fun frames(ms: Long) { val end = System.currentTimeMillis() + ms; while (System.currentTimeMillis() < end) { ShadowSystemClock.advanceBy(Duration.ofMillis(16)); shadowOf(Looper.getMainLooper()).idle(); c.drawRect(0f, 0f, 1920f, 1080f, bg); ui.draw(c); Thread.sleep(4) } }
     fun snap(name: String, ms: Long = 500) { frames(ms); c.drawRect(0f, 0f, 1920f, 1080f, bg); ui.draw(c); File(out, "player-$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
     fun key(code: Int, n: Int = 1) { repeat(n) { val t = SystemClock.uptimeMillis(); ui.onKey(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0)); ui.onKey(KeyEvent(t, t + 30, KeyEvent.ACTION_UP, code, 0)); frames(120) } }
+    ui.state(JSONObject(base.toString()).put("skip", "intro")); snap("skip-idle")
+    key(KeyEvent.KEYCODE_DPAD_UP); key(KeyEvent.KEYCODE_DPAD_UP); key(KeyEvent.KEYCODE_DPAD_UP); snap("skip-bar")
+    key(KeyEvent.KEYCODE_BACK); ui.state(base); frames(400)
     key(KeyEvent.KEYCODE_DPAD_UP); snap("bar")
     key(KeyEvent.KEYCODE_DPAD_RIGHT, 2); snap("next")
     key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("subs")

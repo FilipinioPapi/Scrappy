@@ -910,7 +910,7 @@ html.native-app:not(.intro-ready), html.native-app:not(.intro-ready) body { back
 html.native-app:not(.intro-ready) #intro { opacity: .01; will-change: opacity; }
 html.native-app.intro-ready #intro:not(.out) { opacity: 1; transition: none; }
 /* Scrappy Native draws the player controls, menus, episodes and paused screen itself. */
-html.native-player #player .p-top, html.native-player #player .p-bottom, html.native-player #player .p-pauseinfo, html.native-player #player .p-eps { display: none !important; }
+html.native-player #player .p-top, html.native-player #player .p-bottom, html.native-player #player .p-skip, html.native-player #player .p-pauseinfo, html.native-player #player .p-eps { display: none !important; }
 html.native-app:not(.intro-ready) .intro-bar b { animation-play-state: paused; }
 @keyframes introTvBar { to { transform: scaleX(1); } }
 
