@@ -234,7 +234,7 @@ class PreviewTest {
     override fun playSeriesFrom(id: String, fromStart: Boolean) {}
     override fun toast(msg: String, error: Boolean) {}
     override fun changed() {}
-    override fun local(key: String, done: (String?) -> Unit) { done(null) }
+    override fun local(key: String, done: (String?) -> Unit) { done(if (key == "tvSearchRecent" && recentsOn) "[\"dune\",\"the amateur\",\"breaking bad\",\"one pace\"]" else null) }
     override fun setLocal(key: String, value: String) {}
     override fun replace(hash: String, go: Boolean) {}
     override fun reroute() {}
@@ -252,6 +252,7 @@ class PreviewTest {
     override fun keyboard(text: String, change: (String) -> Unit, done: (String?) -> Unit) { calls.add("keyboard"); change("gun"); done("gun") }
   }
 
+  private var recentsOn = false
   private lateinit var tv: TvView
 
   private fun pump(ms: Long) {
@@ -440,6 +441,14 @@ class PreviewTest {
     File(out, "pages-calls.txt").writeText(host.calls.joinToString("\n") + "\n---\n" + synchronized(log) { log.joinToString("\n") })
   }
 
+  @Test fun searchClear() {
+    recentsOn = true
+    start()
+    tv.route("#/search"); pump(1500)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT, 4); shot("search-clear", 800)
+    press(KeyEvent.KEYCODE_DPAD_CENTER); shot("search-cleared", 800)
+  }
+
   @Test fun search() {
     start()
     tv.route("#/search"); pump(1500); shot("search")
@@ -515,6 +524,9 @@ class PreviewTest {
     key(KeyEvent.KEYCODE_DPAD_RIGHT, 2); snap("next")
     key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("subs")
     key(KeyEvent.KEYCODE_DPAD_DOWN, 5); snap("subs-other")
+    key(KeyEvent.KEYCODE_DPAD_DOWN, 2); snap("subs-timing")
+    key(KeyEvent.KEYCODE_DPAD_LEFT, 4); snap("subs-timing-earlier")
+    key(KeyEvent.KEYCODE_DPAD_CENTER); key(KeyEvent.KEYCODE_DPAD_UP, 2)
     key(KeyEvent.KEYCODE_DPAD_CENTER); snap("other")
     // Download subtitles
     fun dl(state: String, busy: Int = -1, got: Int = -1, lang: String = "eng") {

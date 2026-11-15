@@ -215,7 +215,8 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
           "up" -> popIdx = max(0, popIdx - 1)
           "down" -> popIdx = min(rows.size - 1, popIdx + 1)
           "ok" -> choose(popIdx)
-          "right" -> if (rows.getOrNull(popIdx)?.kind == "other") choose(popIdx)
+          "right" -> if (rows.getOrNull(popIdx)?.kind == "other") choose(popIdx) else if (rows.getOrNull(popIdx)?.kind == "delay") nudge(0.25)
+          "left" -> if (rows.getOrNull(popIdx)?.kind == "delay") nudge(-0.25)
         }
       }
     }
@@ -242,6 +243,20 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
   private val SPEEDS = listOf(0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
   private fun speedLabel(v: Double) = (if (v == Math.floor(v)) v.toInt().toString() else v.toString().trimEnd('0')) + "×"
 
+  /** Subtitle timing (approved mock "Subtitle timing"): + = later, quarter-second steps, -10..10 s. */
+  private fun delayLabel(d: Double): String {
+    if (Math.abs(d) < 0.01) return "On time"
+    val v = String.format(java.util.Locale.US, "%.2f", Math.abs(d)).trimEnd('0').trimEnd('.')
+    return "$v s " + if (d > 0) "later" else "earlier"
+  }
+  private fun nudge(step: Double) {
+    val cur = snap.optDouble("subDelay", 0.0)
+    val d = if (step == 0.0) 0.0 else (cur + step).coerceIn(-10.0, 10.0)
+    snap.put("subDelay", d) // shows straight away; the page confirms on its next report
+    host.act("subdelay", String.format(java.util.Locale.US, "%.2f", d))
+    rows = rowsFor()
+  }
+
   private fun rowsFor(): List<Row> {
     val out = ArrayList<Row>()
     when (pop) {
@@ -259,6 +274,7 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
             out.add(Row("Other languages", value = "$other  ›", kind = "other", on = onOther))
           }
           if (snap.optBoolean("canDl")) out.add(Row("Download subtitles", kind = "dl", add = true))
+          out.add(Row("Timing", value = "‹  " + delayLabel(snap.optDouble("subDelay", 0.0)) + "  ›", kind = "delay"))
         }
       }
       "audio" -> {
@@ -293,6 +309,7 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
       "sub" -> host.act("sub", r.arg)
       "other" -> { subLevel = 1; rows = rowsFor(); popIdx = rows.indexOfFirst { it.on }.coerceAtLeast(0); return }
       "dl" -> { openDl(); return }
+      "delay" -> { nudge(0.0); return }
       "audio" -> host.act("audio", r.arg)
       "speed" -> host.act("speed", r.arg)
       "size", "shape", "quality" -> host.act(r.kind)
@@ -701,7 +718,8 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
     val win = 8
     val start = max(0, min(rows.size - win, popIdx - 3))
     val shown = rows.subList(start, min(rows.size, start + win))
-    val foot = if (pop == "sub" && subLevel == 0) {
+    val foot = if (pop == "sub" && subLevel == 0 && rows.getOrNull(popIdx)?.kind == "delay") "Left shows subtitles earlier, Right later. OK puts them back on time. Kept for this video only."
+    else if (pop == "sub" && subLevel == 0) {
       val other = rows.firstOrNull { it.kind == "other" }
       if (other != null) "English and Spanish first. Other languages has the rest." else if (rows.count { it.kind == "sub" } <= 1) "This video has no subtitles of its own. Download subtitles finds some." else ""
     } else ""
@@ -731,6 +749,11 @@ class PlayerUi(ctx: Context, private val host: PlayerHost) : View(ctx) {
       val col = if (foc) 0xFF1A0F10.toInt() else Ui.TEXT
       var x = left + 30f
       if (row.on) { iconLine.color = Ui.alpha(Ui.RED, a); iconLine.strokeWidth = 2.6f; Icons.draw(c, "check", x, y + 19f, 24f, iconLine) }
+      if (row.kind == "delay") {
+        iconLine.color = Ui.alpha(if (foc) col else Ui.RED, a); iconLine.strokeWidth = 2f
+        val cx = x + 12f; val cy = y + 32f
+        c.drawCircle(cx, cy, 8f, iconLine); c.drawLine(cx, cy - 4f, cx, cy, iconLine); c.drawLine(cx, cy, cx + 2.5f, cy + 2f, iconLine); c.drawLine(cx - 2.5f, cy - 10.5f, cx + 2.5f, cy - 10.5f, iconLine)
+      }
       if (row.add) { iconLine.color = Ui.alpha(if (foc) col else Ui.RED, a); iconLine.strokeWidth = 2.2f; Icons.drawPath(c, PATH_PLUS, x, y + 19f, 24f, iconLine) }
       x += 36f
       pRow.color = Ui.alpha(col, a)

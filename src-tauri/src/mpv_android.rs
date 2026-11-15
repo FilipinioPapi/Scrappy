@@ -141,6 +141,7 @@ impl Player {
             "sid" => control("track", json!({ "type": "sub", "id": value })),
             "aid" => control("track", json!({ "type": "audio", "id": value })),
             "sub-scale" => control("subScale", json!({ "value": value.parse::<f64>().unwrap_or(1.0) })),
+            "sub-delay" => control("subDelay", json!({ "value": value.parse::<f64>().unwrap_or(0.0) })),
             "sub-pos" => control("subPos", json!({ "value": value.parse::<f64>().unwrap_or(100.0) })),
             "panscan" | "keepaspect" => {
                 let a = {

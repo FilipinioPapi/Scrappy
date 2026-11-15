@@ -958,6 +958,7 @@ listen('player-loaded', ({ payload }) => {
   applyPrefs();
   setProp('volume', S.volume);
   setProp('sub-scale', S.subScale);
+  setProp('sub-delay', subDelayOf(payload?.itemId || S.item?.Id));
   liftSubs(!el.classList.contains('idle'), true);
   applyAspect();
   // External subtitles are added just after loading; give them a moment.
@@ -1367,7 +1368,7 @@ function npSnap() {
     t1: it ? (isEp ? it.SeriesName || it.Name : it.Name) : 'Loading…',
     t2: it ? (isEp ? [epCode(it), it.Name].filter(Boolean).join(' · ') : [it.ProductionYear, it.OfficialRating].filter(Boolean).join(' · ')) : '',
     ov: it?.Overview || '', dur: dur(), next: S.next ? [S.next.IndexNumber != null ? `${S.next.IndexNumber}.` : '', S.next.Name || ''].filter(Boolean).join(' ') : '',
-    subs: npSubs(), subOn: S.sid != null, audio: npAudio(), speed: S.speed,
+    subs: npSubs(), subOn: S.sid != null, audio: npAudio(), speed: S.speed, subDelay: subDelayOf(it?.Id),
     size: lab(SUB_SIZES, S.subScale), shape: lab(ASPECTS, S.aspect), quality: lab(QUALITIES, S.quality),
     skip: skipMode || '', back: skipBack(), fwd: skipFwd(), canDl: canDownloadSubs !== false && !!it, dl: npDlSnap(),
     card: !!($('.p-upnext.show') || S.stillOpen || S.settingsOpen), details: !!el.querySelector('.p-details'),
@@ -1427,6 +1428,18 @@ function npPush() {
 }
 if (NP) setInterval(() => { if (S.open) checkSubRights(); if (S.open || npLast.includes('"open":true')) npPush(); }, 300);
 /** What the native controls ask for. */
+// Subtitle timing (approved mock "Subtitle timing"): seconds, + = later. Kept per video, last 60 videos.
+const subDelays = () => { try { return JSON.parse(localStorage.getItem('subDelays') || '{}'); } catch { return {}; } };
+function subDelayOf(id) { return (id && Number(subDelays()[id])) || 0; }
+function setSubDelay(id, d) {
+  d = Math.max(-10, Math.min(10, Math.round(d * 4) / 4));
+  setProp('sub-delay', d);
+  if (!id) return;
+  const m = subDelays(); delete m[id]; if (d) m[id] = d;
+  const keys = Object.keys(m); keys.slice(0, Math.max(0, keys.length - 60)).forEach((k) => delete m[k]);
+  try { localStorage.setItem('subDelays', JSON.stringify(m)); } catch {}
+}
+
 export function npAct(a, v) {
   const find = (type) => S.tracks.find((t) => t.type === type && String(t.id) === String(v));
   switch (a) {
@@ -1449,6 +1462,7 @@ export function npAct(a, v) {
     case 'dlget': npDlGet(Number(v)); break;
     case 'skip': doSkip(); break;
     case 'exit': exitPlayer(); break;
+    case 'subdelay': setSubDelay(S.item?.Id, Number(v) || 0); break;
     case 'subpos': setProp('sub-pos', Math.round(Number(v) || 100)); break;
     case 'ep': if (v && v !== S.item?.Id) { S.autoChain = 0; startPlayback(v); } break;
   }

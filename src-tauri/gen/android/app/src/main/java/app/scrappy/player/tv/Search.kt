@@ -135,6 +135,10 @@ class Search(tv: TvView) : Screen(tv) {
           out.add(Spot(x, cy, w, 64f, -1, k)); chipW.add(w)
           x += w + 16f
         }
+        // Clear (approved mock "Clear recent searches"): last in the list, k = -1.
+        val cw = 29.33f * 2 + 34f + chipP.measureText("Clear")
+        if (x + cw > LEFT + WIDTH && x > LEFT) { x = LEFT; cy += 64f + 16f }
+        out.add(Spot(x, cy, cw, 64f, -1, -1)); chipW.add(cw)
         y = cy + 64f
       }
       spots = out; contentBottom = y
@@ -215,6 +219,7 @@ class Search(tv: TvView) : Screen(tv) {
     if (focus == -2) { text = ""; focus = -1; run(""); return }
     if (focus < 0) { openKeyboard(); return }
     val s = spots.getOrNull(focus) ?: return
+    if (s.sec < 0 && s.k < 0) { recents = emptyList(); tv.host.setLocal(RECENT, "[]"); focus = -1; layout(); aim(); tv.invalidate(); return }
     if (s.sec < 0) { val q = recents.getOrNull(s.k) ?: return; text = q; run(q); return }
     val sec = secs.getOrNull(s.sec) ?: return
     when (sec.kind) {
@@ -267,6 +272,9 @@ class Search(tv: TvView) : Screen(tv) {
   private val chipLine = Ui.stroke(0xFF33221F.toInt(), 1.33f)
   private val chipP = Ui.text(Ui.f600, 25.33f, Ui.WHITE)
   private val outline = Ui.stroke(Ui.WHITE, 4f)
+  private val clearBg = Ui.fill(Ui.RED)
+  private val clearLine = Ui.stroke(0xFF5A3537.toInt(), 1.33f)
+  private val clearP = Ui.text(Ui.f600, 25.33f, Ui.WHITE)
   private val emptyP = Ui.text(Ui.f400, 20f, Ui.MUTED).apply { textAlign = Paint.Align.CENTER }
   private val failBg = Ui.fill(0x14FFB547)
   private val failLine = Ui.stroke(0x59FFB547, 1.33f)
@@ -313,6 +321,19 @@ class Search(tv: TvView) : Screen(tv) {
       recents.isNotEmpty() && secTop.isNotEmpty() -> {
         Ui.line(c, "Recent searches", LEFT, TOP, 39f, h2)
         for ((i, s) in spots.withIndex()) {
+          if (s.k < 0) {
+            val f = i == focus
+            r.set(s.x, s.y, s.x + s.w, s.y + s.h)
+            if (f) c.drawRoundRect(r, 32f, 32f, clearBg)
+            r.inset(0.67f, 0.67f); clearLine.color = if (f) Ui.RED else 0xFF5A3537.toInt(); c.drawRoundRect(r, 31.33f, 31.33f, clearLine)
+            val col = if (f) Ui.WHITE else 0xFFE7A6A8.toInt()
+            clearX.color = col; clearP.color = col
+            val ix = s.x + 29.33f + 12f; val iy = s.y + 32f
+            c.drawLine(ix - 9f, iy - 9f, ix + 9f, iy + 9f, clearX); c.drawLine(ix + 9f, iy - 9f, ix - 9f, iy + 9f, clearX)
+            Ui.line(c, "Clear", s.x + 29.33f + 34f, s.y, s.h, clearP)
+            if (f) { r.set(s.x - 5.33f, s.y - 5.33f, s.x + s.w + 5.33f, s.y + s.h + 5.33f); c.drawRoundRect(r, 37.33f, 37.33f, outline) }
+            continue
+          }
           val q = recents.getOrNull(s.k) ?: continue
           r.set(s.x, s.y, s.x + s.w, s.y + s.h)
           c.drawRoundRect(r, 32f, 32f, chipBg)

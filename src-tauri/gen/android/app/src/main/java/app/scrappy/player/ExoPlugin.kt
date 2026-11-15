@@ -219,6 +219,16 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     val plain = plainSound || !passthrough
     builtPlain = plain
     val renderers = object : DefaultRenderersFactory(activity) {
+      // Plain subtitles (SRT, VTT, PGS...) are drawn for the film's time minus the chosen delay.
+      override fun buildTextRenderers(context: android.content.Context, output: androidx.media3.exoplayer.text.TextOutput, outputLooper: android.os.Looper, extensionRendererMode: Int, out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>) {
+        val mine = java.util.ArrayList<androidx.media3.exoplayer.Renderer>()
+        super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, mine)
+        mine.forEach { r ->
+          out.add(object : androidx.media3.exoplayer.ForwardingRenderer(r) {
+            override fun render(positionUs: Long, elapsedRealtimeUs: Long) = super.render(positionUs - subDelayUs, elapsedRealtimeUs)
+          })
+        }
+      }
       override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink? {
         if (!plain) return super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
         @Suppress("DEPRECATION")
@@ -413,6 +423,10 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
           p.seekTo(target.coerceAtLeast(0))
           wake(p)
         }
+        "subDelay" -> {
+          subDelayUs = (a.optDouble("value", 0.0) * 1_000_000).toLong()
+          PlayerLog.add("subtitle timing: ${a.optDouble("value", 0.0)} s")
+        }
         "speed" -> p.playbackParameters = PlaybackParameters(a.optDouble("value", 1.0).toFloat())
         "volume" -> { volume = a.optDouble("value", 100.0).toFloat(); p.volume = if (muted) 0f else (volume / 100f).coerceIn(0f, 1f) }
         "mute" -> { muted = a.optBoolean("on", false); p.volume = if (muted) 0f else (volume / 100f).coerceIn(0f, 1f) }
@@ -523,6 +537,8 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   private var addedSubs = 0
+  /** Subtitle timing (approved mock "Subtitle timing"), in microseconds: + shows the words later. */
+  @Volatile private var subDelayUs = 0L
   /** A just-added subtitle file to turn on once the player lists it. */
   private var pendingSub: String? = null
 
