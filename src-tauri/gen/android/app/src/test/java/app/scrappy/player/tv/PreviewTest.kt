@@ -157,6 +157,8 @@ class PreviewTest {
     override fun hold(id: String, inResume: Boolean) { calls.add("hold $id"); tv.menu.hold(id, inResume) }
     override fun holdAct(id: String, act: String) { calls.add("holdAct $id $act") }
     override fun playQueue(ids: List<String>) { calls.add("playQueue $ids") }
+    override fun whoAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) { calls.add("whoAct $act $args"); done(JSONObject().put("ok", act != "switch" || args.optString("pin") == "1234")) }
+    override fun whoClosed() { calls.add("whoClosed") }
     override fun editHome(rowsJson: String) { calls.add("editHome") }
     override fun who() { calls.add("who") }
     override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title"); tv.menu.pick(title, options, cur) { i -> calls.add("picked $title $i"); done(i) } }
@@ -269,6 +271,21 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_BACK)
     tv.route("#/item/Series50"); pump(3000); shot("item-show2")
     File(out, "pages2-calls.txt").writeText(host.calls.joinToString("\n"))
+  }
+
+  @Test fun who() {
+    start()
+    tv.route("#/home"); pump(2500)
+    val ppl = org.json.JSONArray().put(JSONObject().put("id", "a").put("name", "Jayden")).put(JSONObject().put("id", "b").put("name", "Sam").put("hasPin", true)).put(JSONObject().put("id", "c").put("name", "Kids"))
+    tv.who.show(JSONObject().put("active", "a").put("people", ppl)); shot("who-full")
+    press(KeyEvent.KEYCODE_DPAD_RIGHT); shot("who-full-r")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); shot("who-pin")
+    press(KeyEvent.KEYCODE_9); press(KeyEvent.KEYCODE_9); shot("who-pin-2")
+    press(KeyEvent.KEYCODE_9); press(KeyEvent.KEYCODE_9); pump(400); shot("who-pin-wrong")
+    press(KeyEvent.KEYCODE_BACK); press(KeyEvent.KEYCODE_BACK)
+    tv.who.show(JSONObject().put("active", "a").put("side", true).put("people", ppl)); shot("who-side")
+    press(KeyEvent.KEYCODE_DPAD_DOWN, 4); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("who-manage")
+    File(out, "who-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun pages() {

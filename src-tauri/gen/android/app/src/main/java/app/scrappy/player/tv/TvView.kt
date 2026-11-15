@@ -44,6 +44,10 @@ interface Host {
   fun holdAct(id: String, act: String) {}
   /** Play these films one after another (a collection's Play all / Shuffle). */
   fun playQueue(ids: List<String>) {}
+  /** Who's watching: ask the web side to switch / add / change a PIN / remove / set "ask when it opens" (answer: {ok, err, data, reload}). */
+  fun whoAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {}
+  /** Who's watching closed. */
+  fun whoClosed() {}
 }
 
 /** One glide per scroller, the same feel as the web screens (tv.js glideTo), in 1080p units. */
@@ -94,6 +98,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   val rail = Rail(this)
   /** The hold-OK quick menu and the pick lists, drawn over the screen. */
   val menu = Menu(this)
+  val who = Who(this)
   private var last = 0L
   /** Holding a direction or tapping fast: pictures appear at once, no fades (tv-fast on the web). */
   var fast = false; private set
@@ -197,8 +202,9 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     if (fast && now - lastArrow > 420) fast = false
     c.save()
     c.scale(width / Ui.W, height / Ui.H)
-    var anim = screen?.draw(c, now, dt) ?: false
-    anim = rail.draw(c, now, dt) || anim
+    var anim = screen?.draw(c, now, dt) ?: false.also { c.drawColor(Ui.BG) }
+    if (screen != null) anim = rail.draw(c, now, dt) || anim
+    anim = who.draw(c, now) || anim
     anim = menu.draw(c, now) || anim
     c.restore()
     if (anim || fast) postInvalidateOnAnimation() else last = 0L
@@ -210,8 +216,9 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
 
   /** Keys from the activity while a native screen is showing and nothing from the web is on top. */
   fun onKey(e: KeyEvent): Boolean {
-    val s = screen ?: return false
     if (menu.open) return menu.key(e)
+    if (who.open) return who.key(e)
+    val s = screen ?: return false
     val code = e.keyCode
     when (code) {
       KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {

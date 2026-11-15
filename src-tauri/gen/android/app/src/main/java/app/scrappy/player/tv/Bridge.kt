@@ -77,19 +77,22 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   fun playerKeys() = playing && player.open && !player.card
 
   /** Keys while a native screen is up and nothing from the web is on top. */
-  fun takesKeys() = active && !webKeys && !playing && box?.hasFocus() != true
+  fun takesKeys() = ((active && !webKeys && !playing) || modal) && box?.hasFocus() != true
+
+  /** Who's watching is up (drawn natively over everything, even before the first native screen). */
+  private var modal = false
 
   private var hadNativeKeys = false
   private var webHidden = false
 
   private fun apply() {
-    val nativeKeys = active && !webKeys && !playing
-    view.visibility = if (active && !playing) View.VISIBLE else View.GONE
+    val nativeKeys = (active && !webKeys && !playing) || modal
+    view.visibility = if ((active && !playing) || modal) View.VISIBLE else View.GONE
     // The remote's focus moves for real between the two views. Native first, so the web view never
     // hides while holding the focus.
     if (nativeKeys && !view.isFocused) view.requestFocus()
     // With nothing on top, the web view is put away entirely, so it costs nothing while you browse.
-    val webShown = !active || webVis || playing
+    val webShown = (!active || webVis || playing) && !modal
     val wasHidden = webHidden
     webHidden = !webShown
     web.visibility = if (webShown) View.VISIBLE else View.INVISIBLE
@@ -142,6 +145,26 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   }
 
   @JavascriptInterface fun stale() { act.runOnUiThread { view.stale() } }
+
+  /** Who's watching, drawn natively: the page sends the people on this TV and which screen to show. */
+  @JavascriptInterface fun who(json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { return }
+    act.runOnUiThread { attach(); modal = true; view.who.show(o); apply() }
+  }
+  private val whoCalls = HashMap<Int, (JSONObject?) -> Unit>()
+  private var whoN = 0
+  @JavascriptInterface fun whoReply(seq: Int, json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { null }
+    act.runOnUiThread { whoCalls.remove(seq)?.invoke(o) }
+  }
+  override fun whoAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
+    val n = ++whoN; whoCalls[n] = done
+    eval("window.__tvNative && window.__tvNative.whoAct($n, ${js(act)}, $args)")
+  }
+  override fun whoClosed() {
+    modal = false; apply()
+    eval("window.__tvNative && window.__tvNative.whoClosed()")
+  }
 
 
   // ---------- from the native screens ----------

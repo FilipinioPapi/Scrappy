@@ -117,11 +117,39 @@ async function manage(data, startAt = -1) {
   } catch (e) { await tvPick(String(e), ['OK']); }
 }
 
+// Scrappy Native draws these screens itself (approved mock "Who's watching"); the page keeps the
+// people list and does the switching, and answers what the native screens ask for.
+const NW = (() => { try { return !!window.ScrappyNative && typeof window.ScrappyNative.who === 'function' && window.ScrappyNative.isOn(); } catch { return false; } })();
+const nw = { closed: null };
+const picOf = (p) => (p.emby && p.embyServer && p.embyUserId ? `${p.embyServer}/Users/${encodeURIComponent(p.embyUserId)}/Images/Primary?maxWidth=240&quality=90` : '');
+async function payload(extra = {}) {
+  const data = await people();
+  return { ...extra, ask: get(ASK) !== '0', active: data.active || '', people: data.people.map((p) => ({ id: p.id, name: p.name || '?', hasPin: !!p.hasPin, pic: picOf(p) })) };
+}
+async function nativeWho(side, must, onShow) {
+  window.ScrappyNative.who(JSON.stringify(await payload({ side, must })));
+  if (onShow) onShow();
+  await new Promise((done) => { nw.closed = done; });
+}
+/** A question from the native screens: switch, add, pin, remove, ask, data. */
+export async function nativeAct(act, a = {}) {
+  try {
+    if (act === 'switch') { await invoke('profile_switch', { id: a.id, pin: a.pin || '' }); setTimeout(reload, 60); return { ok: true }; }
+    if (act === 'add') { setTimeout(addPerson, 60); return { ok: true }; }
+    if (act === 'pin') await invoke('profile_pin', { id: a.id, current: a.current || '', pin: a.pin || '' });
+    else if (act === 'remove') { await invoke('profile_remove', { id: a.id, pin: a.pin || '' }); if (a.active) { setTimeout(reload, 60); return { ok: true, reload: true }; } }
+    else if (act === 'ask') set(ASK, a.on ? '1' : '0');
+    return { ok: true, data: await payload() };
+  } catch (e) { return { ok: false, err: String(e?.message || e) }; }
+}
+export function nativeClosed() { const f = nw.closed; nw.closed = null; if (f) f(); }
+
 let open = false;
 /** Show the list. `side`: the panel from the side bar; otherwise the full faces screen. */
 export async function who({ side = false, must = false, onShow = null } = {}) {
   if (open) return; open = true;
   try {
+    if (NW) { await nativeWho(side, must, onShow); return; }
     for (;;) {
       const data = await people();
       data.people.forEach((p, i) => { p._i = i; });
