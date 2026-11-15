@@ -6,6 +6,8 @@ mod requests;
 mod servers;
 mod updates;
 mod appset;
+#[cfg(windows)]
+mod thumbbar;
 
 use emby::Config;
 use serde_json::{json, Value};
@@ -937,6 +939,19 @@ fn fit_work_area(w: &tauri::Window) {
     let _ = w.set_size(tauri::PhysicalSize::new(wa.size.width, wa.size.height));
 }
 
+/// The page says what's playing, for the taskbar preview buttons.
+#[tauri::command]
+fn thumb_state(app: AppHandle, active: bool, playing: bool, book: bool) {
+    #[cfg(windows)]
+    {
+        let _ = app.run_on_main_thread(move || thumbbar::set_state(active, playing, book));
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, active, playing, book);
+    }
+}
+
 #[tauri::command]
 fn is_fullscreen(app: AppHandle) -> bool {
     app.get_webview_window("main").and_then(|w| w.is_fullscreen().ok()).unwrap_or(false)
@@ -1356,6 +1371,14 @@ pub fn run() {
         })
         .setup(|app| {
             let _ = emby::APP_VERSION.set(app.package_info().version.to_string());
+            // Previous / Play-Pause / Next under the taskbar preview (Windows).
+            #[cfg(windows)]
+            if let Some(hwnd) = main_hwnd(app.handle()) {
+                let handle = app.handle().clone();
+                thumbbar::init(hwnd as isize, Box::new(move |act| {
+                    let _ = handle.emit_to("main", "thumb", act);
+                }));
+            }
             let cfg_dir = app.path().app_config_dir()?;
             let cache_dir = app.path().app_cache_dir()?;
             let cfg_path = cfg_dir.join("config.json");
@@ -1518,6 +1541,7 @@ pub fn run() {
             stop_playback,
             set_fullscreen,
             is_fullscreen,
+            thumb_state,
             clear_cache,
             appset::set_close_to_tray,
             appset::autostart_get,
