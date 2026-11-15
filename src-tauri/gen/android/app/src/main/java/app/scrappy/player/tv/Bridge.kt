@@ -368,7 +368,39 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   override fun play(id: String) = eval("window.__tvNative && window.__tvNative.play(${js(id)})")
   override fun playSeries(id: String) = eval("window.__tvNative && window.__tvNative.playSeries(${js(id)})")
   override fun hold(id: String, inResume: Boolean) = view.menu.hold(id, inResume)
-  override fun holdAct(id: String, act: String) = eval("window.__tvNative && window.__tvNative.holdAct(${js(id)}, ${js(act)})")
+  /** The quick menu's favourite / watched / leave Continue Watching, done by the app itself; every screen then hears about it. */
+  override fun holdAct(id: String, act: String) = Net.bg {
+    val said = try {
+      val at = "/Users/{userId}/Items/" + Card.enc(id)
+      val it = Net.getNow(at) as JSONObject
+      val name = it.optString("Name"); val ud = it.optJSONObject("UserData") ?: JSONObject()
+      when (act) {
+        "fav" -> {
+          val on = !ud.optBoolean("IsFavorite")
+          Net.send(if (on) "POST" else "DELETE", "/Users/{userId}/FavoriteItems/" + Card.enc(id), null)
+          if (on) "Added $name to Favorites" else "Removed $name from Favorites"
+        }
+        "played" -> {
+          val on = !ud.optBoolean("Played")
+          Net.send(if (on) "POST" else "DELETE", "/Users/{userId}/PlayedItems/" + Card.enc(id), null)
+          // Marking watched also clears the saved spot (some servers keep it).
+          if (on && ud.optLong("PlaybackPositionTicks") > 0 && it.optString("Type") in Card.PLAYABLE) try {
+            val u = (Net.getNow(at) as? JSONObject)?.optJSONObject("UserData")
+            if (u != null && u.optLong("PlaybackPositionTicks") > 0) Net.send("POST", "$at/UserData", JSONObject().put("PlaybackPositionTicks", 0).put("Played", true).put("IsFavorite", u.optBoolean("IsFavorite")).toString())
+          } catch (_: Throwable) {}
+          if (on) "Marked $name as watched" else "Marked $name as unwatched"
+        }
+        "unresume" -> {
+          try { Net.send("POST", "$at/HideFromResume?Hide=true", null) }
+          // Older servers: clear the saved position instead.
+          catch (_: Throwable) { Net.send("POST", "$at/UserData", JSONObject().put("PlaybackPositionTicks", 0).toString()) }
+          "Removed $name from Continue Watching"
+        }
+        else -> null
+      }
+    } catch (e: Throwable) { Net.main.post { toast("Couldn't reach the server. Try again.", true) }; null }
+    if (said != null) Net.main.post { toast(said, false); changed() }
+  }
   override fun playQueue(ids: List<String>) = eval("window.__tvNative && window.__tvNative.playQueue(${org.json.JSONArray(ids)})")
   override fun editHome(rowsJson: String) = eval("window.__tvNative && window.__tvNative.editHome($rowsJson)")
   override fun saveHomeRows(json: String) = eval("window.__tvNative && window.__tvNative.homeRows(${js(json)})")
