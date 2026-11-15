@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 44 · Nov 15, 10:09 AM
+**General**
+- Fixed: scrolling past the top with a trackpad no longer pulls the top bar down
+
+<sub>Built from 8eff294 · includes: General</sub>
+
 ### Preview 43 · Nov 14, 8:38 PM
 **Stats**
 - Changed: Movies & TV stats no longer offer a Year in Review, because it needed an Emby plugin that's been removed. Music and Audiobooks still have theirs
