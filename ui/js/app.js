@@ -1,6 +1,7 @@
 import { api, quiet } from './api.js';
 import './player.js';
 import './mplayer.js';
+import './thumbbar.js';
 import { musicView } from './music.js';
 import { booksView } from './books.js';
 import './music2.js';
