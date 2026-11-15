@@ -318,9 +318,10 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     val o = try { JSONObject(json) } catch (_: Throwable) { null }
     act.runOnUiThread { statsCalls.remove(seq)?.invoke(o) }
   }
-  override fun stats(done: (JSONObject?) -> Unit) {
-    val n = ++statsN; statsCalls[n] = done
-    eval("window.__tvNative && window.__tvNative.stats($n)")
+  /** "Your watching" is added up by the app itself (StatsModel). */
+  override fun stats(done: (JSONObject?) -> Unit) = Net.bg {
+    val r = try { StatsModel.load { path -> Net.getNow(path, false) as? JSONObject } } catch (e: Throwable) { JSONObject().put("err", "Couldn't reach the server. Try again.") }
+    Net.main.post { done(r) }
   }
   /** Sign-in runs in the app's own code (SignLogic). Only leaving the screen still goes through the page, which owns the way around. */
   override fun signAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
