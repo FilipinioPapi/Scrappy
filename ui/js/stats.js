@@ -166,7 +166,9 @@ export async function statsPage(main, kind, alive) {
   // Your Year in Review banner (from Dec 1) and Past years chips. When switching category the
   // slot is faded out (stx-old): fade the new banner in, keeping what yirBanner put there.
   const slot = main.querySelector('#yirSlot');
-  import('./yir.js').then((m) => m.yirBanner(slot, kind, alive)).then(() => { if (alive() && slot.classList.contains('stx-old')) show(slot, slot.innerHTML); }).catch(() => {});
+  // Movies & TV has no Year in Review: it needed the Emby tracker plugin, which is gone.
+  if (kind === 'tv') slot.innerHTML = '';
+  else import('./yir.js').then((m) => m.yirBanner(slot, kind, alive)).then(() => { if (alive() && slot.classList.contains('stx-old')) show(slot, slot.innerHTML); }).catch(() => {});
   await draw();
 }
 
