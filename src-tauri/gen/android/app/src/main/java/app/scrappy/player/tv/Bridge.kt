@@ -21,6 +21,17 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   }
 
   val view = TvView(act, this)
+  /** Scrappy Native's own player controls, over the video and under the page. */
+  val player = PlayerUi(act, object : PlayerHost {
+    override fun act(action: String, value: String) = eval("window.__tvNative && window.__tvNative.pl(${js(action)}, ${js(value)})")
+    override fun clock(): DoubleArray? {
+      val p = app.scrappy.player.ExoPlugin.current ?: return null
+      val d = p.duration
+      return doubleArrayOf(p.currentPosition / 1000.0, if (d == androidx.media3.common.C.TIME_UNSET || d < 0) 0.0 else d / 1000.0,
+        if (p.playWhenReady) 0.0 else 1.0, if (p.playbackState == androidx.media3.common.Player.STATE_BUFFERING) 1.0 else 0.0)
+    }
+    override fun log(msg: String) { Log.i("ScrappyNative", msg) }
+  })
   /** A native screen is the current page. */
   var active = false; private set
   /** Something from the web is showing on top (keys go to the web while `webKeys`). */
@@ -30,6 +41,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
 
   init {
     view.visibility = View.GONE
+    player.visibility = View.GONE
     // The web view is put on screen (setContentView) only after this runs, which would throw away
     // anything added now: the native view joins it once it is attached, underneath it.
     web.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
@@ -52,12 +64,17 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   /** Put the native view directly under the web view, in the same parent. */
   private fun attach() {
     val parent = web.parent as? ViewGroup ?: return
-    if (view.parent === parent) return
-    (view.parent as? ViewGroup)?.removeView(view)
-    parent.addView(view, parent.indexOfChild(web).coerceAtLeast(0), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    for (v in listOf(view, player)) {
+      if (v.parent === parent) continue
+      (v.parent as? ViewGroup)?.removeView(v)
+      parent.addView(v, parent.indexOfChild(web).coerceAtLeast(0), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    }
   }
 
   private fun eval(s: String) = act.runOnUiThread { web.evaluateJavascript(s, null) }
+
+  /** Keys while a video plays and the native controls own the remote (not while Up next, Still watching or Download subtitles is up). */
+  fun playerKeys() = playing && player.open && !player.card
 
   /** Keys while a native screen is up and nothing from the web is on top. */
   fun takesKeys() = active && !webKeys && !playing && box?.hasFocus() != true
@@ -116,6 +133,12 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
 
   @JavascriptInterface fun prefs(json: String) {
     act.runOnUiThread { try { view.home().setPrefs(JSONObject(json)); view.invalidate() } catch (_: Throwable) {} }
+  }
+
+  /** The player's state from the page (title, tracks, menus), whenever it changes. */
+  @JavascriptInterface fun pstate(json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { return }
+    act.runOnUiThread { attach(); player.state(o) }
   }
 
   @JavascriptInterface fun stale() { act.runOnUiThread { view.stale() } }

@@ -129,6 +129,7 @@ window.__tvNative = {
   play: (id, fromStart) => playItem(id, !!fromStart),
   playSeries: (id, fromStart) => playSeries(id, !!fromStart),
   toast: (msg, err) => toast(msg, !!err),
+  pl: (a, v) => import('./player.js').then((m) => m.npAct(a, v)).catch(() => {}),
   subtitles: (id) => import('./menu.js').then((m) => m.subtitlesDialog(id)).catch(() => {}),
   hold,
   editHome: (rows) => editHome(rows),

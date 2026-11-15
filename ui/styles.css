@@ -907,6 +907,8 @@ html.tv .intro-bar b { display: block; height: 100%; background: var(--red); tra
 html.native-app .intro-mid { animation: none; }
 html.native-app:not(.intro-ready), html.native-app:not(.intro-ready) body { background: transparent !important; }
 html.native-app:not(.intro-ready) #intro { visibility: hidden; }
+/* Scrappy Native draws the player controls, menus, episodes and paused screen itself. */
+html.native-player #player .p-top, html.native-player #player .p-bottom, html.native-player #player .p-pauseinfo, html.native-player #player .p-eps { display: none !important; }
 html.native-app:not(.intro-ready) .intro-bar b { animation-play-state: paused; }
 @keyframes introTvBar { to { transform: scaleX(1); } }
 

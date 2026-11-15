@@ -554,7 +554,7 @@ function setIdle(idle) {
 // mpv's sub-pos: 100 = normal spot at the bottom, lower numbers sit higher up.
 let subPos = 100, subGoal = 100, subRaf = 0;
 function liftSubs(up, instant = false) {
-  if (!S.embedded) return;
+  if (!S.embedded || NP) return; // Scrappy Native draws its own controls and moves the subtitles itself
   let goal = 100;
   if (up && S.open) {
     // Measure where the bar sits when shown, ignoring its slide animation: while it
@@ -1304,6 +1304,84 @@ el.addEventListener('wheel', (e) => {
   changeVolume(e.deltaY < 0 ? 5 : -5);
   wake();
 }, { passive: false });
+
+// ---------- Scrappy Native: the TV app draws the player controls itself ----------
+// The page keeps doing the work (Emby, tracks, remembered picks, Up next, Still watching); the native
+// side draws the controls, menus, episodes and the paused screen, and asks for actions by name.
+const NP = document.documentElement.classList.contains('tv') && (() => { try { return !!window.ScrappyNative && typeof window.ScrappyNative.pstate === 'function' && window.ScrappyNative.isOn(); } catch { return false; } })();
+if (NP) document.documentElement.classList.add('native-player');
+const CODEC = { ac3: 'Dolby', eac3: 'Dolby', truehd: 'Dolby TrueHD', dts: 'DTS', 'dts-hd': 'DTS-HD', aac: 'AAC', mp3: 'MP3', flac: 'FLAC', opus: 'Opus', pcm: 'PCM' };
+function npTrackName(t) { const l = t.type === 'sub' ? subLang(t) : langOf(t.lang); return (l && langName(l)) || (t.lang ? langName(t.lang) : '') || 'Unknown'; }
+function npSubs() {
+  const subs = S.tracks.filter((t) => t.type === 'sub');
+  const note = (t) => { const n = npTrackName(t); const bits = []; if (t.title && t.title.trim().toLowerCase() !== n.toLowerCase()) bits.push(t.title.trim()); if (t.forced && !/forced/i.test(t.title || '')) bits.push('Forced'); return bits.join(' · '); };
+  // English and Spanish first (the languages people here speak); the rest sit behind "Other languages".
+  const rank = (t) => ({ en: 0, es: 1 }[subLang(t)] ?? 9);
+  const main = subs.filter((t) => rank(t) < 9).sort((a, b) => rank(a) - rank(b) || a.id - b.id);
+  const other = subs.filter((t) => rank(t) === 9).sort((a, b) => npTrackName(a).localeCompare(npTrackName(b)) || a.id - b.id);
+  return [...main.map((t) => ({ id: String(t.id), label: npTrackName(t), note: note(t), on: t.id === S.sid, g: 0 })),
+    ...other.map((t) => ({ id: String(t.id), label: npTrackName(t), note: note(t), on: t.id === S.sid, g: 1 }))];
+}
+function npAudio() {
+  return S.tracks.filter((t) => t.type === 'audio').map((t) => {
+    const n = npTrackName(t);
+    const tech = [CODEC[t.codec] || (t.codec || '').toUpperCase(), channels(t['demux-channel-count'])].filter(Boolean).join(' ');
+    const bits = [];
+    if (t.title && t.title.trim().toLowerCase() !== n.toLowerCase() && !/^(stereo|mono|surround|5\.1|7\.1)$/i.test(t.title.trim())) bits.push(t.title.trim());
+    if (tech) bits.push(tech);
+    return { id: String(t.id), label: n, note: bits.join(' · '), on: t.id === S.aid };
+  });
+}
+function npSnap() {
+  const it = S.item, isEp = it?.Type === 'Episode';
+  const lab = (list, v) => (list.find((x) => String(x[0]) === String(v)) || [0, ''])[1];
+  return {
+    open: S.open, id: it?.Id || '', series: it?.SeriesId || '', season: it?.SeasonId || '', isEp,
+    t1: it ? (isEp ? it.SeriesName || it.Name : it.Name) : 'Loading…',
+    t2: it ? (isEp ? [epCode(it), it.Name].filter(Boolean).join(' · ') : [it.ProductionYear, it.OfficialRating].filter(Boolean).join(' · ')) : '',
+    ov: it?.Overview || '', dur: dur(), next: S.next ? [S.next.IndexNumber != null ? `${S.next.IndexNumber}.` : '', S.next.Name || ''].filter(Boolean).join(' ') : '',
+    subs: npSubs(), subOn: S.sid != null, audio: npAudio(), speed: S.speed,
+    size: lab(SUB_SIZES, S.subScale), shape: lab(ASPECTS, S.aspect), quality: lab(QUALITIES, S.quality),
+    skip: skipMode || '', back: skipBack(), fwd: skipFwd(), canDl: canDownloadSubs !== false && !!it,
+    card: !!($('.p-upnext.show') || S.stillOpen || S.settingsOpen), details: !!el.querySelector('.p-details'),
+  };
+}
+let npLast = '';
+function npPush() {
+  if (!NP) return;
+  const j = JSON.stringify(npSnap());
+  if (j === npLast) return;
+  npLast = j;
+  try { window.ScrappyNative.pstate(j); } catch {}
+}
+if (NP) setInterval(() => { if (S.open || npLast.includes('"open":true')) npPush(); }, 300);
+/** What the native controls ask for. */
+export function npAct(a, v) {
+  const find = (type) => S.tracks.find((t) => t.type === type && String(t.id) === String(v));
+  switch (a) {
+    case 'pause': togglePause(); break;
+    case 'seek': { const t = Math.max(0, Number(v) || 0); cmd('seek', t.toFixed(2), 'absolute+exact'); S.pos = t; markPos(); break; }
+    case 'next': if (S.next) playNext(); break;
+    case 'sub': letGoOfSubs(); setProp('sid', v); saveTrackPrefs({ sub: v === 'no' ? 'off' : trackRef(find('sub')) }); break;
+    case 'audio': if (S.pick) S.pick.audio = false; S.wantAid = null; setProp('aid', v); saveTrackPrefs({ audio: trackRef(find('audio')) }); break;
+    case 'speed': setSpeed(Number(v) || 1); break;
+    case 'size': { const i = SUB_SIZES.findIndex((x) => x[0] === S.subScale); S.subScale = SUB_SIZES[(i + 1) % SUB_SIZES.length][0]; ls.set('subScale', S.subScale); setProp('sub-scale', S.subScale); break; }
+    case 'shape': { const i = ASPECTS.findIndex((x) => x[0] === S.aspect); S.aspect = ASPECTS[(i + 1) % ASPECTS.length][0]; applyAspect(); break; }
+    case 'quality': {
+      const i = QUALITIES.findIndex((x) => x[0] === S.quality); S.quality = QUALITIES[(i + 1) % QUALITIES.length][0]; ls.set('quality', S.quality);
+      clearTimeout(npAct.qt); npAct.qt = setTimeout(() => { if (S.item) startPlayback(S.item.Id, { startSecs: livePos(), keepItem: true }); }, 1500);
+      break;
+    }
+    case 'reload': el.querySelector('[data-act=reload]')?.click(); break;
+    case 'details': el.querySelector('[data-act=details]')?.click(); break;
+    case 'dl': toggleSettings(true); showDlPage(true); setTimeout(() => $('.p-set-dl select, .p-set-dl button')?.focus({ preventScroll: true }), 80); break;
+    case 'skip': doSkip(); break;
+    case 'exit': exitPlayer(); break;
+    case 'subpos': setProp('sub-pos', Math.round(Number(v) || 100)); break;
+    case 'ep': if (v && v !== S.item?.Id) { S.autoChain = 0; startPlayback(v); } break;
+  }
+  setTimeout(npPush, 30);
+}
 
 // ---------- Google TV: the same player, driven by the remote (approved "Player A") ----------
 // While you just watch, nothing shows: OK pauses, Left/Right skip, Up/Down bring the bar

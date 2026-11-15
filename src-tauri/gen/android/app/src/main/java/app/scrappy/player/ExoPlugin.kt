@@ -45,6 +45,10 @@ import app.tauri.plugin.Plugin
 @OptIn(UnstableApi::class)
 @TauriPlugin
 class ExoPlugin(private val activity: Activity) : Plugin(activity) {
+  companion object {
+    /** The player now on screen, for Scrappy Native's own controls (main thread only). */
+    @JvmStatic var current: ExoPlayer? = null; private set
+  }
   private val main = Handler(Looper.getMainLooper())
   private var webView: WebView? = null
   private var player: ExoPlayer? = null
@@ -103,6 +107,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     val v = view
     player = null
     view = null
+    if (current === p) current = null
     try { p.release() } catch (e: Exception) { }
     if (v != null) { v.player = null; (v.parent as? ViewGroup)?.removeView(v) }
     PlayerLog.add("player thrown away")
@@ -334,6 +339,7 @@ class ExoPlugin(private val activity: Activity) : Plugin(activity) {
     wv?.setBackgroundColor(Color.TRANSPARENT)
     player = p
     view = v
+    current = p
     if (!watching) { watching = true; main.postDelayed(watchdog, 2000) }
     return p
   }

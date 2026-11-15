@@ -275,4 +275,44 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_DPAD_UP, 4); shot("grid-chip")
     press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_RIGHT, 7); shot("grid-az")
   }
+
+  @Test fun player() {
+    val ctx = RuntimeEnvironment.getApplication()
+    Net.init(ctx); Img.init(ctx)
+    var paused = false
+    val acts = ArrayList<String>()
+    val ui = PlayerUi(ctx, object : PlayerHost {
+      override fun act(action: String, value: String) { acts.add("$action $value"); if (action == "pause") paused = !paused }
+      override fun clock() = doubleArrayOf(1303.0, 3100.0, if (paused) 1.0 else 0.0, 0.0)
+    })
+    ui.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY))
+    ui.layout(0, 0, 1920, 1080)
+    fun sub(id: Int, label: String, note: String, g: Int, on: Boolean = false) = JSONObject().put("id", "$id").put("label", label).put("note", note).put("g", g).put("on", on)
+    val subs = JSONArray().put(sub(1, "English", "", 0, true)).put(sub(2, "English", "SDH", 0)).put(sub(3, "English", "Signs & Songs", 0)).put(sub(4, "Spanish", "", 0)).put(sub(5, "Spanish", "Latin America", 0))
+    listOf("Arabic", "Dutch", "French", "German", "Italian", "Japanese", "Korean", "Polish", "Portuguese", "Russian", "Swedish", "Turkish").forEachIndexed { i, n -> subs.put(sub(10 + i, n, "", 1)) }
+    val audio = JSONArray().put(JSONObject().put("id", "1").put("label", "German").put("note", "Dolby 5.1").put("on", true)).put(JSONObject().put("id", "2").put("label", "English").put("note", "Dolby 5.1"))
+      .put(JSONObject().put("id", "3").put("label", "Japanese").put("note", "AAC Stereo")).put(JSONObject().put("id", "4").put("label", "English").put("note", "Commentary · AAC Stereo"))
+    ui.state(JSONObject().put("open", true).put("id", "Episode3").put("series", "Series4").put("season", "Season2").put("isEp", true)
+      .put("t1", "Gundam II").put("t2", "S2:E3 · The Gundam Rises").put("ov", "The crew lands on the moon base and finds it already taken. Amuro has to decide whether to launch alone before the others are ready, while the captain weighs a retreat.")
+      .put("dur", 3100).put("next", "4. Second Front").put("subs", subs).put("subOn", true).put("audio", audio).put("speed", 1.0)
+      .put("size", "Medium").put("shape", "Auto").put("quality", "Original (direct play)").put("back", 10).put("fwd", 10).put("canDl", true))
+    val bmp = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888); val c = Canvas(bmp)
+    val bg = android.graphics.Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 1920f, 1080f, 0xFF4F6E62.toInt(), 0xFF16222A.toInt(), android.graphics.Shader.TileMode.CLAMP) }
+    fun frames(ms: Long) { val end = System.currentTimeMillis() + ms; while (System.currentTimeMillis() < end) { ShadowSystemClock.advanceBy(Duration.ofMillis(16)); shadowOf(Looper.getMainLooper()).idle(); c.drawRect(0f, 0f, 1920f, 1080f, bg); ui.draw(c); Thread.sleep(4) } }
+    fun snap(name: String, ms: Long = 500) { frames(ms); c.drawRect(0f, 0f, 1920f, 1080f, bg); ui.draw(c); File(out, "player-$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+    fun key(code: Int, n: Int = 1) { repeat(n) { val t = SystemClock.uptimeMillis(); ui.onKey(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0)); ui.onKey(KeyEvent(t, t + 30, KeyEvent.ACTION_UP, code, 0)); frames(120) } }
+    key(KeyEvent.KEYCODE_DPAD_UP); snap("bar")
+    key(KeyEvent.KEYCODE_DPAD_RIGHT, 2); snap("next")
+    key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("subs")
+    key(KeyEvent.KEYCODE_DPAD_DOWN, 5); snap("subs-other")
+    key(KeyEvent.KEYCODE_DPAD_CENTER); snap("other")
+    key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("audio")
+    key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_RIGHT, 2); key(KeyEvent.KEYCODE_DPAD_CENTER); snap("settings")
+    key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_DOWN); snap("eps", 2500)
+    key(KeyEvent.KEYCODE_DPAD_RIGHT); snap("eps-r")
+    key(KeyEvent.KEYCODE_BACK); key(KeyEvent.KEYCODE_DPAD_UP); snap("seek")
+    key(KeyEvent.KEYCODE_DPAD_RIGHT, 3); snap("seeking", 100)
+    frames(1500); paused = true; snap("paused", 1000); snap("pausedinfo", 6500)
+    File(out, "player-acts.txt").writeText(acts.joinToString("\n"))
+  }
 }

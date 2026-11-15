@@ -38,6 +38,8 @@ class MainActivity : TauriActivity() {
   // Holding OK on the remote: tell the page once per press, so the quick menu opens on every remote
   // (some TVs don't pass the "still held" presses on to the page).
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    // A video is playing in Scrappy Native: its own controls take the remote.
+    native?.let { n -> if (n.playerKeys() && n.player.onKey(event)) return true }
     // A native screen is up with nothing from the web on top: the remote drives it directly.
     native?.let { n -> if (n.takesKeys() && n.view.onKey(event)) return true }
     val ok = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
