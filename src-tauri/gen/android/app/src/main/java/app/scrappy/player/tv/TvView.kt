@@ -194,11 +194,19 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   /** Open a poster: its page (native when it is a film or show), noting what kind of item it is. */
   fun open(c: Card) { if (c.type.isNotEmpty()) kinds[c.id] = c.type; host.go(c.href) }
 
+  /** Someone signed in, out or switched: nothing kept from the person before may show (lists, pictures, the side bar's libraries). */
+  fun signedInChanged(keepCurrent: Boolean = false) {
+    // The sign-in screen itself stays as it is while it is the one showing (it is mid-way through its steps).
+    val cur = if (keepCurrent) screens.entries.firstOrNull { it.value === screen }?.let { it.key to it.value } else null
+    screens.clear(); cur?.let { screens[it.first] = it.second }
+    Img.clearMemory(); rail.reset(); invalidate()
+  }
+
   /** Show a native screen for this address, or return false if it is not one of ours. */
   fun route(hash: String): Boolean {
     val s = screenFor(hash) ?: return false
     routeHash = hash
-    if (Net.reload()) { screens.clear(); Img.clearMemory(); rail.reset() }
+    if (Net.reload()) signedInChanged()
     val target = screenFor(hash)!!
     val fresh = target !== screen
     screen?.let { if (it !== target) it.hide() }

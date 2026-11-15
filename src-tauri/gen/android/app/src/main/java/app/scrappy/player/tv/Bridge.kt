@@ -363,7 +363,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     override fun phonePage(): String = try { act.assets.open("pair.html").bufferedReader().use { it.readText() } } catch (e: Exception) { "" }
     override fun ui(work: () -> Unit) { act.runOnUiThread(work) }
     override fun changed(then: () -> Unit) {
-      Net.reload()
+      if (Net.reload()) view.signedInChanged(keepCurrent = true)
       val n = ++cfgN; cfgCalls[n] = then
       eval("(window.__tvNative && window.__tvNative.cfgChanged) ? window.__tvNative.cfgChanged($n) : window.ScrappyNative.cfgDone($n)")
     }

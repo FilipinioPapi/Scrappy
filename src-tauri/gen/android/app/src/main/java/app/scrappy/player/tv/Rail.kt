@@ -86,7 +86,8 @@ class Rail(private val tv: TvView) {
     if (k != null) focus = entries.indexOfFirst { it.key == k }.coerceAtLeast(0)
   }
 
-  fun mark(key: String) { cur = key; load() }
+  // No libraries yet (signed out at the time, or the server didn't answer): ask again on the next move.
+  fun mark(key: String) { cur = key; if (libs.isEmpty()) loaded = false; load() }
 
   /** Left from the start of the screen: open on the entry for the screen you're on. */
   fun openFrom() { open = true; focus = entries.indexOfFirst { it.key == cur }.coerceAtLeast(0) }
