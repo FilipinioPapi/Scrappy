@@ -26,7 +26,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   val player = PlayerUi(act, object : PlayerHost {
     override fun act(action: String, value: String) = eval("window.__tvNative && window.__tvNative.pl(${js(action)}, ${js(value)})")
     override fun clock(): DoubleArray? {
-      val p = app.scrappy.player.ExoPlugin.current ?: return null
+      val p = app.scrappy.player.Exo.current ?: return null
       val d = p.duration
       return doubleArrayOf(p.currentPosition / 1000.0, if (d == androidx.media3.common.C.TIME_UNSET || d < 0) 0.0 else d / 1000.0,
         if (p.playWhenReady) 0.0 else 1.0, if (p.playbackState == androidx.media3.common.Player.STATE_BUFFERING) 1.0 else 0.0)
