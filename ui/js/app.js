@@ -143,7 +143,18 @@ function navKey() {
   try { history.replaceState({ ...(st || {}), sk: k }, ''); } catch {}
   return { k, seen: false };
 }
-window.addEventListener('scroll', () => { if (scrollKey) SCROLL.set(scrollKey, window.scrollY); }, { passive: true });
+// While the page scrolls, cards passing under the pointer would each run their hover effects
+// (lift, glow, zoom). A see-through cover goes over the page until scrolling stops, so nothing
+// underneath is hovered. (Toggling a class instead would restyle the whole page twice per scroll.)
+let scrollIdle = 0;
+const scrollCover = document.createElement('div');
+scrollCover.id = 'scrollCover'; scrollCover.hidden = true;
+document.body.appendChild(scrollCover);
+window.addEventListener('scroll', () => {
+  if (scrollKey) SCROLL.set(scrollKey, window.scrollY);
+  if (!scrollIdle) scrollCover.hidden = false; else clearTimeout(scrollIdle);
+  scrollIdle = setTimeout(() => { scrollIdle = 0; scrollCover.hidden = true; }, 140);
+}, { passive: true });
 function restoreScroll(y) {
   const run = ++restoreRun, t0 = performance.now();
   const stop = () => { restoreRun++; window.removeEventListener('wheel', stop); window.removeEventListener('keydown', stop); };

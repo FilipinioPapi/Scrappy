@@ -507,7 +507,7 @@ function genreSection(root, ctx, views) {
   showLib(libs.find((l) => l.Id === current), false);
 }
 
-async function fillGenreRow(rowEl, lib, types, ctx, my, getGen) {
+async function fillGenreRow(rowEl, lib, types, ctx, my, getGen, tries = 0) {
   const id = rowEl.dataset.genre;
   try {
     // Random order so each visit shows something different.
@@ -515,9 +515,15 @@ async function fillGenreRow(rowEl, lib, types, ctx, my, getGen) {
     if (my !== getGen() || !ctx.alive()) return;
     const items = data?.Items || [];
     const box = rowEl.querySelector('.genre-items');
+    if (!items.length) { rowEl.remove(); return; }
     box.innerHTML = items.map((i) => card(i, { shape: 'portrait' })).join('');
     rowEl.classList.add('filled');
-  } catch {}
+  } catch {
+    // Try again a couple of times; after that drop the row instead of leaving a placeholder.
+    if (my !== getGen() || !ctx.alive()) return;
+    if (tries < 2) setTimeout(() => fillGenreRow(rowEl, lib, types, ctx, my, getGen, tries + 1), 3000 * (tries + 1));
+    else rowEl.remove();
+  }
 }
 
 // ---------------- Home banner ----------------
@@ -810,7 +816,7 @@ function renderHero(slot, ctx, picks, seriesInfo) {
   el.addEventListener('mouseleave', () => (paused = false));
   const restart = () => {
     clearInterval(heroTimer);
-    if (picks.length > 1) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden && !document.documentElement.classList.contains('calm')) show(i + 1); }, 8000);
+    if (picks.length > 1) heroTimer = setInterval(() => { if (!ctx.alive()) { clearInterval(heroTimer); return; } if (!paused && !document.hidden && document.hasFocus() && !document.documentElement.classList.contains('calm')) show(i + 1); }, 8000);
   };
   drawNav();
   restart();

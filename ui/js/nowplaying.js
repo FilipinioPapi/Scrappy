@@ -376,7 +376,10 @@ function startViz(canvas) {
   cvs = canvas; cancelAnimationFrame(raf);
   if (!vizOn) { vizOn = true; invoke('music_viz', { on: true }).catch(() => {}); }
   loadAlbumColours();
-  const loop = () => { raf = requestAnimationFrame(loop); frame(); };
+  // Drawn at most 60 times a second: on 120 Hz screens drawing every refresh doubles the cost
+  // (and the bars would move twice as fast, since each step is per frame).
+  let last = 0;
+  const loop = (now = performance.now()) => { raf = requestAnimationFrame(loop); if (now - last < 15) return; last = now; frame(); };
   loop();
 }
 function stopViz() {
