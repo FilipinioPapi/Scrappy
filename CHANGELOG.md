@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 45 · Nov 15, 10:27 AM
+**General**
+- Fixed: maximizing the window on a laptop no longer lets the bottom of the app slip behind the taskbar. This works on any screen shape or scaling
+
+<sub>Built from f1e6ceb · includes: General</sub>
+
 ### Preview 44 · Nov 15, 10:09 AM
 **General**
 - Fixed: scrolling past the top with a trackpad no longer pulls the top bar down, and the side menu, panels and pop-ups don't stretch either
