@@ -18,6 +18,8 @@ interface Host {
   fun playSeries(id: String)
   fun hold(id: String, inResume: Boolean)
   fun editHome(rowsJson: String)
+  /** Keep Home's row order and hidden rows ("" = back to default). */
+  fun saveHomeRows(json: String) {}
   fun who()
   fun log(msg: String) {}
   fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit)
@@ -111,6 +113,8 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   /** The hold-OK quick menu and the pick lists, drawn over the screen. */
   val menu = Menu(this)
   val who = Who(this)
+  /** Edit home, drawn over Home. */
+  val edit = EditHome(this)
   private var last = 0L
   /** Holding a direction or tapping fast: pictures appear at once, no fades (tv-fast on the web). */
   var fast = false; private set
@@ -221,6 +225,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     var anim = screen?.draw(c, now, dt) ?: false.also { c.drawColor(Ui.BG) }
     if (screen != null && screen?.bare != true) anim = rail.draw(c, now, dt) || anim
     anim = who.draw(c, now) || anim
+    anim = edit.draw(c, now) || anim
     anim = menu.draw(c, now) || anim
     c.restore()
     if (anim || fast) postInvalidateOnAnimation() else last = 0L
@@ -234,6 +239,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
   fun onKey(e: KeyEvent): Boolean {
     if (menu.open) return menu.key(e)
     if (who.open) return who.key(e)
+    if (edit.open) return edit.key(e)
     val s = screen ?: return false
     val code = e.keyCode
     when (code) {

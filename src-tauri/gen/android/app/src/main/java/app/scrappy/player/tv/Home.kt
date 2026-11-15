@@ -439,11 +439,14 @@ class Home(tv: TvView) : Screen(tv) {
     when (row.kind) {
       Kind.HERO -> hero.press(col)
       Kind.GHEAD -> { val id = genreLibs.getOrNull(col)?.optString("Id") ?: return; if (id != genreLib) switchGenre(id) }
-      Kind.EDIT -> tv.host.editHome(rowList().toString())
+      Kind.EDIT -> openEdit()
       Kind.GROW -> if (onSeeAll) tv.host.go(row.seeAll) else open(row)
       else -> open(row)
     }
   }
+
+  /** Edit home (native drawer): every change saves and Home follows straight away. */
+  fun openEdit() = tv.edit.show(rowList(), saved()) { s -> prefs.put("homeRows", s); applyOrder(); tv.host.saveHomeRows(s) }
 
   private fun open(row: Row) {
     val c = row.cards.getOrNull(col) ?: return

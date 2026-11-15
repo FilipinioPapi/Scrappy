@@ -228,6 +228,7 @@ class PreviewTest {
     override fun who() { calls.add("who") }
     override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title"); tv.menu.pick(title, options, cur) { i -> calls.add("picked $title $i"); done(i) } }
     override fun saveSort(key: String, i: Int) {}
+    override fun saveHomeRows(json: String) { calls.add("saveHomeRows $json") }
     override fun playFrom(id: String, fromStart: Boolean) {}
     override fun playSeriesFrom(id: String, fromStart: Boolean) {}
     override fun toast(msg: String, error: Boolean) {}
@@ -376,6 +377,18 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_BACK); pump(200); shot("sign-back-emby")
     press(KeyEvent.KEYCODE_DPAD_UP); shot("sign-tiles")
     File(out, "signin-calls.txt").writeText(host.calls.joinToString("\n"))
+  }
+
+  @Test fun edithome() {
+    start()
+    tv.route("#/home"); pump(4000)
+    tv.home().openEdit(); shot("edit")
+    press(KeyEvent.KEYCODE_DPAD_DOWN, 2); press(KeyEvent.KEYCODE_DPAD_CENTER); shot("edit-off")
+    press(KeyEvent.KEYCODE_DPAD_RIGHT); shot("edit-move")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); press(KeyEvent.KEYCODE_DPAD_UP); shot("edit-moving")
+    press(KeyEvent.KEYCODE_DPAD_CENTER); press(KeyEvent.KEYCODE_DPAD_DOWN, 12); shot("edit-done")
+    press(KeyEvent.KEYCODE_BACK); shot("edit-closed", 900)
+    File(out, "edit-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun stats() {
