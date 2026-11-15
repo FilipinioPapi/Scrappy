@@ -182,6 +182,16 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     val o = try { JSONObject(json) } catch (_: Throwable) { return }
     act.runOnUiThread { (view.screen as? Signin)?.push(o) }
   }
+  private val statsCalls = HashMap<Int, (JSONObject?) -> Unit>()
+  private var statsN = 0
+  @JavascriptInterface fun statsReply(seq: Int, json: String) {
+    val o = try { JSONObject(json) } catch (_: Throwable) { null }
+    act.runOnUiThread { statsCalls.remove(seq)?.invoke(o) }
+  }
+  override fun stats(done: (JSONObject?) -> Unit) {
+    val n = ++statsN; statsCalls[n] = done
+    eval("window.__tvNative && window.__tvNative.stats($n)")
+  }
   override fun signAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
     val n = ++signN; signCalls[n] = done
     eval("window.__tvNative && window.__tvNative.signAct($n, ${js(act)}, $args)")

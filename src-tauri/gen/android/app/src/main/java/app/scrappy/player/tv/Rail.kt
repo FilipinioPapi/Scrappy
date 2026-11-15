@@ -65,6 +65,7 @@ class Rail(private val tv: TvView) {
     for (v in libs) l.add(Entry(v.optString("Id"), v.optString("Name"), v.optString("CollectionType"), "#/library/" + java.net.URLEncoder.encode(v.optString("Id"), "UTF-8")))
     l.add(Entry("genres", "Genres", "genres", "#/genres"))
     l.add(Entry("favorites", "Favorites", "favorites", "#/favorites"))
+    l.add(Entry("stats", "Stats", "stats", "#/stats"))
     l.add(Entry("music", "Music", "music", "#/music"))
     l.add(Entry("audiobooks", "Audiobooks", "audiobooks", "#/audiobooks"))
     l.add(Entry("settings", "Settings", "settings", "#/settings"))

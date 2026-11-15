@@ -597,7 +597,7 @@ function tvModel_build({ eps, movies, series }) {
     eps: { title: 'Episodes you rewatch', sub: 'Emby counts every time you finish an episode', none: 'No episode watched more than once yet.', items: rewEps.slice(0, 8).map((e) => ({ a: e.Name, b: epTag(e), shape: 'ps', img: embyImg(e, 200), hue: hue(e.SeriesName || e.Name), v: `×${plays(e)}`, href: `#/item/${encodeURIComponent(e.Id)}` })) },
     genres: { sub: 'share of your time', items: gList.map(([g, t]) => ({ n: g, w: t / (gList[0][1] || 1), v: Math.round((t / gTot) * 100) + '%' })) },
     decades: decBars,
-    faces: { title: 'Faces you see most', sub: 'top actors', items: faces.map((f) => ({ a: f.name, b: [f.sh ? plural(f.sh, 'show') : '', f.mv ? plural(f.mv, 'movie') : ''].filter(Boolean).join(', '), shape: 'rd', img: f.tag ? img(f.id, 'Primary', f.tag, 120) : '', ini: (f.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2), hue: hue(f.name), w: f.w / (faces[0]?.w || 1), v: '' })) },
+    faces: { title: 'Faces you see most', sub: 'top actors', items: faces.map((f) => ({ href: f.id ? `#/person/${encodeURIComponent(f.id)}` : '', a: f.name, b: [f.sh ? plural(f.sh, 'show') : '', f.mv ? plural(f.mv, 'movie') : ''].filter(Boolean).join(', '), shape: 'rd', img: f.tag ? img(f.id, 'Primary', f.tag, 120) : '', ini: (f.name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2), hue: hue(f.name), w: f.w / (faces[0]?.w || 1), v: '' })) },
     facts: [
       { k: 'Favorite episode', v: fav ? fav.Name : '', s: fav ? `${epTag(fav)}, watched ${plays(fav)} times` : '' },
       { k: 'Nonstop', v: total ? `${(total / 86400).toFixed(total > 864000 ? 0 : 1)} days` : '', s: 'if you watched it all back to back' },
@@ -668,6 +668,25 @@ function tvModel_buildAll(pr, p) {
     ],
     shelf: null,
   };
+}
+// Scrappy Native's Stats page (Stats.kt draws it): the same all-time Movies & TV numbers, with
+// bigger pictures for a TV (shows as wide pictures, episode stills, posters, faces).
+export async function tvNativeStats() {
+  const raw = await loadRaw('tv');
+  const m = tvModel_build(raw);
+  const byId = new Map(raw.series.map((x) => [x.Id, x]));
+  const idOf = (href) => decodeURIComponent(String(href || '').split('/').pop() || '');
+  // Native asks Emby for pictures itself: hand it the picture, not an address.
+  const pic = (src, w) => {
+    const u = String(src || ''), mm = u.match(/\/Items\/([^/]+)\/Images\/([^/?]+)[^&]*&?.*?(?:[?&]tag=([^&]+))?$/) || u.match(/\/([^/]+)\/([A-Za-z]+)\?tag=([^&]+)/);
+    return mm ? { id: decodeURIComponent(mm[1]), type: mm[2], tag: decodeURIComponent(mm[3] || ''), w } : null;
+  };
+  const wide = (it) => (it?.ImageTags?.Thumb ? { id: it.Id, type: 'Thumb', tag: it.ImageTags.Thumb, w: 560 } : it?.BackdropImageTags?.[0] ? { id: it.Id, type: 'Backdrop', tag: it.BackdropImageTags[0], w: 560 } : it?.ImageTags?.Primary ? { id: it.Id, type: 'Primary', tag: it.ImageTags.Primary, w: 300 } : null);
+  m.shows.items.forEach((x) => { x.pic = wide(byId.get(idOf(x.href))); delete x.img; });
+  m.top2.items.forEach((x) => { x.pic = pic(x.img, 300); delete x.img; });
+  m.eps.items.forEach((x) => { x.pic = pic(x.img, 480); delete x.img; });
+  m.faces.items.forEach((x) => { x.pic = pic(x.img, 240); delete x.img; });
+  return m;
 }
 function tvModel() {}
 tvModel.load = tvModel_load; tvModel.build = tvModel_build;

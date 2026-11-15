@@ -52,6 +52,8 @@ interface Host {
   fun setAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {}
   /** Sign-in: check an address, sign in, skip, open (tvsignact.js). */
   fun signAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {}
+  /** The Movies & TV stats, all time (stats.js tvNativeStats). */
+  fun stats(done: (JSONObject?) -> Unit) {}
   /** The TV keyboard for a sign-in box: mode = url, user or password. */
   fun field(text: String, mode: String, change: (String) -> Unit, done: (String?) -> Unit) = keyboard(text, change, done)
 }
@@ -186,6 +188,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     if (h == "#/search") return search()
     if (p.size in 2..3 && p[1] == "settings") return screens.getOrPut("settings") { Settings(this) }
     if (h == "#/login" || (p.size == 3 && p[1] == "servers")) return signin()
+    if (h == "#/stats") return screens.getOrPut("stats") { Stats(this) }
     if (p.size == 3 && p[1] == "person" && p[2].isNotEmpty()) return person(java.net.URLDecoder.decode(p[2], "UTF-8"))
     return null
   }
@@ -194,7 +197,7 @@ class TvView(ctx: Context, val host: Host) : View(ctx) {
     val h = hash.substringBefore('?')
     if (h == "" || h == "#" || h == "#/" || h == "#/home") return true
     val p = h.split('/')
-    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" || h == "#/search" || (p.size in 2..3 && p[1] == "settings") || h == "#/login" || (p.size == 3 && p[1] == "servers") ||
+    return (p.size in 3..4 && p[1] == "library" && p[2].isNotEmpty()) || isItem(p) || h == "#/genres" || h == "#/favorites" || h == "#/search" || (p.size in 2..3 && p[1] == "settings") || h == "#/login" || (p.size == 3 && p[1] == "servers") || h == "#/stats" ||
       (p.size == 3 && p[1] == "person" && p[2].isNotEmpty())
   }
 

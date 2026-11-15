@@ -206,6 +206,24 @@ class PreviewTest {
       val v = when (mode) { "url" -> "movies.myserver.com"; "user" -> "jayden"; else -> "secret" }
       change(v); done(v)
     }
+    override fun stats(done: (JSONObject?) -> Unit) {
+      calls.add("stats")
+      fun arr(vararg o: JSONObject) = JSONArray(o.toList())
+      fun it(a: String, b: String, v: String = "", i: Int = 1) = JSONObject().put("a", a).put("b", b).put("v", v).put("href", "#/item/it$i").put("pic", JSONObject().put("id", "it$i").put("type", "Primary").put("tag", "t").put("w", 300))
+      val shows = JSONArray(); val sts = listOf("on", "up", "fin", "fin", "on", "off", "on", "up")
+      for (i in 0 until 8) shows.put(JSONObject().put("name", "Show number $i").put("m", "${i + 3} of 20 episodes · 8h 40m").put("st", sts[i]).put("f", (i + 3) / 20.0).put("href", "#/item/Series5$i").put("pic", JSONObject().put("id", "it${i + 2}").put("type", "Backdrop").put("tag", "t").put("w", 560)))
+      val m = JSONObject().put("sub", "All time · everything you’ve watched on Emby")
+        .put("cards", arr(JSONObject().put("hot", true).put("k", "TIME WATCHED").put("v", "19").put("u", " days 6 h").put("d", JSONObject().put("t", "That's 462 hours of Movies & TV")),
+          JSONObject().put("k", "EPISODES").put("v", "641").put("d", JSONObject().put("t", "across 41 shows")), JSONObject().put("k", "MOVIES").put("v", "188").put("d", JSONObject().put("t", "23 watched more than once")), JSONObject().put("k", "SHOWS FINISHED").put("v", "22").put("d", JSONObject().put("t", "and 5 you're up to date on"))))
+        .put("shows", JSONObject().put("counts", JSONObject().put("all", 41).put("on", 7).put("up", 5).put("fin", 22).put("off", 7)).put("items", shows))
+        .put("top2", JSONObject().put("items", arr(it("Dune: Part Two", "Sci-Fi · 2h 46m", "×4", 3), it("Interstellar", "Sci-Fi · 2h 49m", "×3", 4), it("Heat", "Crime · 2h 50m", "×2", 5), it("Arrival", "Sci-Fi", "×1", 6))))
+        .put("eps", JSONObject().put("sub", "Emby counts every time you finish an episode").put("items", arr(it("Fishes", "The Bear · S2 E6", "×3", 7), it("Secrets", "Dark · S1 E1", "×2", 8))))
+        .put("faces", JSONObject().put("items", arr(JSONObject().put("a", "Adam Scott").put("b", "1 show").put("ini", "AS").put("href", "#/person/p1"), it("Gary Oldman", "1 show, 3 movies", "", 9))))
+        .put("genres", JSONObject().put("items", arr(JSONObject().put("n", "Drama").put("w", 1.0).put("v", "31%"), JSONObject().put("n", "Sci-Fi").put("w", 0.7).put("v", "22%"), JSONObject().put("n", "Comedy").put("w", 0.45).put("v", "14%"))))
+        .put("decades", arr(JSONObject().put("h", 10).put("axis", "80s"), JSONObject().put("h", 40).put("axis", "90s"), JSONObject().put("h", 70).put("axis", "00s"), JSONObject().put("h", 100).put("axis", "10s"), JSONObject().put("h", 60).put("axis", "20s")))
+        .put("facts", arr(JSONObject().put("k", "Favorite episode").put("v", "Fishes").put("s", "The Bear · S2 E6, watched 3 times"), JSONObject().put("k", "Nonstop").put("v", "19 days").put("s", "if you watched it all back to back"), JSONObject().put("k", "Longest movie").put("v", "Heat").put("s", "2h 50m"), JSONObject().put("k", "Oldest watch").put("v", "").put("s", "")))
+      android.os.Handler(Looper.getMainLooper()).post { done(m) }
+    }
     override fun editHome(rowsJson: String) { calls.add("editHome") }
     override fun who() { calls.add("who") }
     override fun pick(title: String, options: List<String>, cur: Int, done: (Int) -> Unit) { calls.add("pick $title"); tv.menu.pick(title, options, cur) { i -> calls.add("picked $title $i"); done(i) } }
@@ -358,6 +376,16 @@ class PreviewTest {
     press(KeyEvent.KEYCODE_BACK); pump(200); shot("sign-back-emby")
     press(KeyEvent.KEYCODE_DPAD_UP); shot("sign-tiles")
     File(out, "signin-calls.txt").writeText(host.calls.joinToString("\n"))
+  }
+
+  @Test fun stats() {
+    start()
+    tv.route("#/stats"); pump(2500); shot("stats")
+    press(KeyEvent.KEYCODE_DPAD_UP); press(KeyEvent.KEYCODE_DPAD_RIGHT, 3); shot("stats-chip")
+    press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_DOWN); pump(600); shot("stats-movies", 1200)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); pump(600); shot("stats-eps", 1200)
+    press(KeyEvent.KEYCODE_DPAD_DOWN); pump(600); shot("stats-faces", 1200)
+    File(out, "stats-calls.txt").writeText(host.calls.joinToString("\n"))
   }
 
   @Test fun pages() {
