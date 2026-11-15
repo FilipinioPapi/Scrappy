@@ -14,7 +14,7 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 - The playing bar glow and equaliser bars are cheaper, and the visualiser draws at most 60 times a second
 - The Home banner pauses while you're in another window
 
-<sub>Built from 8bafc11 · includes: Speed</sub>
+<sub>Built from 34e494a · includes: Speed</sub>
 
 ### Preview 46 · Nov 15, 10:41 AM
 **General**
