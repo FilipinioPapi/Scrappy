@@ -21,7 +21,7 @@
     <script>if (window.ScrappyNative) { (function () { var h = document.documentElement, img = document.querySelector('.intro-dog'); h.classList.add('native-app'); img.src = 'logo-native.png';
       // The app's own opening picture shows underneath until the page's copy is complete (fonts and logo in), so nothing flashes.
       var done = false, show = function () { if (!done) { done = true; h.classList.add('intro-ready'); } };
-      Promise.all([document.fonts ? document.fonts.ready : 0, img.decode ? img.decode().catch(function () {}) : 0]).then(function () { requestAnimationFrame(show); });
+      Promise.all([document.fonts ? document.fonts.ready : 0, img.decode ? img.decode().catch(function () {}) : 0]).then(function () { requestAnimationFrame(function () { requestAnimationFrame(show); }); });
       setTimeout(show, 1500); })(); }</script>
     <div class="intro-foot">
       <img src="jaydenater.gif" alt="">

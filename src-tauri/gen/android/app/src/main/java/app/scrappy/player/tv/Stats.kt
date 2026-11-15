@@ -270,7 +270,8 @@ class Stats(tv: TvView) : Screen(tv) {
     }
     TAGS[it.st]?.let { (t, col) ->
       val w = pTag.measureText(t) + 20f
-      val tr = RectF(r.left + 10f, r.top + 10f, r.left + 10f + w, r.top + 36f)
+      // Top right: show pictures usually carry their logo on the left (Breaking Bad's was covered).
+      val tr = RectF(r.right - 10f - w, r.top + 10f, r.right - 10f, r.top + 36f)
       fill.color = col; c.drawRoundRect(tr, 8f, 8f, fill)
       Ui.line(c, t, tr.left + 10f, tr.top, 26f, pTag)
     }

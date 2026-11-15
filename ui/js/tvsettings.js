@@ -87,7 +87,6 @@ export async function model() {
       G('DISPLAY'),
       SW('reduceMotion', 'Reduce motion', 'Fewer animations, and the home banner doesn’t slide by itself.'),
       SW('introSplash', 'Opening screen', 'The SCRAPPY MEDIA CENTER screen when Scrappy opens.'),
-      ...(admin ? [SW('yirEarly', 'Show Year in Review early', 'Normally appears on December 1. Only admins see this.')] : []),
       G('STORAGE'),
       BT('clearCache', 'Picture cache', `Posters and covers kept on this TV so pages load fast.${cache ? ' Using ' + cache + '.' : ''}`, 'Clear'),
       CH('cacheMax', 'Cache size limit', 'The oldest pictures are removed when it gets bigger.', [['0', 'No limit'], ['500', '500 MB'], ['1024', '1 GB'], ['2048', '2 GB'], ['5120', '5 GB']]),

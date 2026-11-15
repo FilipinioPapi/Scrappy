@@ -906,7 +906,9 @@ html.tv .intro-bar b { display: block; height: 100%; background: var(--red); tra
 /* Scrappy Native: the app's own opening picture is already showing this, so the page carries on from it without fading in again. */
 html.native-app .intro-mid { animation: none; }
 html.native-app:not(.intro-ready), html.native-app:not(.intro-ready) body { background: transparent !important; }
-html.native-app:not(.intro-ready) #intro { visibility: hidden; }
+/* Kept painted (almost invisible) rather than hidden, so the frame it is revealed in already has the logo drawn: hidden left one blank frame. */
+html.native-app:not(.intro-ready) #intro { opacity: .01; will-change: opacity; }
+html.native-app.intro-ready #intro:not(.out) { opacity: 1; transition: none; }
 /* Scrappy Native draws the player controls, menus, episodes and paused screen itself. */
 html.native-player #player .p-top, html.native-player #player .p-bottom, html.native-player #player .p-pauseinfo, html.native-player #player .p-eps { display: none !important; }
 html.native-app:not(.intro-ready) .intro-bar b { animation-play-state: paused; }
