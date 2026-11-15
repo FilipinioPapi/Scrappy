@@ -25,6 +25,8 @@ interface Host {
   fun who()
   /** The full Who's watching screen (Back from adding a person). Does nothing if nobody is saved yet. */
   fun whoFull() {}
+  /** True while a chosen person must wait on the faces screen (the page isn't up yet). */
+  fun whoHold(): Boolean = false
   /** The native view has drawn for the first time. */
   fun firstFrame() {}
   fun log(msg: String) {}

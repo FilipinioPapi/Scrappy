@@ -47,6 +47,15 @@ class Who(private val tv: TvView) {
   /** From the web side: who is on this TV, and which screen to show. */
   fun show(o: JSONObject) {
     val wasOpen = open
+    // Already up from the saved people (before the page started): take the page's list, keep where the highlight is and what was chosen.
+    if (wasOpen && !o.optBoolean("side") && (mode == "full" || (mode == "pin" && pinBack == "full"))) {
+      val cur = people.getOrNull(idx)?.id; val onAdd = idx >= people.size
+      load(o)
+      must = o.optBoolean("must")
+      idx = if (onAdd) people.size else max(0, people.indexOfFirst { it.id == cur })
+      tv.invalidate()
+      return
+    }
     load(o)
     mode = if (o.optBoolean("side")) "side" else "full"
     must = o.optBoolean("must")
@@ -66,8 +75,18 @@ class Who(private val tv: TvView) {
     }
   }
 
+  /** Chosen before the page was up: the faces stay (with "Opening…") until Home is ready underneath. */
+  var held = false; private set
+
   private fun close() {
     if (!open) return
+    if (tv.host.whoHold()) { held = true; busy = true; tv.invalidate(); return }
+    finishClose()
+  }
+
+  fun finishClose() {
+    if (!open) return
+    held = false; busy = false
     mode = ""; pinThen = null
     tv.host.whoClosed()
     tv.invalidate()
@@ -334,7 +353,7 @@ class Who(private val tv: TvView) {
       x += cw + gap
     }
     pNote.alpha = (255 * a).toInt()
-    Ui.line(c, "Switch any time from your picture in the side bar", Ui.W / 2f, 760f, 26f, pNote)
+    Ui.line(c, if (held) "Opening…" else "Switch any time from your picture in the side bar", Ui.W / 2f, 760f, 26f, pNote)
     return anim
   }
 

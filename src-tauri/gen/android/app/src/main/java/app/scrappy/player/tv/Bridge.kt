@@ -2,6 +2,7 @@ package app.scrappy.player.tv
 
 import android.app.Activity
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -61,6 +62,85 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     view.home().onGenreLib = { id -> eval("window.__tvNative && window.__tvNative.genreLib(${js(id)})") }
   }
 
+  // ---------- "Who's watching?" before the page is up ----------
+  // The page takes a few seconds to start. The people on this TV are in the app's own saved settings,
+  // so the faces go up straight away from there, over the page while it starts. Whatever is chosen
+  // waits for the page (it does the switching); when the page reaches its own "who's watching"
+  // question it finds this screen already up and carries on from it.
+  /** The faces are up from the saved settings and the page has not asked yet. */
+  private var early = false
+  /** What the faces asked for before the page could answer (sent, in order, once it can). */
+  private val waiting = ArrayList<String>()
+  /** The person was chosen before the page was ready: the faces stay until Home is up underneath. */
+  private var closeWhenHome = false
+  private var closeBy = 0L
+  private val prefs get() = act.getSharedPreferences(PREFS, 0)
+
+  /** Who the faces screen would show at start, by the page's own rules (whoAtStart in tvwho.js), or null for no question. */
+  private fun savedPeople(): JSONObject? {
+    val f = java.io.File(act.dataDir, "config.json")
+    if (!f.exists()) return null
+    val j = JSONObject(f.readText())
+    val arr = j.optJSONArray("profiles") ?: return null
+    val people = JSONArray()
+    for (i in 0 until arr.length()) {
+      val p = arr.optJSONObject(i) ?: continue
+      val emby = p.optString("token").isNotEmpty() && p.optString("userId").isNotEmpty()
+      if (!emby && p.optString("ndToken").isEmpty() && p.optString("absToken").isEmpty()) continue
+      val name = listOf(p.optString("userName"), p.optString("ndUser"), p.optString("absUser")).firstOrNull { it.isNotEmpty() } ?: "?"
+      val pic = if (emby && p.optString("server").isNotEmpty()) p.optString("server") + "/Users/" + android.net.Uri.encode(p.optString("userId")) + "/Images/Primary?maxWidth=240&quality=90" else ""
+      people.put(JSONObject().put("id", p.optString("id")).put("name", name).put("hasPin", p.optString("pinHash").isNotEmpty()).put("pic", pic))
+    }
+    if (people.length() == 0) return null
+    val signed = j.optString("token").isNotEmpty() && j.optString("userId").isNotEmpty()
+    val ask = prefs.getBoolean("who_ask", true)
+    // Signed in: asked only when more than one person is on this TV and asking is on. Nobody active: always.
+    if (signed && (people.length() < 2 || !ask)) return null
+    return JSONObject().put("side", false).put("must", false).put("ask", ask).put("active", j.optString("activeProfile")).put("people", people)
+  }
+
+  private fun startEarlyWho() {
+    val o = savedPeople() ?: return
+    early = true; modal = true
+    view.who.show(o)
+    apply()
+    // The page never came up (or never asked): don't sit on the faces for ever.
+    Net.main.postDelayed({ if (early) { Log.i("ScrappyNative", "early who: page did not ask in time"); pageAsked(); if (waiting.isEmpty()) view.who.finishClose() } }, 15000)
+    Log.i("ScrappyNative", "early who: up")
+  }
+
+  /** The page has reached its own start-up question: the faces go back under it, and what was asked meanwhile is sent. */
+  private fun pageAsked() {
+    if (!early) return
+    early = false
+    // Back to the usual order: native screen, player controls, page on top.
+    player.bringToFront(); web.bringToFront()
+    send()
+  }
+
+  private var sending = false
+  /** Send what waited, in order; each one is tried again until the page's side of the bridge exists. */
+  private fun send(tries: Int = 0) {
+    if (sending && tries == 0) return
+    val js = waiting.firstOrNull() ?: run { sending = false; return }
+    sending = true
+    web.evaluateJavascript("(function(){ if (!window.__tvNative) return false; $js; return true })()") { r ->
+      if (r == "true") { waiting.removeAt(0); send(1) }
+      else if (tries < 100) Net.main.postDelayed({ send(tries + 1) }, 120)
+      else { waiting.clear(); sending = false }
+    }
+  }
+
+  /** While true, a chosen person is held on the faces screen instead of closing it (see Who.close). */
+  override fun whoHold(): Boolean = early
+
+  /** Home is up underneath and nothing from the page is on top: the held faces can go. */
+  private fun closeHeld() {
+    if (!closeWhenHome) return
+    if ((active && !webVis) || SystemClock.uptimeMillis() >= closeBy) { closeWhenHome = false; view.who.finishClose() }
+    else Net.main.postDelayed({ closeHeld() }, 100)
+  }
+
   /** Put the native view directly under the web view, in the same parent. */
   private fun attach() {
     val parent = web.parent as? ViewGroup ?: return
@@ -69,6 +149,8 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
       (v.parent as? ViewGroup)?.removeView(v)
       parent.addView(v, parent.indexOfChild(web).coerceAtLeast(0), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
+    // The early faces sit over the page while it starts (it stays shown underneath, so it starts at full speed).
+    if (early && parent.getChildAt(parent.childCount - 1) !== view) view.bringToFront()
   }
 
   private fun eval(s: String) = act.runOnUiThread { web.evaluateJavascript(s, null) }
@@ -94,7 +176,7 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     // hides while holding the focus.
     if (nativeKeys && !view.isFocused) view.requestFocus()
     // With nothing on top, the web view is put away entirely, so it costs nothing while you browse.
-    val webShown = (!active || webVis || playing) && !modal && !updModal
+    val webShown = early || ((!active || webVis || playing) && !modal && !updModal)
     val wasHidden = webHidden
     webHidden = !webShown
     web.visibility = if (webShown) View.VISIBLE else View.INVISIBLE
@@ -163,7 +245,24 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   /** Who's watching, drawn natively: the page sends the people on this TV and which screen to show. */
   @JavascriptInterface fun who(json: String) {
     val o = try { JSONObject(json) } catch (_: Throwable) { return }
-    act.runOnUiThread { attach(); modal = true; view.who.show(o); apply() }
+    if (!o.optBoolean("side")) prefs.edit().putBoolean("who_ask", o.optBoolean("ask", true)).apply()
+    act.runOnUiThread {
+      val wasEarly = early
+      pageAsked()
+      attach(); modal = true; view.who.show(o); apply()
+      // Chosen before the page was ready: the faces stay until Home is drawn underneath (2.5 s at most).
+      if (wasEarly && view.who.held) { closeWhenHome = true; closeBy = SystemClock.uptimeMillis() + 2500; closeHeld() }
+    }
+  }
+  /** The page decided not to ask who is watching (tvwho.js whoAtStart). */
+  @JavascriptInterface fun whoNone() {
+    act.runOnUiThread {
+      if (!early) return@runOnUiThread
+      val asked = waiting.isNotEmpty()
+      pageAsked()
+      // Nothing was chosen that the page must do: the faces go once Home is up underneath.
+      if (!asked || view.who.held) { closeWhenHome = true; closeBy = SystemClock.uptimeMillis() + 2500; closeHeld() }
+    }
   }
   private val whoCalls = HashMap<Int, (JSONObject?) -> Unit>()
   private var whoN = 0
@@ -173,7 +272,10 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   }
   override fun whoAct(act: String, args: JSONObject, done: (JSONObject?) -> Unit) {
     val n = ++whoN; whoCalls[n] = done
-    eval("window.__tvNative && window.__tvNative.whoAct($n, ${js(act)}, $args)")
+    if (act == "ask") prefs.edit().putBoolean("who_ask", args.optBoolean("on", true)).apply()
+    val call = "window.__tvNative.whoAct($n, ${js(act)}, $args)"
+    if (early) { waiting.add(call); return }
+    eval("window.__tvNative && $call")
   }
   private val setCalls = HashMap<Int, (JSONObject?) -> Unit>()
   private var setN = 0
@@ -332,4 +434,9 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
   }
 
   override fun reroute() = eval("window.dispatchEvent(new HashChangeEvent('hashchange'))")
+
+  // Last, once everything above exists: the faces from the saved settings, before the page is up.
+  init {
+    try { startEarlyWho() } catch (e: Throwable) { Log.e("ScrappyNative", "early who", e); early = false; modal = false; waiting.clear() }
+  }
 }

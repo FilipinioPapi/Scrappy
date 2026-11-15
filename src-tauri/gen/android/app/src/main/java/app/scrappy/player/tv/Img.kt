@@ -87,6 +87,8 @@ object Img {
   }
 
   fun failed(url: String): Boolean = failed.containsKey(url)
+  /** This picture is on its way (asked for, not here yet, not given up on). */
+  fun loading(url: String?): Boolean = enabled && url != null && mem.get(url) == null && !failed.containsKey(url)
   fun peek(url: String?): Pic? = if (url == null) null else mem.get(url)
   fun clearMemory() { mem.evictAll() }
   /** A video is starting: the player needs the memory more than the pages do. Keep only the pictures

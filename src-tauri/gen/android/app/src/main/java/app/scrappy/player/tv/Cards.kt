@@ -162,7 +162,10 @@ object CardArt {
     // would be painted and then painted over, on every card, every frame.
     if (a < 1f) c.drawRoundRect(r, RADIUS, RADIUS, panel)
     if (pic != null) { Img.draw(c, pic, r, RADIUS, a); if (a < 1f) anim = true }
-    if (a < 1f) placeholder(c, card, r, 1f - a)
+    // On its way: a soft band of light glides across the empty card (approved mock "Posters loading", A),
+    // then the picture fades in. A card with no picture at all keeps its name instead.
+    if (pic == null && Img.loading(card.img)) { sweep(c, r, now); anim = true }
+    else if (a < 1f) placeholder(c, card, r, 1f - a)
     if (card.over != null && pic != null) {
       if (overGrad.shader == null) overGrad.shader = LinearGradient(0f, Shape.WIDE.h, 0f, 0f, intArrayOf(0xD10A0606.toInt(), 0x590A0606, 0x000A0606, 0x000A0606), floatArrayOf(0f, 0.38f, 0.62f, 1f), Shader.TileMode.CLAMP)
       overGrad.alpha = (255 * a).toInt()
@@ -209,6 +212,18 @@ object CardArt {
       if (card.sub.isNotEmpty()) Ui.line(c, Ui.fit(card.sub, sub, w), x, y + h + 12f + 29f, 25f, sub)
     }
     return anim
+  }
+
+  private val sweepP = Paint()
+  private val sweepM = android.graphics.Matrix()
+  private val sweepS = LinearGradient(0f, 0f, 1f, 0f, intArrayOf(0x00FFFFFF, 0x1CFFFFFF, 0x00FFFFFF), floatArrayOf(0.32f, 0.5f, 0.68f), Shader.TileMode.CLAMP)
+  /** The loading look: one band of light crossing the card every 1.15 s (every card in step). */
+  private fun sweep(c: Canvas, box: RectF, now: Long) {
+    val w = box.width(); val len = w * 2.6f
+    val t = (now % 1150L) / 1150f
+    sweepM.setScale(len, 1f); sweepM.postRotate(10f); sweepM.postTranslate(box.left - len + t * (len + w), box.top)
+    sweepS.setLocalMatrix(sweepM); sweepP.shader = sweepS
+    c.drawRoundRect(box, RADIUS, RADIUS, sweepP)
   }
 
   private fun placeholder(c: Canvas, card: Card, box: RectF, alpha: Float) {

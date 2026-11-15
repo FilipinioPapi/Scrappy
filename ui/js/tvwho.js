@@ -193,6 +193,9 @@ export async function whoIfAny() {
 export async function whoAtStart(session, shown = () => {}) {
   // `shown` runs once the faces are on screen, or as soon as it is clear nobody will be asked:
   // the opening screen waits for it, so the app never flashes up before "Who's watching?".
+  // Scrappy Native may already have the faces up from its saved copy (before this page started):
+  // it is told when nobody is going to be asked, so it can take them down again.
+  let asked = false;
   try {
     if (sget(ONCE)) return;
     sset(ONCE, '1');
@@ -200,8 +203,12 @@ export async function whoAtStart(session, shown = () => {}) {
     const signed = !!session?.loggedIn;
     if (!data.people.length) return;
     // Nobody active (the last person was removed or signed out) but others are saved: always ask.
-    if (!signed) return await who({ must: false, onShow: shown });
+    if (!signed) { asked = true; return await who({ must: false, onShow: shown }); }
     if (data.people.length < 2 || get(ASK) === '0') return;
+    asked = true;
     return await who({ onShow: shown });
-  } finally { shown(); }
+  } finally {
+    if (!asked) { try { window.ScrappyNative?.whoNone?.(); } catch {} }
+    shown();
+  }
 }
