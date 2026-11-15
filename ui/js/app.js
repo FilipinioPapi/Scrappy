@@ -150,6 +150,12 @@ let scrollIdle = 0;
 const scrollCover = document.createElement('div');
 scrollCover.id = 'scrollCover'; scrollCover.hidden = true;
 document.body.appendChild(scrollCover);
+const dropCover = () => { clearTimeout(scrollIdle); scrollIdle = 0; scrollCover.hidden = true; };
+// A real mouse move (not the browser's own hover refresh, which has no movement) means the
+// person wants to point at something, so the cover goes even if the page is still gliding.
+scrollCover.addEventListener('pointermove', (e) => { if (e.movementX || e.movementY) dropCover(); });
+// A click that lands on the cover is passed to whatever is underneath.
+scrollCover.addEventListener('click', (e) => { dropCover(); document.elementFromPoint(e.clientX, e.clientY)?.click(); });
 window.addEventListener('scroll', () => {
   if (scrollKey) SCROLL.set(scrollKey, window.scrollY);
   if (!scrollIdle) scrollCover.hidden = false; else clearTimeout(scrollIdle);
