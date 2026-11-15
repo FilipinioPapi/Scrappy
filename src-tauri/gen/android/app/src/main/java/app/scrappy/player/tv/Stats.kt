@@ -74,10 +74,14 @@ class Stats(tv: TvView) : Screen(tv) {
     val CHIP_KEYS = listOf("all" to "All", "on" to "Watching", "up" to "Up to date", "fin" to "Finished", "off" to "Stopped")
   }
 
-  override fun show(fresh: Boolean) { if (m == null || fresh) load() }
-  override fun stale() { load() }
+  private var dirty = false
+  private var loading = false
+  override fun show(fresh: Boolean) { if (m == null || fresh || dirty) load() }
+  /** Something was watched or marked: add up again, but only when Stats is looked at (it is a big ask of Emby). */
+  override fun stale() { if (tv.screen === this) load() else dirty = true }
 
   private fun load() {
+    dirty = false
     tv.host.stats { o ->
       if (o == null || o.has("err")) { if (m == null) err = o?.optString("err").orEmpty().ifEmpty { "Couldn't add up your stats." }; tv.invalidate(); return@stats }
       err = ""; m = o; build(o); tv.invalidate()

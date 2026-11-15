@@ -19,11 +19,17 @@ import kotlin.math.abs
 class Genres(tv: TvView) : Screen(tv) {
   override val railKey = "genres"
 
-  private class Tile(val id: String, val name: String, val count: Int, val c: IntArray, val sym: String) {
+  private class Tile(val id: String, val name: String, val count: Int, var c: IntArray, var sym: String) {
     var fans: List<String>? = null
     var nameL: StaticLayout? = null
-    /** The finished tile, drawn once: scrolling just copies it (gradients, clip, shadows and big text cost a lot per frame on a TV chip). */
+    /** The tile as a finished picture: every frame just copies it (gradients, clip, shadows and big
+     *  text cost a lot per frame on a TV chip). Made at once without its posters, and once more when
+     *  they have arrived; `prev` is the one without, while the new one fades in over it. */
     var bmp: android.graphics.Bitmap? = null
+    var prev: android.graphics.Bitmap? = null
+    var withPics = false
+    var at = 0L
+    fun drop() { bmp?.recycle(); bmp = null; prev?.recycle(); prev = null; withPics = false }
   }
 
   private var libs: List<JSONObject> = emptyList()
@@ -50,7 +56,7 @@ class Genres(tv: TvView) : Screen(tv) {
 
   /** Leaving the page: keep the finished tiles that were on screen (Back shows them at once), let the rest go. */
   override fun hide() {
-    for ((i, t) in tiles.withIndex()) { val y = rowTop(i); if (y - sy.pos > 1080f || y + TH - sy.pos < 0f) { t.bmp?.recycle(); t.bmp = null } }
+    for ((i, t) in tiles.withIndex()) { val y = rowTop(i); if (y - sy.pos > 1080f || y + TH - sy.pos < 0f) t.drop() }
   }
 
   override fun show(fresh: Boolean) {
@@ -58,17 +64,31 @@ class Genres(tv: TvView) : Screen(tv) {
     loaded = true
     fanFile = File(tv.context.cacheDir, "native-meta/fans-" + Net.session.key.hashCode() + ".json")
     try { fanFile?.takeIf { it.exists() }?.let { fanArt = JSONObject(it.readText()) } } catch (_: Throwable) {}
-    tv.host.local("gtColors") { s -> learned = try { JSONObject(s ?: "{}") } catch (_: Throwable) { JSONObject() } }
-    tv.host.local("tvGenLib") { s ->
-      Net.load("/Users/{userId}/Views") { v, _ ->
-        val ok = setOf("movies", "tvshows", "mixed", "")
-        libs = Net.items(v).filter { j -> j.optString("CollectionType") in ok }
-        if (libs.isEmpty()) { empty = "No movie or TV libraries found."; tv.invalidate(); return@load }
-        if (cur.isEmpty() || libs.none { j -> j.optString("Id") == cur }) cur = libs.firstOrNull { j -> j.optString("Id") == s }?.optString("Id") ?: libs[0].optString("Id")
-        tab = libs.indexOfFirst { j -> j.optString("Id") == cur }.coerceAtLeast(0)
-        if (loadedLib != cur) draw()
-        tv.invalidate()
-      }
+    // The page keeps the colours it learned and the library last looked at. The app remembers both
+    // itself, so opening Genres never waits for the page; what the page says only updates the memory.
+    learned = fanArt.optJSONObject("colors") ?: JSONObject()
+    tv.host.local("gtColors") { s ->
+      val j = try { JSONObject(s ?: "{}") } catch (_: Throwable) { JSONObject() }
+      if (j.toString() == learned.toString()) return@local
+      learned = j; fanArt.put("colors", j)
+      val txt = fanArt.toString(); Net.bg { try { fanFile?.writeText(txt) } catch (_: Throwable) {} }
+      for (t in tiles) { val look = look(t.name); if (!look.first.contentEquals(t.c) || look.second != t.sym) { t.c = look.first; t.sym = look.second; t.drop() } }
+      tv.invalidate()
+    }
+    val last = fanArt.optString("lib")
+    if (last.isNotEmpty()) start(last) else tv.host.local("tvGenLib") { s -> start(s) }
+  }
+
+  private fun start(last: String?) {
+    Net.load("/Users/{userId}/Views") { v, _ ->
+      val ok = setOf("movies", "tvshows", "mixed", "")
+      libs = Net.items(v).filter { j -> j.optString("CollectionType") in ok }
+      if (libs.isEmpty()) { empty = "No movie or TV libraries found."; tv.invalidate(); return@load }
+      if (cur.isEmpty() || libs.none { j -> j.optString("Id") == cur }) cur = libs.firstOrNull { j -> j.optString("Id") == last }?.optString("Id") ?: libs[0].optString("Id")
+      tab = libs.indexOfFirst { j -> j.optString("Id") == cur }.coerceAtLeast(0)
+      fanArt.put("lib", cur)
+      if (loadedLib != cur) draw()
+      tv.invalidate()
     }
   }
 
@@ -91,11 +111,16 @@ class Genres(tv: TvView) : Screen(tv) {
     Net.load("/Genres?ParentId=$cur&UserId={userId}&SortBy=SortName&Recursive=true&IncludeItemTypes=${types(lib)}&Fields=ItemCounts") { v, _ ->
       if (my != gen) return@load
       val gs = Net.items(v).filter { g -> val n = cnt(g); n == 0 || n >= 5 }
+      // A tile that is unchanged is kept as it is (with its finished picture); only new or changed ones are made again.
       val old = tiles.associateBy { t -> t.id }
       tiles = gs.map { g ->
-        val look = look(g.optString("Name"))
-        Tile(g.optString("Id"), g.optString("Name"), cnt(g), look.first, look.second).also { t -> t.fans = old[t.id]?.fans ?: fanArt.optJSONArray("$cur/${t.id}")?.let { a -> List(a.length()) { k -> a.optString(k) } } }
+        val id = g.optString("Id"); val name = g.optString("Name"); val n = cnt(g)
+        old[id]?.takeIf { t -> t.name == name && t.count == n } ?: run {
+          val look = look(name)
+          Tile(id, name, n, look.first, look.second).also { t -> t.fans = old[id]?.fans ?: fanArt.optJSONArray("$cur/$id")?.let { a -> List(a.length()) { k -> a.optString(k) } } }
+        }
       }
+      for (t in old.values) if (t !in tiles) t.drop()
       empty = if (tiles.isEmpty()) "No genres in this library yet." else ""
       fanArt.put("list/$cur", JSONArray(tiles.map { t -> JSONObject().put("id", t.id).put("n", t.name).put("c", t.count) }))
       if (focus >= tiles.size) focus = tiles.size - 1
@@ -119,7 +144,7 @@ class Genres(tv: TvView) : Screen(tv) {
         if (my != gen) return@bg
         val d = try { Net.getNow("/Users/{userId}/Items?ParentId=$cur&GenreIds=${t.id}&Recursive=true&IncludeItemTypes=${types(lib)}&SortBy=Random&Limit=2&ImageTypes=Primary") } catch (_: Throwable) { continue }
         val urls = Net.items(d).mapNotNull { i -> i.optJSONObject("ImageTags")?.optString("Primary")?.takeIf { s -> s.isNotEmpty() }?.let { tag -> Net.image(i.optString("Id"), "Primary", tag, 200) } }
-        Net.main.post { t.fans = urls; t.bmp?.recycle(); t.bmp = null; fanArt.put("$cur/${t.id}", JSONArray(urls)); tv.invalidate() }
+        Net.main.post { t.fans = urls; fanArt.put("$cur/${t.id}", JSONArray(urls)); tv.invalidate() }
       }
       Net.main.post { if (--left == 0) try { fanFile?.writeText(fanArt.toString()) } catch (_: Throwable) {} }
     }
@@ -192,7 +217,8 @@ class Genres(tv: TvView) : Screen(tv) {
     if (focus < 0) {
       val l = libs.getOrNull(tab) ?: return
       if (l.optString("Id") == cur) return
-      cur = l.optString("Id"); tv.host.setLocal("tvGenLib", cur)
+      cur = l.optString("Id"); tv.host.setLocal("tvGenLib", cur); fanArt.put("lib", cur)
+      for (t in tiles) t.drop()
       tiles = emptyList(); draw(); tv.invalidate(); return
     }
     val t = tiles.getOrNull(focus) ?: return
@@ -236,37 +262,56 @@ class Genres(tv: TvView) : Screen(tv) {
       Ui.line(c, libs[i].optString("Name"), x + 26.67f, 95f, 61f, tabP)
     }
     if (empty.isNotEmpty()) Ui.line(c, empty, (117f + 1920f) / 2f, 260f, 29f, emptyP)
-    var baked = 0
+    // Making a tile's picture takes a few milliseconds: at least one per frame, more while there is time,
+    // and the row just off screen is made ahead so scrolling never waits for one.
+    val t0 = System.nanoTime()
+    var made = 0
+    var waiting = false
+    fun time() = made == 0 || System.nanoTime() - t0 < 6_000_000L
     for ((i, t) in tiles.withIndex()) {
       val x = 149f + (i % 4) * PX; val y = rowTop(i)
       // Far off screen: let the finished picture go (keeps memory low on small boxes).
-      if (y - sy.pos > 2200f || y + TH - sy.pos < -1200f) { t.bmp?.recycle(); t.bmp = null; continue }
-      if (y - sy.pos > 1080f || y + TH - sy.pos < 0f) continue
+      if (y - sy.pos > 2200f || y + TH - sy.pos < -1200f) { t.drop(); continue }
+      if (y - sy.pos > 1080f + PY || y + TH - sy.pos < -PY) continue
+      val on = y - sy.pos <= 1080f && y + TH - sy.pos >= 0f
+      val pics = if (t.withPics) null else t.fans?.takeIf { f -> f.isNotEmpty() }?.map { u -> Img.get(u) }
+      val ready = pics != null && pics.all { p -> p != null }
+      if (pics != null && !ready && on) waiting = true
+      if (t.bmp == null) {
+        if (time()) { t.bmp = bake(t, if (ready) pics else null); t.withPics = ready; t.at = 0L; made++ } else anim = true
+      } else if (ready && t.prev == null) {
+        if (time()) bake(t, pics)?.let { b -> if (on && !tv.fast) { t.prev = t.bmp; t.at = now } else t.bmp?.recycle(); t.bmp = b; t.withPics = true; made++ } else anim = true
+      }
+      if (!on) continue
+      r.set(x, y, x + TW, y + TH)
       val b = t.bmp
-      if (b != null) { r.set(x, y, x + TW, y + TH); c.drawBitmap(b, null, r, bmpP) }
+      val p = t.prev
+      if (b == null) { tileP.shader = null; tileP.color = t.c[1]; c.drawRoundRect(r, 26.67f, 26.67f, tileP) }
+      else if (p == null) c.drawBitmap(b, null, r, bmpP)
       else {
-        val moving = drawTile(c, t, x, y, now)
-        anim = moving || anim
-        if (!moving && t.fans != null && baked < 2) { bake(t); baked++ }
+        val a = if (tv.fast) 1f else ((now - t.at) / 260f).coerceIn(0f, 1f)
+        if (a >= 1f) { p.recycle(); t.prev = null; c.drawBitmap(b, null, r, bmpP) }
+        else { c.drawBitmap(p, null, r, bmpP); bmpP.alpha = (255 * a).toInt(); c.drawBitmap(b, null, r, bmpP); bmpP.alpha = 255; anim = true }
       }
       if (i == focus) { r.set(x - 5.33f, y - 5.33f, x + TW + 5.33f, y + TH + 5.33f); c.drawRoundRect(r, 32f, 32f, outline) }
     }
+    // Posters still on their way: look again shortly even if none arrives (a skipped one is asked for again).
+    if (waiting && !anim) tv.wakeAt(now + 1200)
     c.restore()
     return anim
   }
 
   private val bmpP = Paint(Paint.FILTER_BITMAP_FLAG)
-  private fun bake(t: Tile) {
+  private fun bake(t: Tile, pics: List<Pic?>?): android.graphics.Bitmap? {
     val k = (tv.width / Ui.W).takeIf { it > 0f } ?: 1f
-    val b = try { android.graphics.Bitmap.createBitmap((TW * k).toInt() + 1, (TH * k).toInt() + 1, android.graphics.Bitmap.Config.RGB_565) } catch (_: Throwable) { return }
+    val b = try { android.graphics.Bitmap.createBitmap((TW * k).toInt() + 1, (TH * k).toInt() + 1, android.graphics.Bitmap.Config.RGB_565) } catch (_: Throwable) { return null }
     val bc = Canvas(b)
     bc.scale(k, k); bc.drawColor(Ui.BG)
-    drawTile(bc, t, 0f, 0f, Long.MAX_VALUE / 2)
-    t.bmp = b
+    drawTile(bc, t, 0f, 0f, pics)
+    return b
   }
 
-  private fun drawTile(c: Canvas, t: Tile, x: Float, y: Float, now: Long): Boolean {
-    var anim = false
+  private fun drawTile(c: Canvas, t: Tile, x: Float, y: Float, pics: List<Pic?>?) {
     r.set(x, y, x + TW, y + TH)
     tileP.shader = LinearGradient(x, y, x + TW, y + TH, t.c, floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
     c.save()
@@ -275,34 +320,24 @@ class Genres(tv: TvView) : Screen(tv) {
     c.drawRect(r, tileP)
     c.drawText(t.sym, x + TW * 0.3f, y + 13.33f - symP.fontMetrics.ascent * 0.82f, symP)
     // Two posters fanned out of the bottom right corner (bleeding off the edge).
-    val fans = t.fans
-    if (fans != null) {
-      val pics = fans.map { u -> Img.get(u) }
-      val ready = fans.isNotEmpty() && pics.all { p -> p != null }
-      val a = if (fans.isEmpty()) 0f else if (!ready) 0f else Img.fade(pics.maxByOrNull { p -> p!!.at }!!, now, tv.fast)
-      if (fans.isNotEmpty() && a < 1f) anim = true
-      for (k in 0..1) {
-        val right = x + TW - 8f - (if (k == 0) 82.67f else 5.33f)
-        val left = right - 106.67f
-        val bottom = y + TH + 40f
-        val top = bottom - 160f
-        c.save(); c.rotate(if (k == 0) -11f else 10f, (left + right) / 2f, (top + bottom) / 2f)
-        r.set(left, top, right, bottom)
-        val pic = pics.getOrNull(k)
-        if (pic != null && a > 0f) {
-          fanShadow.alpha = (255 * a).toInt(); c.drawRoundRect(r, 12f, 12f, fanShadow)
-          Img.draw(c, pic, RectF(r), 12f, a)
-          fanBd.alpha = (0x38 * a).toInt(); c.drawRoundRect(r, 12f, 12f, fanBd)
-        }
-        c.restore()
-      }
+    if (pics != null) for (k in 0..1) {
+      val pic = pics.getOrNull(k) ?: continue
+      val right = x + TW - 8f - (if (k == 0) 82.67f else 5.33f)
+      val left = right - 106.67f
+      val bottom = y + TH + 40f
+      val top = bottom - 160f
+      c.save(); c.rotate(if (k == 0) -11f else 10f, (left + right) / 2f, (top + bottom) / 2f)
+      r.set(left, top, right, bottom)
+      c.drawRoundRect(r, 12f, 12f, fanShadow)
+      Img.draw(c, pic, RectF(r), 12f, 1f)
+      c.drawRoundRect(r, 12f, 12f, fanBd)
+      c.restore()
     }
     c.restore()
     val lay = t.nameL ?: StaticLayout.Builder.obtain(t.name, 0, t.name.length, nameP, (TW - 64f).toInt()).setMaxLines(2)
       .setLineSpacing(0f, 45.33f / (nameP.fontMetrics.descent - nameP.fontMetrics.ascent)).setIncludePad(false).setAlignment(Layout.Alignment.ALIGN_NORMAL).build().also { t.nameL = it }
     c.save(); c.translate(x + 32f, y + 29.33f); lay.draw(c); c.restore()
     if (t.count > 0) Ui.line(c, "${t.count} title" + (if (t.count == 1) "" else "s"), x + 32f, y + 29.33f + lay.height + 5.33f, 29f, subP)
-    return anim
   }
 
   companion object {

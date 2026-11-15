@@ -336,9 +336,21 @@ class Bridge(private val act: Activity, private val web: WebView) : Host {
     val o = try { JSONObject(json) } catch (_: Throwable) { null }
     act.runOnUiThread { statsCalls.remove(seq)?.invoke(o) }
   }
-  /** "Your watching" is added up by the app itself (StatsModel). */
+  /** "Your watching" is added up by the app itself (StatsModel). Adding it up means asking Emby for
+   *  everything ever watched (seconds on a TV), so the last answer is kept: it shows at once and the
+   *  fresh one replaces it only if something changed. `done` may be called twice. */
   override fun stats(done: (JSONObject?) -> Unit) = Net.bg {
-    val r = try { StatsModel.load { path -> Net.getNow(path, false) as? JSONObject } } catch (e: Throwable) { JSONObject().put("err", "Couldn't reach the server. Try again.") }
+    val f = java.io.File(act.cacheDir, "native-meta/stats-" + Net.session.key.hashCode() + ".json")
+    val saved = try { if (f.exists()) f.readText() else null } catch (_: Throwable) { null }
+    val was = saved?.let { try { JSONObject(it) } catch (_: Throwable) { null } }
+    if (was != null) Net.main.post { done(was) }
+    val r = try { StatsModel.load { path -> Net.getNow(path, false) as? JSONObject } } catch (e: Throwable) {
+      if (was == null) Net.main.post { done(JSONObject().put("err", "Couldn't reach the server. Try again.")) }
+      return@bg
+    }
+    val txt = r.toString()
+    if (was != null && txt == saved) return@bg
+    try { f.parentFile?.mkdirs(); f.writeText(txt) } catch (_: Throwable) {}
     Net.main.post { done(r) }
   }
   /** Sign-in runs in the app's own code (SignLogic). Only leaving the screen still goes through the page, which owns the way around. */

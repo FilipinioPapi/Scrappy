@@ -20,7 +20,15 @@ class Rail(private val tv: TvView) {
   private var itemH = 63f
   private var sepY = 0f
   var open = false
-    set(v) { if (field != v) { field = v; if (v) focus = entries.indexOfFirst { it.key == cur }.coerceAtLeast(0) } }
+    set(v) {
+      if (field == v) return
+      field = v
+      if (!v) return
+      // The saved sign-in can change a moment after a switch of person (the name arrives last): look again whenever the bar opens.
+      val before = Net.session.key
+      if (Net.reload()) tv.signedInChanged(keepCurrent = Net.session.key == before)
+      focus = entries.indexOfFirst { it.key == cur }.coerceAtLeast(0)
+    }
   private var openT = 0f // 0..1 width animation
   private var labelT = 0f
   var focus = 0; private set
@@ -140,11 +148,12 @@ class Rail(private val tv: TvView) {
       val col = if (focused) 0xFF140D0E.toInt() else if (isCur) Ui.WHITE else 0xFFB9A9A7.toInt()
       val ic = if (focused) 0xFF140D0E.toInt() else if (isCur) Ui.RED_HI else 0xFFB9A9A7.toInt()
       val cy = y + itemH / 2f
-      if (e.key == "me") drawFace(c, 38f, cy - 20f, e.name)
+      val name = if (e.key == "me") Net.session.userName.ifEmpty { "Who's watching" } else e.name
+      if (e.key == "me") drawFace(c, 38f, cy - 20f, name)
       else { icon.color = ic; icon.strokeWidth = 2.625f; Icons.draw(c, e.icon, 40.3f, cy - 18f, 36f, icon) }
       if (lab) {
         label.color = col; label.alpha = (255 * labelT).toInt()
-        Ui.line(c, Ui.fit(e.name, label, w - 19f - 100f - 21f), 100f, cy - 19.5f, 39f, label)
+        Ui.line(c, Ui.fit(name, label, w - 19f - 100f - 21f), 100f, cy - 19.5f, 39f, label)
       }
     }
     c.drawRect(27f, sepY, w - 27f - 1.33f, sepY + 1.33f, sep)
