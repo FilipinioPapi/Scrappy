@@ -155,7 +155,11 @@ const dropCover = () => { clearTimeout(scrollIdle); scrollIdle = 0; scrollCover.
 // person wants to point at something, so the cover goes even if the page is still gliding.
 scrollCover.addEventListener('pointermove', (e) => { if (e.movementX || e.movementY) dropCover(); });
 // A click that lands on the cover is passed to whatever is underneath.
-scrollCover.addEventListener('click', (e) => { dropCover(); document.elementFromPoint(e.clientX, e.clientY)?.click(); });
+scrollCover.addEventListener('click', (e) => {
+  dropCover();
+  const { clientX, clientY, button, ctrlKey, shiftKey, metaKey, altKey } = e;
+  document.elementFromPoint(clientX, clientY)?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX, clientY, button, ctrlKey, shiftKey, metaKey, altKey }));
+});
 window.addEventListener('scroll', () => {
   if (scrollKey) SCROLL.set(scrollKey, window.scrollY);
   if (!scrollIdle) scrollCover.hidden = false; else clearTimeout(scrollIdle);
