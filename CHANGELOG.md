@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 51 · Nov 16, 8:44 AM
+**General**
+- Fixed: the window no longer opens with its bottom (the player bar) hidden behind the taskbar on laptops and smaller or scaled screens. Scrappy now shrinks and moves it to fit at start-up and when you move it to another screen, and a maximized window stops exactly at the taskbar
+
+<sub>Built from 145e4b0 · includes: General</sub>
+
 ### Stable · Nov 16, 2026 (everything from Preview 22 to 50)
 **If the update gets stuck**
 - If Scrappy shows "Updating" and doesn't come back, download the installer from the Latest release and run it once. From this version on, a failed update tells you and offers to try again or download it
