@@ -7,6 +7,12 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 50 · Nov 15, 6:33 PM
+**Movies & TV**
+- Changed: on show pages, the Grid layout always shows every episode, season by season, and hides the season buttons. Episode tiles now say which season they're from, e.g. S7, E3
+
+<sub>Built from 45cb1e9 · includes: Movies & TV</sub>
+
 ### Preview 49 · Nov 15, 12:58 PM
 **Updates**
 - Fixed: if an update can't install, Scrappy no longer closes every time it starts. It tells you, and offers to try again or download the update yourself
