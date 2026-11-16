@@ -3386,3 +3386,4 @@ html.minimized *, html.minimized *::before, html.minimized *::after { animation-
    so the page doesn't jump). */
 #view [data-row] > .section:not(.genre-section), .genre-row { content-visibility: auto; contain-intrinsic-size: auto 372px; }
 #view [data-row="resume"] > .section, #view [data-row="nextup"] > .section { contain-intrinsic-size: auto 285px; }
+.season-tabs[hidden] { display: none; }

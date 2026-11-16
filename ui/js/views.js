@@ -1382,12 +1382,11 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       seasons.find((s) => s.IndexNumber !== 0 && s.UserData?.UnplayedItemCount) ||
       seasons[0];
     // Shows with more than one season get an "All" tab at the end: every episode in one
-    // long list. The Grid layout opens on it.
-    // A season named in the address wins over Grid's habit of opening on All.
-    selected = many && (selected === 'all' || (!selected && view === 'grid' && !(keepTab && wantSeasonId))) ? 'all' : pick.Id;
+    // long list. The Grid layout always shows every episode, with the season tabs hidden.
+    selected = many && (view === 'grid' || selected === 'all') ? 'all' : pick.Id;
     const total = seasons.reduce((n, s) => n + (s.ChildCount || 0), 0);
     const tabs = many
-      ? `<div class="season-tabs" role="tablist">${[...seasons, { Id: 'all', Name: 'All', ChildCount: total }].map((s) => `
+      ? `<div class="season-tabs" role="tablist"${view === 'grid' ? ' hidden' : ''}>${[...seasons, { Id: 'all', Name: 'All', ChildCount: total }].map((s) => `
           <button class="season-tab ${s.Id === selected ? 'active' : ''}" role="tab" data-season="${esc(s.Id)}" data-name="${esc(s.Name)}">
             ${esc(s.Name)}${s.ChildCount ? `<span class="n">${s.ChildCount}</span>` : ''}
           </button>`).join('')}</div>`
@@ -1403,7 +1402,9 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       </section>`;
     const list = el.querySelector('#epList');
     const count = el.querySelector('#epCount');
-    if (many) count.hidden = true; // The season tabs already show each season's count.
+    // The season tabs already show each season's count; Grid hides the tabs, so it shows the total.
+    const showCount = () => { count.hidden = many && view !== 'grid'; };
+    showCount();
     const setCrumb = (name, animate) => {
       if (!crumbEl) return;
       crumbEl.hidden = false;
@@ -1428,7 +1429,10 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
       localStorage.setItem(viewKey, view);
       el.querySelectorAll('[data-view]').forEach((x) => x.classList.toggle('on', x === b));
       list.className = `episodes view-${view}`;
-      // Picking Grid opens on All.
+      // Grid shows every episode and hides the season tabs; List brings the tabs back.
+      const tabsEl = el.querySelector('.season-tabs');
+      if (tabsEl) tabsEl.hidden = view === 'grid';
+      showCount();
       if (view === 'grid' && many && selected !== 'all') {
         selected = 'all';
         el.querySelectorAll('.season-tab').forEach((t) => t.classList.toggle('active', t.dataset.season === 'all'));
@@ -1444,6 +1448,8 @@ async function renderSeasonBrowser(el, ctx, seriesId, wantSeasonId, currentEpId,
 }
 
 const GRID_BLOCK = 100;
+// Corner tag on episode tiles: "S7, E3" (just the number if Emby has no season number).
+const epTag = (e) => (e.IndexNumber == null ? '•' : e.ParentIndexNumber != null ? `S${e.ParentIndexNumber}, E${e.IndexNumber}` : String(e.IndexNumber));
 let epListToken = 0;
 async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId, live, view = 'list') {
   const my = ++epListToken;
@@ -1472,7 +1478,7 @@ async function renderEpisodeList(list, count, ctx, seriesId, seasonId, currentId
       const thumb = (e, i) => `
             <div class="ep-thumb ${e === upNext ? 'next' : ''} ${e.UserData?.Played ? 'watched' : ''} ${e.Id === currentId ? 'current' : ''}" data-ep="${esc(e.Id)}" title="${esc(num(e) + e.Name)}" style="animation-delay:${Math.min(i, 18) * 18}ms">
               ${card(e, { shape: 'wide', noTitle: true })}
-              <span class="ep-num">${e.IndexNumber ?? '•'}</span>
+              <span class="ep-num">${epTag(e)}</span>
               <div class="ep-name">${esc(e.Name)}</div>
             </div>`;
       if (all) {
