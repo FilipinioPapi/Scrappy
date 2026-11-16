@@ -914,29 +914,71 @@ fn set_fullscreen(app: AppHandle, on: bool) -> Result<bool, String> {
     Ok(on)
 }
 
-/// The window is see-through (the video draws behind the page), and on Windows a maximized
-/// see-through window can come out the full height of the screen, running under the taskbar.
-/// When that happens, fit it to the screen's usable area instead (any size, shape or scaling).
+/// Keep the main window inside the screen's usable area (above the taskbar), on any size,
+/// shape or scaling of screen.
+/// - Maximized: the window is see-through (the video draws behind the page), and on Windows a
+///   maximized see-through window can come out the full height of the screen, running under the
+///   taskbar. Then it's fitted to the usable area instead.
+/// - Normal (`normal_too`, used at start-up and after moving to a screen with other scaling):
+///   the opening size (1400 x 860 plus the title bar) is taller than the usable area on many
+///   laptops (for example 1440 x 900 at 200%), and Windows centres it on the whole screen, so the
+///   bottom sat behind the taskbar. Then it's shrunk to fit and moved fully on screen.
+/// Not run on every move, so dragging the window part off screen on purpose still works.
 #[cfg(windows)]
-fn fit_work_area(w: &tauri::Window) {
-    if !w.is_maximized().unwrap_or(false) || w.is_fullscreen().unwrap_or(false) {
+fn fit_work_area<R: tauri::Runtime>(w: &tauri::Window<R>, normal_too: bool) {
+    if w.is_fullscreen().unwrap_or(false) || w.is_minimized().unwrap_or(false) {
         return;
     }
     let Ok(Some(m)) = w.current_monitor() else { return };
     let wa = *m.work_area();
     let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) else { return };
-    // A normal maximized window pokes out by its invisible resize border (about 8 px each side).
+    // Windows 10/11 windows have an invisible resize border (about 7 px at 100%) on the left,
+    // right and bottom that may hang outside the usable area without anything being hidden.
     let slack = (12.0 * m.scale_factor()).round() as i32;
-    let bottom = pos.y + size.height as i32;
-    let right = pos.x + size.width as i32;
-    let wa_bottom = wa.position.y + wa.size.height as i32;
-    let wa_right = wa.position.x + wa.size.width as i32;
-    if bottom <= wa_bottom + slack && right <= wa_right + slack && pos.y >= wa.position.y - slack {
+    let (wa_x, wa_y) = (wa.position.x, wa.position.y);
+    let (wa_w, wa_h) = (wa.size.width as i32, wa.size.height as i32);
+    let (wa_right, wa_bottom) = (wa_x + wa_w, wa_y + wa_h);
+    let (out_w, out_h) = (size.width as i32, size.height as i32);
+    let inside = pos.x >= wa_x - slack
+        && pos.y >= wa_y - slack
+        && pos.x + out_w <= wa_right + slack
+        && pos.y + out_h <= wa_bottom + slack;
+    if inside {
         return;
     }
-    let _ = w.unmaximize();
-    let _ = w.set_position(tauri::PhysicalPosition::new(wa.position.x, wa.position.y));
-    let _ = w.set_size(tauri::PhysicalSize::new(wa.size.width, wa.size.height));
+    let maximized = w.is_maximized().unwrap_or(false);
+    if !maximized && !normal_too {
+        return;
+    }
+    if maximized {
+        let _ = w.unmaximize();
+    }
+    // Measure the frame (title bar + borders) as a normal window. Windows keeps an invisible
+    // border of the same width on the left, right and bottom; the top has none.
+    let (Ok(pos), Ok(size), Ok(inner)) = (w.outer_position(), w.outer_size(), w.inner_size()) else { return };
+    let frame_w = (size.width as i32 - inner.width as i32).max(0);
+    let frame_h = (size.height as i32 - inner.height as i32).max(0);
+    let b = frame_w / 2;
+    // Largest outer size whose visible part fits the usable area exactly.
+    let (max_w, max_h) = (wa_w + 2 * b, wa_h + b);
+    let (out_w, out_h) = (size.width as i32, size.height as i32);
+    let (new_w, new_h) = if maximized { (max_w, max_h) } else { (out_w.min(max_w), out_h.min(max_h)) };
+    if (new_w, new_h) != (out_w, out_h) {
+        let iw = (new_w - frame_w).max(1) as u32;
+        let ih = (new_h - frame_h).max(1) as u32;
+        let _ = w.set_size(tauri::PhysicalSize::new(iw, ih));
+    }
+    let (x, y) = if maximized {
+        (wa_x - b, wa_y)
+    } else {
+        (
+            pos.x.clamp(wa_x - b, (wa_right + b - new_w).max(wa_x - b)),
+            pos.y.clamp(wa_y, (wa_bottom + b - new_h).max(wa_y)),
+        )
+    };
+    if (x, y) != (pos.x, pos.y) || maximized {
+        let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+    }
 }
 
 /// The page says what's playing, for the taskbar preview buttons.
@@ -1406,6 +1448,12 @@ pub fn run() {
                 bif: Mutex::new(None),
             });
 
+            // Opening size taller than this screen's usable area: fit it above the taskbar.
+            #[cfg(windows)]
+            if let Some(w) = app.get_webview_window("main") {
+                fit_work_area(&AsRef::<tauri::Webview<_>>::as_ref(&w).window(), true);
+            }
+
             // Tray icon (closing can keep music playing); started by Windows: stay in the tray.
             let _ = appset::make_tray(app.handle());
             if appset::started_hidden() {
@@ -1437,8 +1485,19 @@ pub fn run() {
             // Maximized, the main window must stop at the taskbar (see fit_work_area).
             #[cfg(windows)]
             if window.label() == "main" {
-                if let tauri::WindowEvent::Resized(_) = event {
-                    fit_work_area(window);
+                match event {
+                    tauri::WindowEvent::Resized(_) => fit_work_area(window, false),
+                    // Moved to a screen with other scaling: Windows resizes it after this event,
+                    // so check again once that has happened.
+                    tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                        let w = window.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(400));
+                            let w2 = w.clone();
+                            let _ = w.run_on_main_thread(move || fit_work_area(&w2, true));
+                        });
+                    }
+                    _ => {}
                 }
             }
             // Tell the page when the main window is minimised, so it stops drawing things
