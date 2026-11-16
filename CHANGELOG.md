@@ -7,6 +7,26 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Stable · Nov 16, 2026 (everything from Preview 22 to 50)
+**If the update gets stuck**
+- If Scrappy shows "Updating" and doesn't come back, download the installer from the Latest release and run it once. From this version on, a failed update tells you and offers to try again or download it
+
+**New**
+- Smart home rows (Next Up, Because you watched, On repeat and more) and Edit home to reorder or hide rows
+- A side menu for Movies & TV like Music's, with Genres, Favorites and your recently watched, plus a Bookmarks page in Audiobooks
+- Collection pages with Play all and Shuffle, and posters for collections without one
+- Sign in to your next server with one click using your Emby username and password
+- Taskbar Previous, Play/Pause and Next buttons, and a new dachshund app icon
+
+**Better**
+- Much faster and lighter: pages open from saved copies, Songs and Albums open almost instantly, and Scrappy uses far less CPU when idle or minimised
+- Marking something watched resets its progress and offers Play again, and Continue Watching shows the show's own picture
+- Show pages: an All episodes view, and Grid shows every episode tagged by season
+- Server addresses use https unless they're on your home network
+- Lots of fixes from the PC review: sorting, menus, search, Stats wording, trackpad scrolling and laptop window size
+
+<sub>Built from the same code as Preview 50 · Preview-by-Preview details below</sub>
+
 ### Preview 50 · Nov 15, 6:33 PM
 **Movies & TV**
 - Changed: on show pages, the Grid layout always shows every episode, season by season, and hides the season buttons. Episode tiles now say which season they're from, e.g. S7, E3
