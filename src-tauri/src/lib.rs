@@ -981,16 +981,95 @@ fn fit_work_area<R: tauri::Runtime>(w: &tauri::Window<R>, normal_too: bool) {
     }
 }
 
-/// The page says what's playing, for the taskbar preview buttons.
+/// Taskbar preview (Windows): the buttons the page wants, the progress bar and the window title.
+#[derive(serde::Deserialize)]
+struct ThumbBtn {
+    act: String,
+    icon: String,
+    tip: String,
+    enabled: bool,
+    hidden: bool,
+}
+
+/// The page says what's playing: buttons under the preview, the progress bar on the taskbar
+/// icon (state 0 none, 1 playing, 2 paused; value out of 1000) and the title (the top line of
+/// the preview, also shown in Alt+Tab and the title bar).
 #[tauri::command]
-fn thumb_state(app: AppHandle, active: bool, playing: bool, book: bool) {
+fn thumb_set(app: AppHandle, buttons: Vec<ThumbBtn>, title: String, progress: u8, value: u32) {
+    if let Some(w) = app.get_webview_window("main") {
+        let t = if title.trim().is_empty() { "Scrappy Media Center".to_string() } else { title };
+        if w.title().map(|cur| cur != t).unwrap_or(true) {
+            let _ = w.set_title(&t);
+        }
+    }
     #[cfg(windows)]
     {
-        let _ = app.run_on_main_thread(move || thumbbar::set_state(active, playing, book));
+        let btns: Vec<thumbbar::Btn> = buttons
+            .into_iter()
+            .map(|b| thumbbar::Btn { act: b.act, icon: b.icon, tip: b.tip, enabled: b.enabled, hidden: b.hidden })
+            .collect();
+        let _ = app.run_on_main_thread(move || {
+            thumbbar::set_buttons(btns);
+            thumbbar::set_progress(progress, value);
+        });
     }
     #[cfg(not(windows))]
     {
-        let _ = (app, active, playing, book);
+        let _ = (buttons, progress, value);
+    }
+}
+
+/// Pixel size the page should draw the preview button icons at.
+#[tauri::command]
+fn thumb_icon_size() -> u32 {
+    #[cfg(windows)]
+    {
+        thumbbar::icon_size()
+    }
+    #[cfg(not(windows))]
+    {
+        16
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ThumbIcon {
+    name: String,
+    rgba: String,
+}
+
+/// Button icons drawn by the page (base64 RGBA, `size` x `size`).
+#[tauri::command]
+fn thumb_icons(app: AppHandle, size: u32, icons: Vec<ThumbIcon>) {
+    #[cfg(windows)]
+    {
+        let icons: Vec<(String, Vec<u8>)> = icons.into_iter().map(|i| (i.name, thumbbar::b64(&i.rgba))).collect();
+        let _ = app.run_on_main_thread(move || thumbbar::set_icons(size, icons));
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, size, icons);
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ThumbCover {
+    w: u32,
+    h: u32,
+    rgba: String,
+}
+
+/// The preview picture: the cover while music or a book plays, or none (the window as usual).
+#[tauri::command]
+fn thumb_cover(app: AppHandle, cover: Option<ThumbCover>) {
+    #[cfg(windows)]
+    {
+        let img = cover.map(|c| (c.w, c.h, thumbbar::b64(&c.rgba)));
+        let _ = app.run_on_main_thread(move || thumbbar::set_cover(img));
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, cover);
     }
 }
 
@@ -1413,11 +1492,19 @@ pub fn run() {
         })
         .setup(|app| {
             let _ = emby::APP_VERSION.set(app.package_info().version.to_string());
-            // Previous / Play-Pause / Next under the taskbar preview (Windows).
+            // Buttons, progress and cover for the taskbar preview (Windows).
             #[cfg(windows)]
             if let Some(hwnd) = main_hwnd(app.handle()) {
                 let handle = app.handle().clone();
-                thumbbar::init(hwnd as isize, Box::new(move |act| {
+                thumbbar::init(hwnd as isize, Box::new(move |act: String| {
+                    // "Open Now playing" brings Scrappy to the front first.
+                    if act == "open" {
+                        if let Some(w) = handle.get_webview_window("main") {
+                            let _ = w.unminimize();
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
                     let _ = handle.emit_to("main", "thumb", act);
                 }));
             }
@@ -1612,7 +1699,10 @@ pub fn run() {
             stop_playback,
             set_fullscreen,
             is_fullscreen,
-            thumb_state,
+            thumb_set,
+            thumb_icon_size,
+            thumb_icons,
+            thumb_cover,
             clear_cache,
             appset::set_close_to_tray,
             appset::autostart_get,

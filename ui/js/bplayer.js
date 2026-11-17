@@ -146,9 +146,9 @@ export function seekBook(t) {
 }
 export const skip = (secs) => seekBook(B.pos + secs);
 // Skip lengths from Settings ("10/30" = back 10, forward 30). The buttons show the numbers.
-const skipLens = () => { const [b, f] = String(pref('bSkip')).split('/').map(Number); return { b: b || 10, f: f || 10 }; };
-const skipBack = () => skip(-skipLens().b);
-const skipFwd = () => skip(skipLens().f);
+export const skipLens = () => { const [b, f] = String(pref('bSkip')).split('/').map(Number); return { b: b || 10, f: f || 10 }; };
+export const skipBack = () => skip(-skipLens().b);
+export const skipFwd = () => skip(skipLens().f);
 function drawSkips(root = document) {
   const { b, f } = skipLens();
   root.querySelectorAll('#bbBack,#tbBack,#bnBack').forEach((x) => { const t = x.querySelector('text'); if (t) t.textContent = b; x.title = x.ariaLabel = `Back ${b} seconds`; });
