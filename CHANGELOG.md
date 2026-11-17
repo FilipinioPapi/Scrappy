@@ -7,6 +7,14 @@ Newest first. Each app has its own section. Every test build gets an entry befor
 
 ## 🖥️ PC app
 
+### Preview 52 · Nov 17, 8:17 AM
+**General**
+- New: a fuller taskbar preview (hover Scrappy's taskbar icon). Music gets Favourite, Shuffle, Previous, Play/Pause, Next, Repeat and Open Now playing, and books get chapter skips and the back/forward jumps
+- With nothing playing, Previous and Next are clearly greyed out and Play picks up your last song or book
+- The preview shows the album or book cover, the taskbar icon shows a progress bar (green while playing, yellow when paused), and the window title shows the song or book that's playing
+
+<sub>Built from cba2839 · includes: Taskbar preview</sub>
+
 ### Preview 51 · Nov 16, 8:44 AM
 **General**
 - Fixed: the window no longer opens with its bottom (the player bar) hidden behind the taskbar on laptops and smaller or scaled screens. Scrappy now shrinks and moves it to fit at start-up and when you move it to another screen, and a maximized window stops exactly at the taskbar
